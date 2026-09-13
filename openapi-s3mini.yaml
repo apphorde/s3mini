@@ -1,0 +1,493 @@
+openapi: 3.0.3
+info:
+  title: "S3MINI — S3-Compatible Object Storage API"
+  description: |
+    A minimal S3-compatible object storage server that runs in a Docker container.
+    
+    This spec documents the REST API contracts for buckets and objects.
+    Only a subset of AWS S3 features is implemented (see docs/feature-catalog.md).
+    
+    Multi-tier storage, replication, and intelligent-tiering are out of scope.
+  version: 0.1.0
+  contact:
+    name: S3MINI Project
+
+servers:
+  - url: http://localhost:9000
+    description: Local development server
+
+paths:
+  # ====== BUCKET OPERATIONS (resource /) ======
+  "/":
+    get:
+      operationId: ListBuckets
+      summary: List all buckets
+      description: Returns a list of all buckets owned by the authenticated sender
+      tags: [Buckets]
+      responses:
+        '200':
+          description: A list of all buckets owned by the authenticated sender
+          content:
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ListAllMyBucketsResult'
+    put:
+      operationId: CreateBucket
+      summary: Create a new bucket
+      description: Creates a new bucket. The bucket name must be globally unique
+      tags: [Buckets]
+      parameters:
+        - name: create
+          in: query
+          required: true
+          schema: { type: string, enum: [''] }
+      requestBody:
+        content:
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CreateBucketConfiguration'
+      responses:
+        '200':
+          description: Bucket created successfully
+          headers:
+            x-amz-id-2: { description: "Unique request ID", schema: { type: string } }
+            x-amzn-requestid: { description: "Request ID", schema: { type: string } }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    delete:
+      operationId: DeleteBucket
+      summary: Delete a bucket
+      tags: [Buckets]
+      parameters:
+        - name: x-amz-bucket-object-lock-enabled
+          in: header
+          schema: { type: boolean }
+      responses:
+        '204':
+          description: Bucket deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+  "/{bucket}":
+    head:
+      operationId: HeadBucket
+      summary: Check if bucket exists
+      tags: [Buckets]
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Bucket exists
+          headers:
+            x-amz-bucket-region: { schema: { type: string } }
+            x-amz-id-2: { schema: { type: string } }
+        '404':
+          $ref: '#/components/responses/NotFound'
+    get:
+      operationId: ListObjectsV2
+      summary: List objects in a bucket
+      tags: [Buckets, Objects]
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: list-type
+          in: query
+          schema: { type: string, enum: ['2'], default: '2' }
+        - name: prefix
+          in: query
+          schema: { type: string }
+        - name max-keys
+          in: query
+          schema: { type: integer }
+        - name: delimiter
+          in: query
+          schema: { type: string }
+        - name: start-after
+          in: query
+          schema: { type: string }
+        - name: continuation-token
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of objects
+          content:
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ListObjectsV2Result'
+    put:
+      operationId: PutBucketAcl
+      summary: Set bucket ACL
+      tags: [Buckets]
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: acl
+          in: query
+          schema: { type: string }
+      responses:
+        '20':
+          description: ACL set successfully
+  
+  # ====== BUCKET SUBRESOURCES ======
+  "/{bucket}?location":
+    get:
+      operationId: GetBucketLocation
+      summary: Get bucket location
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/BucketLocation'
+
+  "/{bucket}?versioning":
+    get:
+      operationId: GetBucketVersioning
+      summary: Get bucket versioning configuration
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        responses:
+          '200':
+            description: Versioning configuration
+            content:
+              application/xml:
+                schema:
+                  $ref: '#/components/schemas/VersioningConfiguration'
+    put:
+      operationId: PutBucketVersioning
+      summary: Set bucket versioning configuration
+      parameters:
+        - name: bucket
+          in: path,
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/BucketLocation'
+
+  # ====== OBJECT OPERATIONS (resource /{bucket}/{key}) ======
+  "/{bucket}/{key+}":
+    put:
+      operationId: PutObject
+      summary: Upload an object
+      tags: [Objects]
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: x-amz-storage-class
+          in : header
+          schema: { type: string, enum: [STANDARD, ONEZONE_IA], default: STANDARD }
+        - name: x-amz-server-side-encryption
+          in: header
+          schema: { type: string, enum: [AES256, aws:kms] }
+        - name: x-amz-acl
+          in : header
+          schema: { type: string, enum: [private, public-read] }
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              type: object  // can contain any binary data
+      responses:
+        '200':
+          description: Object created successfully
+          headers:
+            ETag: { description: "Entity tag", schema: { type: string } }
+            x-amz-server-side-encryption: { schema: { type: string } }
+    get:
+      operationId: GetObject
+      summary: Download an object
+      tags: [Objects]
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: range
+          in: header
+          description: Byte range to retrieve
+          schema: { type: string }
+        - name: If-Modified-Since
+          in: header
+          schema: { type: string, format: date-time }
+        - name: If-Unmodified-Since
+          in: header
+          schema: { type: string, format: date-time }
+        - name: If-Match
+          in: header
+          schema: { type: string }
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        '200':
+          description: Object retrieved successfully
+          headers:
+            x-amz-version-id: { description: "Object version ID" , schema: { type: string } }
+            $ref: '#/components/responses/ObjectSuccess'
+    head:
+      operationId: HeadObject
+      summary: Get object metadata without body
+      tags: [Objects]
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Object metadata (no body)
+          headers:
+            Content-Length: { schema: { type: integer } }
+            Content-Type: { schema: { type: string } }
+            ETag: { schema: { type: string } }
+            Last-Modified: { schema: { type: string, format: date-time } }
+    delete:
+      operationId: DeleteObject
+      summary: Delete an object
+      tags: [Objects]
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: versionId
+          in: query
+          schema: { type: string }
+      responses:
+        '204':
+          description: Object deleted successfully
+  
+  "/{bucket}?uploads":
+    post:
+      operationId: CreateMultipartUpload
+      summary: Initiate a multipart upload
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: key
+          in: query (actually path as /{bucket}/{key}?uploads)
+          schema: { type: string }
+        - name: x-amz-storage-class
+          in: header
+          schema: { type: string, enum: [STANDARD, ONEZONE_IA] }
+      responses:
+        '200':
+          description Multipart upload initiated
+          content:
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/MultipartUploadResult'
+  
+  "/{bucket}/{key}?partNumber=PART_NUMBER&uploadId=UPLOAD_ID":
+    put:
+      operationId: UploadPart
+      summary: Upload a part of a multipart upload
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: uploadId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: partNumber
+          in: query
+          required: true
+          schema: { type: integer }
+        - name: x-amz-server-side-encryption
+          in: header
+          schema: { type: string, enum: [AES256, aws:kms] }
+      responses:
+        '200':
+          description: Part uploaded successfully
+          headers:
+            ETag: { description: "Entity tag of the part", schema: { type: string } }
+    delete:
+      operationId: AbortMultipartUpload
+      summary: Abort a multipart upload
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema: { type: string }
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Part aborted successfully
+
+# ====== TAGGING SUBRESOURCE ======
+"/{bucket}?tagging":
+  get:
+    operationId: GetObjectTagging
+    summary: Get object tags
+    parameters:
+      - name: bucket
+        in: path
+        required: true
+        schema: { type: string }
+    responses:
+      '200':
+        description: Object tags
+        content:
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/BucketLocation'
+  put:
+    operationId: PutObjectTagging
+    summary: Set object tags
+    parameters:
+      - name: bucket
+        in: path
+        required: true
+        schema: { type: string }
+      - name: key
+        in: query
+        schema: { type: string }
+      requestBody:
+        content:
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ObjectTagging'
+    responses:
+      '200':
+        description: Tags set successfully
+
+# ====== ERROR RESPONSES ======
+components:
+  responses:
+    BadRequest:
+      description: Bad Request error
+      content:
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/S3Error'
+    NotFound:
+      description: Not Found error
+      content:
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/S3Error'
+    ObjectSuccess:
+      description: Object retrieved successfully
+      content:
+        application/octet-stream:
+          schema:
+            type: string
+            format: binary
+
+  schemas:
+    # ====== COMMON S3 TYPES ======
+    Owner:
+      type: object
+      properties:
+        ID:
+          type: string
+          example: "75aa57fd0c894c0a3c776a2e29b5f0a0"
+        DisplayName:
+          type: string
+          example: "s3mini"
+
+    Bucket:
+      type: object
+      properties:
+        Name:
+          type: string
+          example: "my-bucket"
+        CreationDate:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+
+    ListAllMyBucketsResult:
+      type: object
+      properties:
+        Owner:
+          $ref: '#/components/schemas/Owner'
+        Name:
+          type: string
+          example: "my-bucket"
+
+    CreateBucketConfiguration:
+      type: object
+      properties:
+        LocationConstraint:
+          type: string
+          enum: [us-east-1, us-west-1, us-west-2, eu-west-1, eu-central-1, ap-southeast-1, ap-northeast-1, sa-east-1]
+
+    S3Error:
+      type: object
+      required: [Code, Message]
+      properties:
+        Code:
+          type: string
+          example: "NoSuchBucket"
+        Message:
+          type: string
+          example: "The specified bucket does not exist"
+        BucketName:
+          type: string
+          example: "my-bucket"
+        RequestId:
+          type: string
+          example: "0000000000000000"
+
+    ObjectTagging:
+      type: object
+      properties:
+        TagSet:
+          type: array
+          items:
+            type: object
+            properties:
+              Key:
+                type: string
+                example: "environment"
+              Value:
+                type: string
+                example: "production"
