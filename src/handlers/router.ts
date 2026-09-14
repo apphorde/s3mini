@@ -58,7 +58,8 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       return reply.code(200).send();
     }
     if (query.tagging !== undefined) {
-      await s3.putBucketTags(params.bucket, parseTagXml(String(request.body || '')));
+      const tags = parseTagXml(String(request.body || ''));
+      await s3.putBucketTags(params.bucket, tags);
       return reply.code(200).send();
     }
     const configuration = configurationQuery(query);
@@ -127,6 +128,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     const key = normalizeObjectKey((request.params as any)['*'] as string);
     const query = request.query as Record<string, string | undefined>;
     if (!key) {
+      if (query.versioning !== undefined || query.tagging !== undefined || configurationQuery(query)) return putBucket(request, reply);
       await s3.createBucket(params.bucket, query.locationConstraint);
       return reply.code(200).send();
     }
@@ -216,7 +218,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     if (query.tagging !== undefined) {
       const tags = await s3.getObjectTags(params.bucket, key, query.versionId);
-      return reply.type('application/xml').send(wrapXml('Tagging', { TagSet: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) }));
+      return reply.type('application/xml').send(wrapXml('Tagging', { TagSet: { Tag: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) } }));
     }
     if (query.acl !== undefined) {
       const acl = await s3.getObjectAcl<Record<string, unknown>>(params.bucket, key, query.versionId);
@@ -354,7 +356,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     if (query.tagging !== undefined) {
       const tags = await s3.getBucketTags(params.bucket);
-      return reply.type('application/xml').send(wrapXml('Tagging', { TagSet: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) }));
+      return reply.type('application/xml').send(wrapXml('Tagging', { TagSet: { Tag: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) } }));
     }
     const configuration = configurationQuery(query);
     if (configuration) {
@@ -454,7 +456,7 @@ function readXmlTag(body: string, tag: string): string | undefined {
 
 function parseTagXml(body: string): Record<string, string> {
   const tags: Record<string, string> = {};
-  for (const match of body.matchAll(/<Tag>\s*<Key>([^<]*)<\/Key>\s*<Value>([^<]*)<\/Value>\s*<\/Tag>/g)) tags[match[1]] = match[2];
+  for (const match of body.matchAll(/<Tag\b[^>]*>\s*<Key>([^<]*)<\/Key>\s*<Value>([^<]*)<\/Value>\s*<\/Tag>/g)) tags[match[1]] = match[2];
   return tags;
 }
 

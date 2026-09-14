@@ -4,11 +4,19 @@ import {
   CompleteMultipartUploadCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
+  DeleteBucketTaggingCommand,
+  DeleteObjectTaggingCommand,
   GetObjectCommand,
+  GetBucketTaggingCommand,
+  GetBucketVersioningCommand,
+  GetObjectTaggingCommand,
   HeadBucketCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
+  PutBucketTaggingCommand,
+  PutBucketVersioningCommand,
+  PutObjectTaggingCommand,
   UploadPartCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -92,5 +100,18 @@ describe('AWS SDK v3 compatibility', () => {
     }));
     const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'multipart.txt' }));
     expect(await object.Body?.transformToString()).toBe('multipart SDK');
+  });
+
+  it('supports SDK tagging and versioning commands', async () => {
+    await client.send(new CreateBucketCommand({ Bucket: bucket }));
+    await client.send(new PutBucketTaggingCommand({ Bucket: bucket, Tagging: { TagSet: [{ Key: 'team', Value: 'storage' }] } }));
+    expect((await client.send(new GetBucketTaggingCommand({ Bucket: bucket }))).TagSet).toEqual([{ Key: 'team', Value: 'storage' }]);
+    await client.send(new DeleteBucketTaggingCommand({ Bucket: bucket }));
+    await client.send(new PutBucketVersioningCommand({ Bucket: bucket, VersioningConfiguration: { Status: 'Enabled' } }));
+    expect((await client.send(new GetBucketVersioningCommand({ Bucket: bucket }))).Status).toBe('Enabled');
+    await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'tagged.txt', Body: 'tagged' }));
+    await client.send(new PutObjectTaggingCommand({ Bucket: bucket, Key: 'tagged.txt', Tagging: { TagSet: [{ Key: 'kind', Value: 'test' }] } }));
+    expect((await client.send(new GetObjectTaggingCommand({ Bucket: bucket, Key: 'tagged.txt' }))).TagSet).toEqual([{ Key: 'kind', Value: 'test' }]);
+    await client.send(new DeleteObjectTaggingCommand({ Bucket: bucket, Key: 'tagged.txt' }));
   });
 });
