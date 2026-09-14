@@ -136,4 +136,19 @@ describe('S3 HTTP routes', () => {
     expect(versions.body).toContain('<Key>versioned.txt</Key>');
     expect((versions.body.match(/<VersionId>/g) || []).length).toBe(2);
   });
+
+  it('enforces configured CORS preflight rules', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({
+      method: 'PUT',
+      url: `/${bucket}?cors`,
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ rules: [{ allowedOrigins: ['https://client.example'], allowedMethods: ['GET'], allowedHeaders: ['x-test'], maxAgeSeconds: 300 }] }),
+    });
+    const allowed = await app.inject({ method: 'OPTIONS', url: `/${bucket}/object`, headers: { origin: 'https://client.example', 'access-control-request-method': 'GET' } });
+    expect(allowed.statusCode).toBe(204);
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://client.example');
+    const denied = await app.inject({ method: 'OPTIONS', url: `/${bucket}/object`, headers: { origin: 'https://other.example', 'access-control-request-method': 'GET' } });
+    expect(denied.statusCode).toBe(403);
+  });
 });

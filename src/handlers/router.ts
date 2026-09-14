@@ -43,7 +43,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     const configuration = configurationQuery(query);
     if (configuration) {
-      await s3.putBucketConfiguration(params.bucket, configuration, parseJsonOrXml(String(request.body || '')));
+      await s3.putBucketConfiguration(params.bucket, configuration, parseJsonOrXml(request.body));
       return reply.code(200).send();
     }
     await s3.createBucket(params.bucket, query.locationConstraint);
@@ -76,6 +76,29 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   fastify.put('/:bucket', putBucket);
   fastify.head('/:bucket', headBucket);
   fastify.delete('/:bucket', deleteBucket);
+
+  fastify.options('/:bucket/*', async (request, reply) => {
+    const params = request.params as { bucket: string };
+    const origin = request.headers.origin;
+    const requestedMethod = request.headers['access-control-request-method'];
+    const requestedHeaders = request.headers['access-control-request-headers'];
+    const configuration = await s3.getBucketConfiguration<{ rules?: Array<Record<string, unknown>> }>(params.bucket, 'corsConfiguration');
+    const rule = configuration?.rules?.find(candidate => {
+      const origins = Array.isArray(candidate.allowedOrigins) ? candidate.allowedOrigins : [];
+      const methods = Array.isArray(candidate.allowedMethods) ? candidate.allowedMethods : [];
+      return !!origin && (origins.includes('*') || origins.includes(origin)) && (!requestedMethod || methods.includes(String(requestedMethod)));
+    });
+    if (!rule) throw new S3Error('AccessDenied', 'CORS request is not allowed.', 403, params.bucket);
+    const origins = Array.isArray(rule.allowedOrigins) ? rule.allowedOrigins : [];
+    const methods = Array.isArray(rule.allowedMethods) ? rule.allowedMethods : [];
+    const allowedHeaders = Array.isArray(rule.allowedHeaders) ? rule.allowedHeaders : [];
+    return reply.code(204)
+      .header('Access-Control-Allow-Origin', origins.includes('*') ? '*' : origin as string)
+      .header('Access-Control-Allow-Methods', methods.join(','))
+      .header('Access-Control-Allow-Headers', requestedHeaders || allowedHeaders.join(','))
+      .header('Access-Control-Max-Age', String(rule.maxAgeSeconds || 0))
+      .send();
+  });
 
   // --- Object Operations ---
 
@@ -355,8 +378,10 @@ function parseTagXml(body: string): Record<string, string> {
   return tags;
 }
 
-function parseJsonOrXml(body: string): unknown {
-  try { return JSON.parse(body); } catch { return { raw: body }; }
+function parseJsonOrXml(body: unknown): unknown {
+  if (typeof body === 'object' && body !== null) return body;
+  const text = String(body || '');
+  try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
 function configurationQuery(query: Record<string, string | undefined>): 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration' | 'acl' | undefined {
