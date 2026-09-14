@@ -29,6 +29,8 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [x] Object-lock retention and legal-hold deletion checks
 - [x] RestoreObject and basic `SELECT * FROM S3Object` behavior
 - [x] Optional SigV4 header and presigned URL verification
+- [x] AWS SDK for JavaScript v3 compatibility smoke tests
+- [x] Self-hosted path-style endpoint support
 
 ## Planned S3 API Features
 
@@ -36,7 +38,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 
 - [x] CreateMultipartUpload
 - [x] UploadPart
-- [ ] UploadPartCopy
+- [x] UploadPartCopy
 - [x] ListParts
 - [x] ListMultipartUploads
 - [x] CompleteMultipartUpload
@@ -46,7 +48,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 
 - [x] PutBucketVersioning / GetBucketVersioning
 - [x] ListObjectVersions
-- [ ] DeleteObject version and delete-marker semantics
+- [x] DeleteObject version and delete-marker semantics
 - [x] PutObjectTagging / GetObjectTagging / DeleteObjectTagging
 - [x] PutBucketTagging / GetBucketTagging / DeleteBucketTagging
 
@@ -54,6 +56,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 
 - [x] GetBucketLocation
 - [x] Bucket ACL configuration
+- [x] Object ACL storage and query operations
 - [x] CORS configuration and preflight behavior
 - [ ] Lifecycle configuration
 - [ ] Bucket policy and public-access-block configuration
