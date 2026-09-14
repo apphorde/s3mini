@@ -2,6 +2,7 @@ import {
   CreateBucketCommand,
   CreateMultipartUploadCommand,
   CompleteMultipartUploadCommand,
+  CopyObjectCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
   DeleteBucketTaggingCommand,
@@ -78,10 +79,17 @@ describe('AWS SDK v3 compatibility', () => {
     expect(head.CacheControl).toBe('max-age=60');
     expect(head.Metadata).toEqual({ color: 'blue' });
     await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'sdk.txt', IfMatch: head.ETag }));
+    const copied = await client.send(new CopyObjectCommand({ Bucket: bucket, CopySource: `${bucket}/sdk.txt`, Key: 'copied.txt' }));
+    expect(copied.CopyObjectResult?.ETag).toBeTruthy();
+    const copiedObject = await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'copied.txt' }));
+    expect(await copiedObject.Body?.transformToString()).toBe('hello SDK');
+    const copiedHead = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: 'copied.txt' }));
+    expect(copiedHead.Metadata).toEqual({ color: 'blue' });
 
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'a.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'b.txt' }));
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'copied.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'already-missing.txt' }));
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
   });

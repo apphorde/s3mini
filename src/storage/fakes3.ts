@@ -324,6 +324,9 @@ export class FakeS3 {
       cacheControl: source.metadata.cacheControl,
       expires: source.metadata.expires,
       storageClass: source.metadata.storageClass,
+      userMetadata: source.metadata.userMetadata,
+      serverSideEncryption: source.metadata.serverSideEncryption,
+      sseKmsKeyId: source.metadata.sseKmsKeyId,
     });
   }
 
