@@ -71,6 +71,9 @@ export class FakeS3 {
       value TEXT NOT NULL,
       UNIQUE(bucket, key, name)
     )`);
+    for (const column of ['encryption TEXT', 'sseKmsKeyId TEXT']) {
+      try { await this.run(`ALTER TABLE objs ADD COLUMN ${column}`); } catch { /* Existing databases already have the column. */ }
+    }
     await this.run(`CREATE TABLE IF NOT EXISTS multipart_uploads (
       uploadId TEXT PRIMARY KEY,
       bucket TEXT NOT NULL,
@@ -193,13 +196,13 @@ export class FakeS3 {
     await fs.writeFile(filePath, body);
 
     await this.run(`
-      INSERT INTO objs (bucket, key, etag, contentType, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      INSERT INTO objs (bucket, key, etag, contentType, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         bucketName, key, etag, meta.contentType || null, meta.contentDisposition || null,
         meta.contentEncoding || null, meta.cacheControl || null, 
         meta.expires ? new Date(meta.expires).getTime() : null,
-        lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini'
+        lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null
       ]
     );
 
@@ -210,6 +213,8 @@ export class FakeS3 {
       lastModified: new Date(lastModified), storageClass: meta.storageClass || 'STANDARD',
       ownerId: '000000000000000000000000', ownerDisplayName: 's3mini',
       userMetadata: meta.userMetadata || {},
+      serverSideEncryption: meta.serverSideEncryption,
+      sseKmsKeyId: meta.sseKmsKeyId,
       size: body.length // FIX: added missing size
     };
   }
@@ -227,7 +232,7 @@ export class FakeS3 {
       contentEncoding: row.contentEncoding || undefined, cacheControl: row.cacheControl || undefined,
       expires: row.expires ? new Date(row.expires) : undefined, lastModified: new Date(row.lastModified),
       storageClass: row.storageClass, ownerId: row.ownerId, ownerDisplayName: row.ownerDisplayName,
-      userMetadata: {}
+      userMetadata: {}, serverSideEncryption: row.encryption || undefined, sseKmsKeyId: row.sseKmsKeyId || undefined
     };
     return { data, metadata };
   }

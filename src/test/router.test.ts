@@ -101,4 +101,14 @@ describe('S3 HTTP routes', () => {
     expect(bad.statusCode).toBe(400);
     expect(bad.body).toContain('<Code>BadDigest</Code>');
   });
+
+  it('persists supported server-side encryption metadata', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const put = await app.inject({ method: 'PUT', url: `/${bucket}/encrypted.txt`, headers: { 'content-type': 'text/plain', 'x-amz-server-side-encryption': 'AES256' }, payload: 'secret' });
+    expect(put.statusCode).toBe(200);
+    const get = await app.inject({ method: 'GET', url: `/${bucket}/encrypted.txt` });
+    expect(get.headers['x-amz-server-side-encryption']).toBe('AES256');
+    const invalid = await app.inject({ method: 'PUT', url: `/${bucket}/invalid.txt`, headers: { 'content-type': 'text/plain', 'x-amz-server-side-encryption': 'aws:kms' }, payload: 'secret' });
+    expect(invalid.statusCode).toBe(400);
+  });
 });

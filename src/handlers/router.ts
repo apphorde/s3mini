@@ -112,6 +112,16 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     if (request.headers['content-encoding']) meta.contentEncoding = request.headers['content-encoding'];
     if (request.headers['cache-control']) meta.cacheControl = request.headers['cache-control'];
     if (request.headers['expires']) meta.expires = new Date(request.headers['expires']);
+    const encryption = request.headers['x-amz-server-side-encryption'];
+    const kmsKeyId = request.headers['x-amz-server-side-encryption-aws-kms-key-id'];
+    if (encryption && encryption !== 'AES256' && encryption !== 'aws:kms') {
+      throw new S3Error('InvalidEncryptionAlgorithmError', 'The requested encryption algorithm is not supported.', 400, params.bucket, key);
+    }
+    if (encryption === 'aws:kms' && !kmsKeyId) {
+      throw new S3Error('InvalidRequest', 'A KMS key identifier is required for aws:kms encryption.', 400, params.bucket, key);
+    }
+    if (encryption) meta.serverSideEncryption = encryption;
+    if (kmsKeyId) meta.sseKmsKeyId = kmsKeyId;
 
     const obj = await s3.putObject(params.bucket, key, body, meta);
     reply.type('application/xml').code(200).header('x-amz-checksum-sha256', checksumSha256).send(wrapXml('PutObjectResult', { ETag: obj.etag, ChecksumSHA256: checksumSha256 }));
@@ -167,6 +177,8 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       .header('x-amz-checksum-sha256', checksumSha256)
       .header('Accept-Ranges', 'bytes')
       .code(status);
+    if (metadata.serverSideEncryption) reply.header('x-amz-server-side-encryption', metadata.serverSideEncryption);
+    if (metadata.sseKmsKeyId) reply.header('x-amz-server-side-encryption-aws-kms-key-id', metadata.sseKmsKeyId);
     if (contentRange) reply.header('Content-Range', contentRange);
     reply.send(data);
   }
@@ -180,8 +192,10 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       .header('ETag', metadata.etag)
       .header('Last-Modified', metadata.lastModified.toUTCString())
       .header('Content-Type', metadata.contentType)
-      .header('x-amz-checksum-sha256', crypto.createHash('sha256').update((await s3.getObject(params.bucket, key)).data).digest('base64'))
-      .send();
+      .header('x-amz-checksum-sha256', crypto.createHash('sha256').update((await s3.getObject(params.bucket, key)).data).digest('base64'));
+    if (metadata.serverSideEncryption) reply.header('x-amz-server-side-encryption', metadata.serverSideEncryption);
+    if (metadata.sseKmsKeyId) reply.header('x-amz-server-side-encryption-aws-kms-key-id', metadata.sseKmsKeyId);
+    reply.send();
   }
 
   async function deleteObject(request: FastifyRequest, reply: FastifyReply) {

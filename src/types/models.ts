@@ -28,6 +28,8 @@ export interface ObjectMetadata {
   ownerId: string;
   ownerDisplayName: string;
   userMetadata: Record<string, string>;
+  serverSideEncryption?: 'AES256' | 'aws:kms';
+  sseKmsKeyId?: string;
 }
 
 export interface UploadedPart {
