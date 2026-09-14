@@ -291,7 +291,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       await s3.deleteObjectVersion(params.bucket, key, query.versionId);
       return reply.code(204).send();
     }
-    await s3.deleteObject(params.bucket, key);
+    try {
+      await s3.deleteObject(params.bucket, key);
+    } catch (error) {
+      if (!(error instanceof S3Error) || error.code !== 'NoSuchKey') throw error;
+    }
     reply.code(204).send();
   }
 

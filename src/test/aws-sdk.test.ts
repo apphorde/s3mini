@@ -59,6 +59,7 @@ describe('AWS SDK v3 compatibility', () => {
     expect(await object.Body?.transformToString()).toBe('hello SDK');
 
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'already-missing.txt' }));
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
   });
 
