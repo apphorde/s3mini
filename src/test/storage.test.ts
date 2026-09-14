@@ -90,4 +90,24 @@ describe('FakeS3', () => {
     await s3.abortMultipartUpload(bucket, 'aborted.bin', aborted.uploadId);
     await expect(s3.listParts({ bucket, key: 'aborted.bin', uploadId: aborted.uploadId })).rejects.toMatchObject({ code: 'NoSuchUpload' });
   });
+
+  it('persists versioning and object and bucket tags', async () => {
+    await s3.createBucket(bucket);
+    expect(await s3.getVersioning(bucket)).toEqual({});
+    await s3.putVersioning(bucket, 'Enabled');
+    expect(await s3.getVersioning(bucket)).toEqual({ status: 'Enabled' });
+
+    const object = await s3.putObject(bucket, 'tagged.txt', Buffer.from('tagged'), {});
+    await s3.putObjectTags(bucket, 'tagged.txt', { environment: 'test' }, object.versionId);
+    expect(await s3.getObjectTags(bucket, 'tagged.txt', object.versionId)).toEqual({ environment: 'test' });
+    await s3.deleteObjectTags(bucket, 'tagged.txt', object.versionId);
+    await expect(s3.getObjectTags(bucket, 'tagged.txt', object.versionId)).rejects.toMatchObject({ code: 'NoSuchTagSet' });
+
+    await s3.putBucketTags(bucket, { team: 'storage' });
+    expect(await s3.getBucketTags(bucket)).toEqual({ team: 'storage' });
+    await s3.deleteBucketTags(bucket);
+    expect(await s3.getBucketTags(bucket)).toEqual({});
+    expect((await s3.listObjectVersions(bucket, 'tagged'))[0].VersionId).toBe(object.versionId);
+    await s3.deleteObjectVersion(bucket, 'tagged.txt', object.versionId);
+  });
 });

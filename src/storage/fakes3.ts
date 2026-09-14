@@ -87,6 +87,26 @@ export class FakeS3 {
       body BLOB NOT NULL,
       PRIMARY KEY(uploadId, partNumber)
     )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS bucket_settings (
+      bucket TEXT PRIMARY KEY,
+      versioningStatus TEXT,
+      bucketTags TEXT,
+      corsConfiguration TEXT,
+      lifecycleConfiguration TEXT,
+      policy TEXT,
+      encryptionConfiguration TEXT,
+      websiteConfiguration TEXT,
+      loggingStatus TEXT,
+      notificationConfiguration TEXT,
+      replicationConfiguration TEXT
+    )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS object_tags (
+      bucket TEXT NOT NULL,
+      key TEXT NOT NULL,
+      versionId TEXT NOT NULL DEFAULT '',
+      tags TEXT NOT NULL,
+      PRIMARY KEY(bucket, key, versionId)
+    )`);
     this.initialized = true;
   }
 
@@ -121,6 +141,7 @@ export class FakeS3 {
     const exists = await this.get('SELECT name FROM buckets WHERE name = ?', [name]);
     if (exists) throw new S3Error('BucketAlreadyExists', 'Bucket already exists.', 409, name);
     await this.run('INSERT INTO buckets (name, locationConstraint, creationDate) VALUES (?, ?, ?)', [name, locationConstraint, Date.now()]);
+    await this.run('INSERT INTO bucket_settings (bucket, versioningStatus) VALUES (?, ?)', [name, null]);
     await fs.mkdir(path.join(STORAGE_BASE, name), { recursive: true });
   }
 
@@ -136,6 +157,8 @@ export class FakeS3 {
     if (object) throw new S3Error('BucketNotEmpty', 'The bucket you tried to delete is not empty.', 409, name);
     await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM object_tags WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM bucket_settings WHERE bucket = ?', [name]);
     await this.run('DELETE FROM buckets WHERE name = ?', [name]);
     await fs.rm(path.join(STORAGE_BASE, name), { recursive: true, force: true });
   }
@@ -152,6 +175,8 @@ export class FakeS3 {
   async clearBucket(name: string): Promise<void> {
     await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM object_tags WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM bucket_settings WHERE bucket = ?', [name]);
     await this.run('DELETE FROM buckets WHERE name = ?', [name]);
     await fs.rm(path.join(STORAGE_BASE, name), { recursive: true, force: true });
   }
@@ -212,7 +237,79 @@ export class FakeS3 {
     if (!found) throw new S3Error('NoSuchKey', 'Object not found', 404, bucketName, key);
     await this.run('DELETE FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM tags WHERE bucket = ? AND key = ?', [bucketName, key]);
+    await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ?', [bucketName, key]);
     await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
+  }
+
+  async getVersioning(bucket: string): Promise<{ status?: 'Enabled' | 'Suspended' }> {
+    await this.headBucket(bucket);
+    const row = await this.get('SELECT versioningStatus FROM bucket_settings WHERE bucket = ?', [bucket]);
+    return row?.versioningStatus ? { status: row.versioningStatus } : {};
+  }
+
+  async putVersioning(bucket: string, status: 'Enabled' | 'Suspended'): Promise<void> {
+    await this.headBucket(bucket);
+    await this.run('UPDATE bucket_settings SET versioningStatus = ? WHERE bucket = ?', [status, bucket]);
+  }
+
+  async listObjectVersions(bucket: string, prefix?: string): Promise<any[]> {
+    await this.headBucket(bucket);
+    const rows = await this.all('SELECT * FROM objs WHERE bucket = ? ORDER BY key ASC, id DESC', [bucket]);
+    return (rows as any[])
+      .filter(row => !prefix || row.key.startsWith(prefix))
+      .map((row, index, all) => ({
+        Key: row.key,
+        VersionId: row.versionId,
+        IsLatest: index === all.findIndex(candidate => candidate.key === row.key),
+        LastModified: new Date(row.lastModified),
+        ETag: row.etag,
+        Size: row.size,
+        StorageClass: row.storageClass,
+        Owner: { ID: row.ownerId, DisplayName: row.ownerDisplayName },
+      }));
+  }
+
+  async deleteObjectVersion(bucket: string, key: string, versionId: string): Promise<void> {
+    await this.headBucket(bucket);
+    const row = await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
+    if (!row) throw new S3Error('NoSuchVersion', 'The specified version does not exist.', 404, bucket, key);
+    await this.run('DELETE FROM objs WHERE id = ?', [row.id]);
+    await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
+  }
+
+  async putObjectTags(bucket: string, key: string, tags: Record<string, string>, versionId = ''): Promise<void> {
+    await this.headBucket(bucket);
+    const object = await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ? AND (? = \'\' OR versionId = ?) LIMIT 1', [bucket, key, versionId, versionId]);
+    if (!object) throw new S3Error(versionId ? 'NoSuchVersion' : 'NoSuchKey', 'Object not found', 404, bucket, key);
+    await this.run('INSERT OR REPLACE INTO object_tags (bucket, key, versionId, tags) VALUES (?, ?, ?, ?)', [bucket, key, versionId, JSON.stringify(tags)]);
+  }
+
+  async getObjectTags(bucket: string, key: string, versionId = ''): Promise<Record<string, string>> {
+    await this.headBucket(bucket);
+    const row = await this.get('SELECT tags FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
+    if (!row) throw new S3Error('NoSuchTagSet', 'The object has no tags.', 404, bucket, key);
+    return JSON.parse(row.tags) as Record<string, string>;
+  }
+
+  async deleteObjectTags(bucket: string, key: string, versionId = ''): Promise<void> {
+    await this.headBucket(bucket);
+    await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
+  }
+
+  async putBucketTags(bucket: string, tags: Record<string, string>): Promise<void> {
+    await this.headBucket(bucket);
+    await this.run('UPDATE bucket_settings SET bucketTags = ? WHERE bucket = ?', [JSON.stringify(tags), bucket]);
+  }
+
+  async getBucketTags(bucket: string): Promise<Record<string, string>> {
+    await this.headBucket(bucket);
+    const row = await this.get('SELECT bucketTags FROM bucket_settings WHERE bucket = ?', [bucket]);
+    return row?.bucketTags ? JSON.parse(row.bucketTags) : {};
+  }
+
+  async deleteBucketTags(bucket: string): Promise<void> {
+    await this.headBucket(bucket);
+    await this.run('UPDATE bucket_settings SET bucketTags = NULL WHERE bucket = ?', [bucket]);
   }
 
   async listObjectsV2(bucketName: string, prefix?: string): Promise<any[]> {
