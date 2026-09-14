@@ -125,4 +125,15 @@ describe('S3 HTTP routes', () => {
     expect(blocked.statusCode).toBe(403);
     expect(blocked.body).toContain('<Code>AccessDenied</Code>');
   });
+
+  it('lists object versions over HTTP', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}?versioning`, headers: { 'content-type': 'text/xml' }, payload: '<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>' });
+    await app.inject({ method: 'PUT', url: `/${bucket}/versioned.txt`, headers: { 'content-type': 'text/plain' }, payload: 'one' });
+    await app.inject({ method: 'PUT', url: `/${bucket}/versioned.txt`, headers: { 'content-type': 'text/plain' }, payload: 'two' });
+    const versions = await app.inject({ method: 'GET', url: `/${bucket}?versions` });
+    expect(versions.statusCode).toBe(200);
+    expect(versions.body).toContain('<Key>versioned.txt</Key>');
+    expect((versions.body.match(/<VersionId>/g) || []).length).toBe(2);
+  });
 });

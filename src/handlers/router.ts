@@ -236,6 +236,21 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function listObjectsV2(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const query = request.query as Record<string, string | undefined>;
+    if (query.versions !== undefined) {
+      const versions = await s3.listObjectVersions(params.bucket, query.prefix);
+      return reply.type('application/xml').send(wrapXml('ListVersionsResult', {
+        Name: params.bucket,
+        Versions: versions.map(version => ({
+          Key: version.Key,
+          VersionId: version.VersionId,
+          IsLatest: version.IsLatest,
+          LastModified: version.LastModified.toISOString(),
+          ETag: version.ETag,
+          Size: version.Size,
+          StorageClass: version.StorageClass,
+        })),
+      }));
+    }
     if (query.uploads !== undefined) {
       const result = await s3.listMultipartUploads({ bucket: params.bucket, prefix: query.prefix, maxUploads: query['max-uploads'] ? Number(query['max-uploads']) : undefined });
       return reply.type('application/xml').send(wrapXml('ListMultipartUploadsResult', {
