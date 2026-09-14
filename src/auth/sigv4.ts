@@ -29,11 +29,11 @@ export function verifySigV4(request: SigV4Request, credentials: SigV4Credentials
 
   const timestamp = first(request.headers['x-amz-date']);
   if (!timestamp || !/^\d{8}T\d{6}Z$/.test(timestamp) || timestamp.slice(0, 8) !== date) return false;
-  const requestTime = Date.parse(`${timestamp.slice(0, 8)}T${timestamp.slice(9, 15)}Z`);
+  const requestTime = parseTimestamp(timestamp);
   const now = (request.now || new Date()).getTime();
   if (!Number.isFinite(requestTime) || Math.abs(now - requestTime) > 900_000) return false;
 
-  const payloadHash = first(request.headers['x-amz-content-sha256']) || sha256(request.body || Buffer.alloc(0));
+  const payloadHash = first(request.headers['x-amz-content-sha256']) || 'UNSIGNED-PAYLOAD';
   const canonicalHeaders = signedHeaders.map(name => `${name}:${normalizeHeader(request.headers[name])}\n`).join('');
   const canonicalRequest = [
     request.method.toUpperCase(),
@@ -61,7 +61,7 @@ export function verifyPresignedSigV4(request: SigV4Request, credentials: SigV4Cr
   if (algorithm !== 'AWS4-HMAC-SHA256' || !credentialValue || !timestamp || !Number.isFinite(expires) || expires < 0 || !signedHeaders || !signature) return false;
   const credential = credentialValue.split('/');
   if (credential.length !== 5 || credential[0] !== credentials.accessKeyId || credential[2] !== credentials.region || credential[3] !== (credentials.service || 's3') || credential[4] !== 'aws4_request') return false;
-  const signedAt = Date.parse(`${timestamp.slice(0, 8)}T${timestamp.slice(9, 15)}Z`);
+  const signedAt = parseTimestamp(timestamp);
   const now = (request.now || new Date()).getTime();
   if (!/^\d{8}T\d{6}Z$/.test(timestamp) || !Number.isFinite(signedAt) || now < signedAt - 300_000 || now > signedAt + expires * 1000) return false;
 
@@ -95,6 +95,11 @@ function normalizeHeader(value: string | string[] | undefined): string {
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function parseTimestamp(value: string): number {
+  if (!/^\d{8}T\d{6}Z$/.test(value)) return Number.NaN;
+  return Date.parse(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T${value.slice(9, 11)}:${value.slice(11, 13)}:${value.slice(13, 15)}Z`);
 }
 
 function sha256(value: string | Buffer): string {

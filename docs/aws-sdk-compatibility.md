@@ -1,0 +1,44 @@
+# AWS S3 Core Compatibility
+
+S3MINI targets the common S3 protocol used by AWS S3, MinIO, and Backblaze B2's
+S3-compatible API. The primary acceptance client is AWS SDK for JavaScript v3
+(`@aws-sdk/client-s3`) against a self-hosted path-style endpoint.
+
+## Client Defaults
+
+```ts
+const client = new S3Client({
+  endpoint: 'http://localhost:9000',
+  region: 'us-east-1',
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: 's3mini',
+    secretAccessKey: 's3mini-secret',
+  },
+});
+```
+
+## Core Acceptance Matrix
+
+| Operation | AWS SDK command | Target |
+| --- | --- | --- |
+| Create bucket | `CreateBucketCommand` | Required |
+| Head bucket | `HeadBucketCommand` | Required |
+| Delete bucket | `DeleteBucketCommand` | Required |
+| Put object | `PutObjectCommand` | Required |
+| Get object | `GetObjectCommand` | Required |
+| Head object | `HeadObjectCommand` | Required |
+| Delete object | `DeleteObjectCommand` | Required |
+| List buckets | `ListBucketsCommand` | Required |
+| List objects | `ListObjectsV2Command` | Required |
+| Copy object | `CopyObjectCommand` | Required |
+| Multipart upload | Create/upload/list/complete/abort | Required |
+| Bucket versioning | Put/get versioning | Required |
+| Object tagging | Put/get/delete tagging | Required |
+
+Authentication, XML error codes, HTTP status codes, ETags, metadata headers,
+path-style addressing, pagination, and conditional requests are part of each
+operation's compatibility requirement.
+
+Features outside this core target remain explicitly unsupported until they have
+dedicated behavior and SDK tests.

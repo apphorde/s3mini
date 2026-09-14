@@ -118,8 +118,12 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
 
   async function putObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
-    const key = (request.params as any)['*'] as string;
+    const key = normalizeObjectKey((request.params as any)['*'] as string);
     const query = request.query as Record<string, string | undefined>;
+    if (!key) {
+      await s3.createBucket(params.bucket, query.locationConstraint);
+      return reply.code(200).send();
+    }
     if (query.uploadId && query.partNumber) {
       const copySource = request.headers['x-amz-copy-source'];
       if (copySource) {
@@ -188,8 +192,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
 
   async function getObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
-    const key = (request.params as any)['*'] as string;
+    const key = normalizeObjectKey((request.params as any)['*'] as string);
     const query = request.query as Record<string, string | undefined>;
+    if (!key) return listObjectsV2(request, reply);
     if (query.uploadId && !query.tagging) {
       const parts = await s3.listParts({ bucket: params.bucket, key, uploadId: query.uploadId, partNumberMarker: query['part-number-marker'] ? Number(query['part-number-marker']) : undefined });
       return reply.type('application/xml').send(wrapXml('ListPartsResult', {
@@ -251,7 +256,8 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
 
   async function headObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
-    const key = (request.params as any)['*'] as string;
+    const key = normalizeObjectKey((request.params as any)['*'] as string);
+    if (!key) return headBucket(request, reply);
     const query = request.query as Record<string, string | undefined>;
     const { metadata } = await s3.getObject(params.bucket, key, query.versionId);
 
@@ -270,8 +276,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
 
   async function deleteObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
-    const key = (request.params as any)['*'] as string;
+    const key = normalizeObjectKey((request.params as any)['*'] as string);
     const query = request.query as Record<string, string | undefined>;
+    if (!key) return deleteBucket(request, reply);
     if (query.uploadId) {
       await s3.abortMultipartUpload(params.bucket, key, query.uploadId);
       return reply.code(204).send();
@@ -360,7 +367,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   fastify.put('/:bucket/*', putObject);
   fastify.post('/:bucket/*', async (request, reply) => {
     const params = request.params as { bucket: string };
-    const key = (request.params as any)['*'] as string;
+    const key = normalizeObjectKey((request.params as any)['*'] as string);
     const query = request.query as Record<string, string | undefined>;
     if (query.restore !== undefined) {
       await s3.restoreObject(params.bucket, key);
@@ -402,6 +409,10 @@ function toXml(obj: any): string {
 
 function escapeXml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function normalizeObjectKey(key: string): string {
+  return key.replace(/^\/+/, '');
 }
 
 function wrapXml(root: string, content: any): string {
