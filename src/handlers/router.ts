@@ -4,7 +4,7 @@ import type { FakeS3 } from '../storage/fakes3.js';
 import { S3Error } from '../types/models.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
-  fastify.addContentTypeParser(['application/octet-stream', 'application/xml', 'text/xml'], { parseAs: 'buffer' }, (_request, body, done) => {
+  fastify.addContentTypeParser(['application/octet-stream', 'application/xml', 'text/xml', 'text/csv'], { parseAs: 'buffer' }, (_request, body, done) => {
     done(null, body);
   });
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
@@ -330,6 +330,15 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     const params = request.params as { bucket: string };
     const key = (request.params as any)['*'] as string;
     const query = request.query as Record<string, string | undefined>;
+    if (query.restore !== undefined) {
+      await s3.restoreObject(params.bucket, key);
+      return reply.code(202).header('x-amz-restore', 'ongoing-request="false"').send();
+    }
+    if (query.select !== undefined) {
+      const expression = readXmlTag(String(request.body || ''), 'Expression') || 'SELECT * FROM S3Object';
+      const body = await s3.selectObjectContent(params.bucket, key, expression);
+      return reply.type('application/octet-stream').send(body);
+    }
     if (query.uploads !== undefined) {
       const result = await s3.createMultipartUpload(params.bucket, key);
       return reply.type('application/xml').send(wrapXml('InitiateMultipartUploadResult', { Bucket: result.bucket, Key: result.key, UploadId: result.uploadId }));

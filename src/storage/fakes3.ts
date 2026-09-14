@@ -292,6 +292,18 @@ export class FakeS3 {
     });
   }
 
+  async restoreObject(bucket: string, key: string): Promise<void> {
+    await this.headBucket(bucket);
+    await this.getObject(bucket, key);
+  }
+
+  async selectObjectContent(bucket: string, key: string, expression: string): Promise<Buffer> {
+    if (!/^\s*SELECT\s+\*\s+FROM\s+S3Object\s*;?\s*$/i.test(expression)) {
+      throw new S3Error('InvalidExpression', 'Only SELECT * FROM S3Object is supported.', 400, bucket, key);
+    }
+    return (await this.getObject(bucket, key)).data;
+  }
+
   async deleteObject(bucketName: string, key: string): Promise<void> {
     this.validateKey(key);
     const found = await this.get('SELECT id, objectLockMode, retainUntil, legalHold FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);

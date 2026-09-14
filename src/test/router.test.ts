@@ -151,4 +151,14 @@ describe('S3 HTTP routes', () => {
     const denied = await app.inject({ method: 'OPTIONS', url: `/${bucket}/object`, headers: { origin: 'https://other.example', 'access-control-request-method': 'GET' } });
     expect(denied.statusCode).toBe(403);
   });
+
+  it('supports restore and basic select object content', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/data.csv`, headers: { 'content-type': 'text/csv' }, payload: 'id,name\n1,one\n' });
+    const restored = await app.inject({ method: 'POST', url: `/${bucket}/data.csv?restore`, headers: { 'content-type': 'application/xml' }, payload: '<RestoreObjectRequest />' });
+    expect(restored.statusCode).toBe(202);
+    const selected = await app.inject({ method: 'POST', url: `/${bucket}/data.csv?select&select-type=2`, headers: { 'content-type': 'application/xml' }, payload: '<SelectObjectContentRequest><Expression>SELECT * FROM S3Object</Expression></SelectObjectContentRequest>' });
+    expect(selected.statusCode).toBe(200);
+    expect(selected.body).toContain('id,name');
+  });
 });
