@@ -343,7 +343,7 @@ function parseJsonOrXml(body: string): unknown {
   try { return JSON.parse(body); } catch { return { raw: body }; }
 }
 
-function configurationQuery(query: Record<string, string | undefined>): 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration' | undefined {
+function configurationQuery(query: Record<string, string | undefined>): 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration' | 'acl' | undefined {
   const map = {
     cors: 'corsConfiguration',
     lifecycle: 'lifecycleConfiguration',
@@ -353,6 +353,7 @@ function configurationQuery(query: Record<string, string | undefined>): 'corsCon
     logging: 'loggingStatus',
     notification: 'notificationConfiguration',
     replication: 'replicationConfiguration',
+    acl: 'acl',
   } as const;
   const key = Object.keys(map).find(name => query[name] !== undefined) as keyof typeof map | undefined;
   return key ? map[key] : undefined;

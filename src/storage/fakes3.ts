@@ -102,7 +102,9 @@ export class FakeS3 {
       loggingStatus TEXT,
       notificationConfiguration TEXT,
       replicationConfiguration TEXT
+      ,acl TEXT
     )`);
+    try { await this.run('ALTER TABLE bucket_settings ADD COLUMN acl TEXT'); } catch { /* Existing databases already have the column. */ }
     await this.run(`CREATE TABLE IF NOT EXISTS object_tags (
       bucket TEXT NOT NULL,
       key TEXT NOT NULL,
@@ -352,18 +354,18 @@ export class FakeS3 {
     return row.locationConstraint;
   }
 
-  async putBucketConfiguration(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration', value: unknown): Promise<void> {
+  async putBucketConfiguration(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration' | 'acl', value: unknown): Promise<void> {
     await this.headBucket(bucket);
     await this.run(`UPDATE bucket_settings SET ${name} = ? WHERE bucket = ?`, [JSON.stringify(value), bucket]);
   }
 
-  async getBucketConfiguration<T>(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration'): Promise<T | undefined> {
+  async getBucketConfiguration<T>(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration' | 'acl'): Promise<T | undefined> {
     await this.headBucket(bucket);
     const row = await this.get(`SELECT ${name} FROM bucket_settings WHERE bucket = ?`, [bucket]);
     return row?.[name] ? JSON.parse(row[name]) as T : undefined;
   }
 
-  async deleteBucketConfiguration(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration'): Promise<void> {
+  async deleteBucketConfiguration(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration' | 'acl'): Promise<void> {
     await this.headBucket(bucket);
     await this.run(`UPDATE bucket_settings SET ${name} = NULL WHERE bucket = ?`, [bucket]);
   }
