@@ -52,13 +52,22 @@ describe('AWS SDK v3 compatibility', () => {
     await client.send(new CreateBucketCommand({ Bucket: bucket }));
     await client.send(new HeadBucketCommand({ Bucket: bucket }));
     await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'sdk.txt', Body: 'hello SDK', ContentType: 'text/plain' }));
+    await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'a.txt', Body: 'a' }));
+    await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'b.txt', Body: 'b' }));
 
     const listed = await client.send(new ListObjectsV2Command({ Bucket: bucket }));
-    expect(listed.Contents?.map(object => object.Key)).toEqual(['sdk.txt']);
+    expect(listed.Contents?.map(object => object.Key)).toEqual(['a.txt', 'b.txt', 'sdk.txt']);
+    const firstPage = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }));
+    expect(firstPage.IsTruncated).toBe(true);
+    expect(firstPage.NextContinuationToken).toBeTruthy();
+    const secondPage = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1, ContinuationToken: firstPage.NextContinuationToken }));
+    expect(secondPage.Contents?.map(object => object.Key)).toEqual(['b.txt']);
     const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
     expect(await object.Body?.transformToString()).toBe('hello SDK');
 
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'a.txt' }));
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'b.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'already-missing.txt' }));
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
   });

@@ -401,7 +401,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
 
 function toXml(obj: any): string {
     if (typeof obj !== 'object' || obj === null) return escapeXml(String(obj));
-    return Object.entries(obj).map(([key, val]) => {
+    return Object.entries(obj).filter(([, val]) => val !== undefined && val !== null).map(([key, val]) => {
         if (Array.isArray(val)) {
             return val.map(item => `<${key}>${toXml(item)}</${key}>`).join('');
         }
