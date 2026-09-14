@@ -160,6 +160,30 @@ export class FakeS3 {
     }));
   }
 
+  async applyLifecycle(bucket: string): Promise<void> {
+    const configuration = await this.getBucketConfiguration<{ rules?: Array<any> }>(bucket, 'lifecycleConfiguration');
+    if (!configuration?.rules?.length) return;
+    const rows = await this.all('SELECT * FROM objs WHERE bucket = ?', [bucket]);
+    const now = Date.now();
+    for (const row of rows as any[]) {
+      const rule = configuration.rules.find(candidate => {
+        if (candidate.status && candidate.status !== 'Enabled') return false;
+        const prefix = candidate.filter?.prefix ?? candidate.prefix ?? '';
+        if (prefix && !row.key.startsWith(prefix)) return false;
+        const expiration = candidate.expiration;
+        if (!expiration) return false;
+        if (expiration.date && now < Date.parse(expiration.date)) return false;
+        if (expiration.days !== undefined && now < row.lastModified + Number(expiration.days) * 86_400_000) return false;
+        return true;
+      });
+      if (!rule) continue;
+      await this.run('DELETE FROM objs WHERE id = ?', [row.id]);
+      await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, row.key, row.versionId]);
+      await fs.rm(this.versionPath(bucket, row.key, row.versionId), { force: true });
+      await fs.rm(path.join(STORAGE_BASE, bucket, row.key), { force: true });
+    }
+  }
+
   async createBucket(name: string, locationConstraint: string = 'us-east-1'): Promise<void> {
     if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(name) || name.includes('..') || name.includes('.-') || name.includes('-.')) {
       throw new S3Error('InvalidBucketName', 'The bucket name is invalid.', 400, name);
@@ -256,6 +280,7 @@ export class FakeS3 {
 
   async getObject(bucketName: string, key: string, versionId?: string): Promise<{ data: Buffer, metadata: ObjectMetadata }> {
     this.validateKey(key);
+    await this.applyLifecycle(bucketName);
     const row = versionId
       ? await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [bucketName, key, versionId])
       : await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY id DESC LIMIT 1', [bucketName, key]);
@@ -454,6 +479,7 @@ export class FakeS3 {
 
   async listObjectsV2Advanced(request: ListObjectsV2Request): Promise<ListObjectsV2Result> {
     await this.headBucket(request.bucket);
+    await this.applyLifecycle(request.bucket);
     const rows = await this.all('SELECT * FROM objs WHERE bucket = ? ORDER BY key ASC', [request.bucket]);
     const prefix = request.prefix || '';
     const delimiter = request.delimiter;

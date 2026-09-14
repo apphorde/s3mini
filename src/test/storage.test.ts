@@ -139,6 +139,16 @@ describe('FakeS3', () => {
     expect((await s3.listObjectVersions(bucket, 'marker'))[0].IsDeleteMarker).toBe(true);
   });
 
+  it('applies enabled lifecycle expiration rules during reads', async () => {
+    await s3.createBucket(bucket);
+    await s3.putBucketConfiguration(bucket, 'lifecycleConfiguration', {
+      rules: [{ status: 'Enabled', filter: { prefix: 'tmp/' }, expiration: { days: 0 } }],
+    });
+    await s3.putObject(bucket, 'tmp/expired.txt', Buffer.from('expired'), {});
+    await s3.putObject(bucket, 'keep.txt', Buffer.from('keep'), {});
+    expect((await s3.listObjectsV2Advanced({ bucket })).contents.map(item => item.key)).toEqual(['keep.txt']);
+  });
+
   it('copies objects and serves byte ranges', async () => {
     await s3.createBucket(bucket);
     await s3.putObject(bucket, 'source.txt', Buffer.from('abcdef'), { contentType: 'text/plain' });
