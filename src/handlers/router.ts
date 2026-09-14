@@ -2,7 +2,7 @@ import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import crypto from 'node:crypto';
 import type { FakeS3 } from '../storage/fakes3.js';
 import { S3Error } from '../types/models.js';
-import { verifySigV4 } from '../auth/sigv4.js';
+import { verifyPresignedSigV4, verifySigV4 } from '../auth/sigv4.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   fastify.addContentTypeParser(['application/octet-stream', 'application/xml', 'text/xml', 'text/csv'], { parseAs: 'buffer' }, (_request, body, done) => {
@@ -10,9 +10,13 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   });
   fastify.addHook('preValidation', async (request) => {
     const authorization = request.headers.authorization;
-    if (!authorization) return;
+    const hasPresign = new URL(request.raw.url || '/', 'http://localhost').searchParams.has('X-Amz-Algorithm');
     const accessKeyId = process.env.S3MINI_ACCESS_KEY;
     const secretAccessKey = process.env.S3MINI_SECRET_KEY;
+    if (hasPresign && (!accessKeyId || !secretAccessKey || !verifyPresignedSigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, { accessKeyId: accessKeyId || '', secretAccessKey: secretAccessKey || '', region: process.env.S3MINI_REGION || 'us-east-1' }))) {
+      throw new S3Error('SignatureDoesNotMatch', 'The presigned URL signature does not match.', 403);
+    }
+    if (!authorization) return;
     if (!accessKeyId || !secretAccessKey || !verifySigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, { accessKeyId, secretAccessKey, region: process.env.S3MINI_REGION || 'us-east-1' })) {
       throw new S3Error('SignatureDoesNotMatch', 'The request signature does not match.', 403);
     }

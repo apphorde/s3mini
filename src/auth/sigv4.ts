@@ -50,6 +50,29 @@ export function verifySigV4(request: SigV4Request, credentials: SigV4Credentials
   return timingSafeEqual(expected, signature);
 }
 
+export function verifyPresignedSigV4(request: SigV4Request, credentials: SigV4Credentials): boolean {
+  const url = new URL(request.url, 'http://localhost');
+  const algorithm = url.searchParams.get('X-Amz-Algorithm');
+  const credentialValue = url.searchParams.get('X-Amz-Credential');
+  const timestamp = url.searchParams.get('X-Amz-Date');
+  const expires = Number(url.searchParams.get('X-Amz-Expires'));
+  const signedHeaders = url.searchParams.get('X-Amz-SignedHeaders');
+  const signature = url.searchParams.get('X-Amz-Signature');
+  if (algorithm !== 'AWS4-HMAC-SHA256' || !credentialValue || !timestamp || !Number.isFinite(expires) || expires < 0 || !signedHeaders || !signature) return false;
+  const credential = credentialValue.split('/');
+  if (credential.length !== 5 || credential[0] !== credentials.accessKeyId || credential[2] !== credentials.region || credential[3] !== (credentials.service || 's3') || credential[4] !== 'aws4_request') return false;
+  const signedAt = Date.parse(`${timestamp.slice(0, 8)}T${timestamp.slice(9, 15)}Z`);
+  const now = (request.now || new Date()).getTime();
+  if (!/^\d{8}T\d{6}Z$/.test(timestamp) || !Number.isFinite(signedAt) || now < signedAt - 300_000 || now > signedAt + expires * 1000) return false;
+
+  const canonicalHeaders = signedHeaders.split(';').map(name => `${name}:${normalizeHeader(request.headers[name])}\n`).join('');
+  const canonicalRequest = [request.method.toUpperCase(), canonicalPath(request.url), canonicalQuery(request.url, true), canonicalHeaders, signedHeaders, 'UNSIGNED-PAYLOAD'].join('\n');
+  const scope = `${credential[1]}/${credential[2]}/${credential[3]}/aws4_request`;
+  const stringToSign = [algorithm, timestamp, scope, sha256(canonicalRequest)].join('\n');
+  const signingKey = hmac(hmac(hmac(hmac(`AWS4${credentials.secretAccessKey}`, credential[1]), credential[2]), credential[3]), 'aws4_request');
+  return timingSafeEqual(hmac(signingKey, stringToSign).toString('hex'), signature);
+}
+
 function parseFields(value: string): Record<string, string> {
   return Object.fromEntries(value.split(/,\s*/).map(part => {
     const index = part.indexOf('=');
@@ -61,9 +84,9 @@ function canonicalPath(url: string): string {
   return (url.split('?')[0] || '/').split('/').map(segment => encodeURIComponent(decodeURIComponent(segment))).join('/');
 }
 
-function canonicalQuery(url: string): string {
+function canonicalQuery(url: string, omitSignature = false): string {
   const query = new URL(url, 'http://localhost').searchParams;
-  return [...query.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
+  return [...query.entries()].filter(([key]) => !omitSignature || key !== 'X-Amz-Signature').sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
 }
 
 function normalizeHeader(value: string | string[] | undefined): string {
