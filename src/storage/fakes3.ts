@@ -232,6 +232,30 @@ export class FakeS3 {
     return { data, metadata };
   }
 
+  async getObjectRange(bucketName: string, key: string, start: number, end?: number): Promise<{ data: Buffer, metadata: ObjectMetadata, totalSize: number }> {
+    const object = await this.getObject(bucketName, key);
+    if (start < 0 || start >= object.data.length || (end !== undefined && end < start)) {
+      throw new S3Error('InvalidRange', 'The requested range is not satisfiable.', 416, bucketName, key);
+    }
+    return {
+      data: object.data.subarray(start, end === undefined ? undefined : end + 1),
+      metadata: object.metadata,
+      totalSize: object.data.length,
+    };
+  }
+
+  async copyObject(sourceBucket: string, sourceKey: string, destinationBucket: string, destinationKey: string): Promise<ObjectMetadata> {
+    const source = await this.getObject(sourceBucket, sourceKey);
+    return this.putObject(destinationBucket, destinationKey, source.data, {
+      contentType: source.metadata.contentType,
+      contentDisposition: source.metadata.contentDisposition,
+      contentEncoding: source.metadata.contentEncoding,
+      cacheControl: source.metadata.cacheControl,
+      expires: source.metadata.expires,
+      storageClass: source.metadata.storageClass,
+    });
+  }
+
   async deleteObject(bucketName: string, key: string): Promise<void> {
     const found = await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     if (!found) throw new S3Error('NoSuchKey', 'Object not found', 404, bucketName, key);

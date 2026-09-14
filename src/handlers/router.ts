@@ -78,6 +78,14 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function putObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const key = (request.params as any)['*'] as string;
+    const copySource = request.headers['x-amz-copy-source'];
+    if (copySource) {
+      const source = decodeURIComponent(String(copySource)).replace(/^\//, '').split('/');
+      const sourceBucket = source.shift();
+      if (!sourceBucket || !source.length) throw new S3Error('InvalidRequest', 'x-amz-copy-source is invalid.', 400);
+      const obj = await s3.copyObject(sourceBucket, source.join('/'), params.bucket, key);
+      return reply.type('application/xml').code(200).send(wrapXml('CopyObjectResult', { ETag: obj.etag, LastModified: obj.lastModified.toISOString() }));
+    }
     const body = request.body as Buffer;
 
     const meta: any = {};
@@ -94,12 +102,38 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function getObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const key = (request.params as any)['*'] as string;
-    const { data, metadata } = await s3.getObject(params.bucket, key);
+    const original = await s3.getObject(params.bucket, key);
+    const ifMatch = request.headers['if-match'];
+    const ifNoneMatch = request.headers['if-none-match'];
+    if (ifMatch && ifMatch !== '*' && !String(ifMatch).split(',').map(value => value.trim()).includes(original.metadata.etag)) {
+      throw new S3Error('PreconditionFailed', 'At least one of the preconditions you specified did not hold.', 412, params.bucket, key);
+    }
+    if (ifNoneMatch && (ifNoneMatch === '*' || String(ifNoneMatch).split(',').map(value => value.trim()).includes(original.metadata.etag))) {
+      return reply.code(304).header('ETag', original.metadata.etag).send();
+    }
+    let data = original.data;
+    let metadata = original.metadata;
+    let status = 200;
+    const range = request.headers.range;
+    let contentRange: string | undefined;
+    if (range) {
+      const match = /^bytes=(\d+)-(\d*)$/.exec(String(range));
+      if (!match) throw new S3Error('InvalidRange', 'The requested range is not satisfiable.', 416, params.bucket, key);
+      const start = Number(match[1]);
+      const end = match[2] ? Number(match[2]) : undefined;
+      const ranged = await s3.getObjectRange(params.bucket, key, start, end);
+      data = ranged.data;
+      contentRange = `bytes ${start}-${start + data.length - 1}/${ranged.totalSize}`;
+      status = 206;
+    }
 
     reply.type(metadata.contentType || 'application/octet-stream')
       .header('ETag', metadata.etag)
       .header('Last-Modified', metadata.lastModified.toUTCString())
-      .send(data);
+      .header('Accept-Ranges', 'bytes')
+      .code(status);
+    if (contentRange) reply.header('Content-Range', contentRange);
+    reply.send(data);
   }
 
   async function headObject(request: FastifyRequest, reply: FastifyReply) {

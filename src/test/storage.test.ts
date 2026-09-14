@@ -119,4 +119,14 @@ describe('FakeS3', () => {
     await s3.deleteBucketConfiguration(bucket, 'corsConfiguration');
     expect(await s3.getBucketConfiguration(bucket, 'corsConfiguration')).toBeUndefined();
   });
+
+  it('copies objects and serves byte ranges', async () => {
+    await s3.createBucket(bucket);
+    await s3.putObject(bucket, 'source.txt', Buffer.from('abcdef'), { contentType: 'text/plain' });
+    const copied = await s3.copyObject(bucket, 'source.txt', bucket, 'copy.txt');
+    expect(copied.contentType).toBe('text/plain');
+    const ranged = await s3.getObjectRange(bucket, 'copy.txt', 1, 3);
+    expect(ranged.data.toString()).toBe('bcd');
+    expect(ranged.totalSize).toBe(6);
+  });
 });
