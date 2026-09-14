@@ -22,6 +22,13 @@ describe('FakeS3', () => {
     expect(result.find((item) => item.name === bucket)?.locationConstraint).toBe('eu-west-1');
   });
 
+  it('rejects invalid bucket names, locations, and traversal keys', async () => {
+    await expect(s3.createBucket('Bad_Name')).rejects.toMatchObject({ code: 'InvalidBucketName' });
+    await expect(s3.createBucket('valid-bucket', 'moon-1')).rejects.toMatchObject({ code: 'InvalidLocationConstraint' });
+    await s3.createBucket(bucket);
+    await expect(s3.putObject(bucket, '../outside', Buffer.from('x'), {})).rejects.toMatchObject({ code: 'InvalidObjectName' });
+  });
+
   it('rejects duplicate buckets', async () => {
     await s3.createBucket(bucket);
     await expect(s3.createBucket(bucket)).rejects.toMatchObject({ code: 'BucketAlreadyExists' });

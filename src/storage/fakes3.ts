@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import crypto from 'crypto';
 import type { Bucket, ObjectMetadata, ObjectSummary } from '../types/models.js';
 import { S3Error } from '../types/models.js';
+import { VALID_LOCATION_CONSTRAINTS } from '../types/models.js';
 import type {
   CompleteMultipartUploadRequest,
   CompleteMultipartUploadResult,
@@ -30,6 +31,12 @@ export class FakeS3 {
 
   private versionPath(bucket: string, key: string, versionId: string): string {
     return path.join(STORAGE_BASE, bucket, '.versions', versionId, key);
+  }
+
+  private validateKey(key: string): void {
+    if (!key || path.isAbsolute(key) || key.split('/').some(part => part === '..')) {
+      throw new S3Error('InvalidObjectName', 'The object key is invalid.', 400, undefined, key);
+    }
   }
 
   async init(): Promise<void> {
@@ -147,6 +154,12 @@ export class FakeS3 {
   }
 
   async createBucket(name: string, locationConstraint: string = 'us-east-1'): Promise<void> {
+    if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(name) || name.includes('..') || name.includes('.-') || name.includes('-.')) {
+      throw new S3Error('InvalidBucketName', 'The bucket name is invalid.', 400, name);
+    }
+    if (!VALID_LOCATION_CONSTRAINTS.includes(locationConstraint)) {
+      throw new S3Error('InvalidLocationConstraint', 'The location constraint is invalid.', 400, name);
+    }
     const exists = await this.get('SELECT name FROM buckets WHERE name = ?', [name]);
     if (exists) throw new S3Error('BucketAlreadyExists', 'Bucket already exists.', 409, name);
     await this.run('INSERT INTO buckets (name, locationConstraint, creationDate) VALUES (?, ?, ?)', [name, locationConstraint, Date.now()]);
@@ -191,6 +204,7 @@ export class FakeS3 {
   }
 
   async putObject(bucketName: string, key: string, body: Buffer, meta: any): Promise<ObjectMetadata> {
+    this.validateKey(key);
     const b = await this.get('SELECT name FROM buckets WHERE name = ?', [bucketName]);
     if (!b) throw new S3Error('NoSuchBucket', 'Bucket not found', 404, bucketName);
 
@@ -232,6 +246,7 @@ export class FakeS3 {
   }
 
   async getObject(bucketName: string, key: string, versionId?: string): Promise<{ data: Buffer, metadata: ObjectMetadata }> {
+    this.validateKey(key);
     const row = versionId
       ? await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [bucketName, key, versionId])
       : await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY id DESC LIMIT 1', [bucketName, key]);
@@ -278,6 +293,7 @@ export class FakeS3 {
   }
 
   async deleteObject(bucketName: string, key: string): Promise<void> {
+    this.validateKey(key);
     const found = await this.get('SELECT id, objectLockMode, retainUntil, legalHold FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     if (!found) throw new S3Error('NoSuchKey', 'Object not found', 404, bucketName, key);
     if (found.legalHold === 'ON' || (found.retainUntil && found.retainUntil > Date.now())) throw new S3Error('AccessDenied', 'Object retention prevents deletion.', 403, bucketName, key);
@@ -317,6 +333,7 @@ export class FakeS3 {
   }
 
   async deleteObjectVersion(bucket: string, key: string, versionId: string): Promise<void> {
+    this.validateKey(key);
     await this.headBucket(bucket);
     const row = await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
     if (!row) throw new S3Error('NoSuchVersion', 'The specified version does not exist.', 404, bucket, key);
