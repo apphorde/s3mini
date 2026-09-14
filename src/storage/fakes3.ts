@@ -4,6 +4,21 @@ import fs from 'fs/promises';
 import crypto from 'crypto';
 import type { Bucket, ObjectMetadata, ObjectSummary } from '../types/models.js';
 import { S3Error } from '../types/models.js';
+import type {
+  CompleteMultipartUploadRequest,
+  CompleteMultipartUploadResult,
+  CreateMultipartUploadResult,
+  ListObjectsV2Request,
+  ListObjectsV2Result,
+  ListPartsRequest,
+  ListPartsResult,
+  ListMultipartUploadsRequest,
+  ListMultipartUploadsResult,
+  MultipartPart,
+  ObjectSummary as ContractObjectSummary,
+  PutObjectRequest,
+  UploadPartRequest,
+} from '../types/contracts.js';
 
 export const STORAGE_BASE = '/data/objects';
 
@@ -55,6 +70,22 @@ export class FakeS3 {
       name TEXT NOT NULL,
       value TEXT NOT NULL,
       UNIQUE(bucket, key, name)
+    )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS multipart_uploads (
+      uploadId TEXT PRIMARY KEY,
+      bucket TEXT NOT NULL,
+      key TEXT NOT NULL,
+      initiated INTEGER NOT NULL,
+      storageClass TEXT NOT NULL DEFAULT 'STANDARD'
+    )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS multipart_parts (
+      uploadId TEXT NOT NULL,
+      partNumber INTEGER NOT NULL,
+      etag TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      lastModified INTEGER NOT NULL,
+      body BLOB NOT NULL,
+      PRIMARY KEY(uploadId, partNumber)
     )`);
     this.initialized = true;
   }
@@ -191,5 +222,134 @@ export class FakeS3 {
       Key: r.key, LastModified: new Date(r.lastModified), ETag: r.etag,
       Size: r.size, StorageClass: r.storageClass, Owner: { ID: r.ownerId, DisplayName: r.ownerDisplayName }
     }));
+  }
+
+  async listObjectsV2Advanced(request: ListObjectsV2Request): Promise<ListObjectsV2Result> {
+    await this.headBucket(request.bucket);
+    const rows = await this.all('SELECT * FROM objs WHERE bucket = ? ORDER BY key ASC', [request.bucket]);
+    const prefix = request.prefix || '';
+    const delimiter = request.delimiter;
+    const marker = request.continuationToken
+      ? Buffer.from(request.continuationToken, 'base64url').toString('utf8')
+      : request.startAfter;
+    const entries = new Map<string, ContractObjectSummary | string>();
+
+    for (const row of rows as any[]) {
+      if (!row.key.startsWith(prefix) || (marker && row.key <= marker)) continue;
+      if (delimiter) {
+        const remainder = row.key.slice(prefix.length);
+        const delimiterIndex = remainder.indexOf(delimiter);
+        if (delimiterIndex >= 0) {
+          const commonPrefix = prefix + remainder.slice(0, delimiterIndex + delimiter.length);
+          entries.set(commonPrefix, commonPrefix);
+          continue;
+        }
+      }
+      entries.set(row.key, {
+        key: row.key,
+        etag: row.etag,
+        size: row.size,
+        lastModified: new Date(row.lastModified),
+        storageClass: row.storageClass,
+        owner: { id: row.ownerId, displayName: row.ownerDisplayName },
+      });
+    }
+
+    const ordered = [...entries.entries()].sort(([left], [right]) => left.localeCompare(right));
+    const maxKeys = Math.max(0, Math.min(request.maxKeys ?? 1000, 1000));
+    const page = ordered.slice(0, maxKeys);
+    const isTruncated = ordered.length > page.length;
+    const lastEntry = page[page.length - 1]?.[0];
+    const result: ListObjectsV2Result = {
+      name: request.bucket,
+      prefix: request.prefix,
+      delimiter: request.delimiter,
+      maxKeys,
+      keyCount: page.length,
+      isTruncated,
+      contents: page.flatMap(([, value]) => typeof value === 'string' ? [] : [value]),
+      commonPrefixes: page.flatMap(([, value]) => typeof value === 'string' ? [value] : []),
+      startAfter: request.startAfter,
+    };
+    if (request.continuationToken) result.continuationToken = request.continuationToken;
+    if (isTruncated && lastEntry) result.nextContinuationToken = Buffer.from(lastEntry).toString('base64url');
+    return result;
+  }
+
+  async createMultipartUpload(bucket: string, key: string, storageClass = 'STANDARD'): Promise<CreateMultipartUploadResult> {
+    await this.headBucket(bucket);
+    const uploadId = crypto.randomUUID();
+    await this.run('INSERT INTO multipart_uploads (uploadId, bucket, key, initiated, storageClass) VALUES (?, ?, ?, ?, ?)', [uploadId, bucket, key, Date.now(), storageClass]);
+    return { uploadId, bucket, key };
+  }
+
+  async uploadPart(request: UploadPartRequest): Promise<MultipartPart> {
+    const upload = await this.get('SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?', [request.uploadId, request.bucket, request.key]);
+    if (!upload) throw new S3Error('NoSuchUpload', 'The specified multipart upload does not exist.', 404, request.bucket, request.key);
+    if (request.partNumber < 1 || request.partNumber > 10000) throw new S3Error('InvalidPart', 'Part number must be between 1 and 10000.', 400, request.bucket, request.key);
+    const etag = '"' + crypto.createHash('md5').update(request.body).digest('hex') + '"';
+    const lastModified = Date.now();
+    await this.run('INSERT OR REPLACE INTO multipart_parts (uploadId, partNumber, etag, size, lastModified, body) VALUES (?, ?, ?, ?, ?, ?)', [request.uploadId, request.partNumber, etag, request.body.length, lastModified, request.body]);
+    return { partNumber: request.partNumber, etag, size: request.body.length, lastModified: new Date(lastModified) };
+  }
+
+  async listParts(request: ListPartsRequest): Promise<ListPartsResult> {
+    const upload = await this.get('SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?', [request.uploadId, request.bucket, request.key]);
+    if (!upload) throw new S3Error('NoSuchUpload', 'The specified multipart upload does not exist.', 404, request.bucket, request.key);
+    const rows = await this.all('SELECT * FROM multipart_parts WHERE uploadId = ? AND partNumber > ? ORDER BY partNumber ASC', [request.uploadId, request.partNumberMarker || 0]);
+    const maxParts = Math.max(0, Math.min(request.maxParts ?? 1000, 1000));
+    const page = rows.slice(0, maxParts) as any[];
+    return {
+      bucket: request.bucket,
+      key: request.key,
+      uploadId: request.uploadId,
+      parts: page.map(row => ({ partNumber: row.partNumber, etag: row.etag, size: row.size, lastModified: new Date(row.lastModified) })),
+      isTruncated: rows.length > page.length,
+      nextPartNumberMarker: rows.length > page.length ? page[page.length - 1].partNumber : undefined,
+    };
+  }
+
+  async completeMultipartUpload(request: CompleteMultipartUploadRequest): Promise<CompleteMultipartUploadResult> {
+    const upload = await this.get('SELECT * FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?', [request.uploadId, request.bucket, request.key]);
+    if (!upload) throw new S3Error('NoSuchUpload', 'The specified multipart upload does not exist.', 404, request.bucket, request.key);
+    if (!request.parts.length) throw new S3Error('InvalidRequest', 'At least one part is required.', 400, request.bucket, request.key);
+    const bodies: Buffer[] = [];
+    for (const part of request.parts) {
+      const row = await this.get('SELECT body, etag FROM multipart_parts WHERE uploadId = ? AND partNumber = ?', [request.uploadId, part.partNumber]);
+      if (!row || row.etag !== part.etag) throw new S3Error('InvalidPart', 'One or more requested parts could not be found.', 400, request.bucket, request.key);
+      bodies.push(row.body);
+    }
+    const result = await this.putObject(request.bucket, request.key, Buffer.concat(bodies), {});
+    await this.run('DELETE FROM multipart_parts WHERE uploadId = ?', [request.uploadId]);
+    await this.run('DELETE FROM multipart_uploads WHERE uploadId = ?', [request.uploadId]);
+    return { bucket: request.bucket, key: request.key, etag: result.etag, versionId: result.versionId };
+  }
+
+  async abortMultipartUpload(bucket: string, key: string, uploadId: string): Promise<void> {
+    const upload = await this.get('SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?', [uploadId, bucket, key]);
+    if (!upload) throw new S3Error('NoSuchUpload', 'The specified multipart upload does not exist.', 404, bucket, key);
+    await this.run('DELETE FROM multipart_parts WHERE uploadId = ?', [uploadId]);
+    await this.run('DELETE FROM multipart_uploads WHERE uploadId = ?', [uploadId]);
+  }
+
+  async listMultipartUploads(request: ListMultipartUploadsRequest): Promise<ListMultipartUploadsResult> {
+    await this.headBucket(request.bucket);
+    const rows = await this.all('SELECT * FROM multipart_uploads WHERE bucket = ? ORDER BY key, initiated', [request.bucket]);
+    const filtered = (rows as any[]).filter(row => !request.prefix || row.key.startsWith(request.prefix));
+    return {
+      bucket: request.bucket,
+      uploads: filtered.slice(0, request.maxUploads ?? 1000).map(row => ({
+        uploadId: row.uploadId,
+        bucket: row.bucket,
+        key: row.key,
+        initiated: new Date(row.initiated),
+        initiator: { id: '000000000000000000000000', displayName: 's3mini' },
+        owner: { id: '000000000000000000000000', displayName: 's3mini' },
+        storageClass: row.storageClass,
+        parts: [],
+      })),
+      commonPrefixes: [],
+      isTruncated: filtered.length > (request.maxUploads ?? 1000),
+    };
   }
 }

@@ -53,4 +53,41 @@ describe('FakeS3', () => {
     await s3.createBucket(bucket);
     await expect(s3.deleteObject(bucket, 'missing')).rejects.toMatchObject({ code: 'NoSuchKey' });
   });
+
+  it('lists objects with delimiter and pagination', async () => {
+    await s3.createBucket(bucket);
+    await s3.putObject(bucket, 'a.txt', Buffer.from('a'), {});
+    await s3.putObject(bucket, 'folder/b.txt', Buffer.from('b'), {});
+    await s3.putObject(bucket, 'folder/c.txt', Buffer.from('c'), {});
+
+    const first = await s3.listObjectsV2Advanced({ bucket, delimiter: '/', maxKeys: 1 });
+    expect(first.contents.map(item => item.key)).toEqual(['a.txt']);
+    expect(first.commonPrefixes).toEqual([]);
+    expect(first.isTruncated).toBe(true);
+
+    const second = await s3.listObjectsV2Advanced({ bucket, delimiter: '/', continuationToken: first.nextContinuationToken });
+    expect(second.commonPrefixes).toEqual(['folder/']);
+    expect(second.contents).toHaveLength(0);
+  });
+
+  it('creates, lists, completes, and aborts multipart uploads', async () => {
+    await s3.createBucket(bucket);
+    const upload = await s3.createMultipartUpload(bucket, 'large.bin');
+    const first = await s3.uploadPart({ bucket, key: 'large.bin', uploadId: upload.uploadId, partNumber: 1, body: Buffer.from('hello ') });
+    const second = await s3.uploadPart({ bucket, key: 'large.bin', uploadId: upload.uploadId, partNumber: 2, body: Buffer.from('world') });
+    expect((await s3.listParts({ bucket, key: 'large.bin', uploadId: upload.uploadId })).parts).toHaveLength(2);
+
+    const completed = await s3.completeMultipartUpload({
+      bucket,
+      key: 'large.bin',
+      uploadId: upload.uploadId,
+      parts: [{ partNumber: 1, etag: first.etag }, { partNumber: 2, etag: second.etag }],
+    });
+    expect(completed.etag).toBeTruthy();
+    expect((await s3.getObject(bucket, 'large.bin')).data.toString()).toBe('hello world');
+
+    const aborted = await s3.createMultipartUpload(bucket, 'aborted.bin');
+    await s3.abortMultipartUpload(bucket, 'aborted.bin', aborted.uploadId);
+    await expect(s3.listParts({ bucket, key: 'aborted.bin', uploadId: aborted.uploadId })).rejects.toMatchObject({ code: 'NoSuchUpload' });
+  });
 });
