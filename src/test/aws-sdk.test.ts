@@ -21,6 +21,7 @@ import {
   UploadPartCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import crypto from 'node:crypto';
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerRoutes } from '../handlers/router.js';
@@ -79,6 +80,12 @@ describe('AWS SDK v3 compatibility', () => {
     expect(head.CacheControl).toBe('max-age=60');
     expect(head.Metadata).toEqual({ color: 'blue' });
     await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'sdk.txt', IfMatch: head.ETag }));
+    const ranged = await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'sdk.txt', Range: 'bytes=1-3' }));
+    expect(await ranged.Body?.transformToString()).toBe('ell');
+    const checksumBody = 'checksum SDK';
+    const checksum = crypto.createHash('sha256').update(checksumBody).digest('base64');
+    const checksumPut = await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'checksum.txt', Body: checksumBody, ChecksumSHA256: checksum }));
+    expect(checksumPut.ChecksumSHA256).toBe(checksum);
     const copied = await client.send(new CopyObjectCommand({ Bucket: bucket, CopySource: `${bucket}/sdk.txt`, Key: 'copied.txt' }));
     expect(copied.CopyObjectResult?.ETag).toBeTruthy();
     const copiedObject = await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'copied.txt' }));
@@ -90,6 +97,7 @@ describe('AWS SDK v3 compatibility', () => {
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'a.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'b.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'copied.txt' }));
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'checksum.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'already-missing.txt' }));
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
   });

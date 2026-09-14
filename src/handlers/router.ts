@@ -235,7 +235,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     let data = original.data;
     let metadata = original.metadata;
-    const checksumSha256 = crypto.createHash('sha256').update(original.data).digest('base64');
+    let checksumSha256 = crypto.createHash('sha256').update(original.data).digest('base64');
     let status = 200;
     const range = request.headers.range;
     let contentRange: string | undefined;
@@ -247,6 +247,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       const ranged = await s3.getObjectRange(params.bucket, key, start, end);
       data = ranged.data;
       contentRange = `bytes ${start}-${start + data.length - 1}/${ranged.totalSize}`;
+      checksumSha256 = crypto.createHash('sha256').update(data).digest('base64');
       status = 206;
     }
 
