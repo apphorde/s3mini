@@ -68,4 +68,24 @@ describe('S3 HTTP routes', () => {
     const tags = await app.inject({ method: 'GET', url: `/${bucket}?tagging` });
     expect(tags.body).toContain('<Key>team</Key>');
   });
+
+  it('supports multipart uploads over HTTP', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const initiated = await app.inject({ method: 'POST', url: `/${bucket}/multi.bin?uploads` });
+    expect(initiated.statusCode).toBe(200);
+    const uploadId = initiated.body.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1];
+    expect(uploadId).toBeTruthy();
+
+    const part = await app.inject({ method: 'PUT', url: `/${bucket}/multi.bin?uploadId=${uploadId}&partNumber=1`, headers: { 'content-type': 'application/octet-stream' }, payload: 'multipart' });
+    expect(part.statusCode).toBe(200);
+    const etag = part.headers.etag as string;
+    const completed = await app.inject({
+      method: 'POST',
+      url: `/${bucket}/multi.bin?uploadId=${uploadId}`,
+      headers: { 'content-type': 'application/xml' },
+      payload: `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>${etag}</ETag></Part></CompleteMultipartUpload>`,
+    });
+    expect(completed.statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `/${bucket}/multi.bin` })).body).toBe('multipart');
+  });
 });

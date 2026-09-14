@@ -81,6 +81,15 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function putObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const key = (request.params as any)['*'] as string;
+    const query = request.query as Record<string, string | undefined>;
+    if (query.uploadId && query.partNumber) {
+      const part = await s3.uploadPart({ bucket: params.bucket, key, uploadId: query.uploadId, partNumber: Number(query.partNumber), body: request.body as Buffer });
+      return reply.code(200).header('ETag', part.etag).send();
+    }
+    if (query.tagging !== undefined) {
+      await s3.putObjectTags(params.bucket, key, parseTagXml(String(request.body || '')), query.versionId);
+      return reply.code(200).send();
+    }
     const copySource = request.headers['x-amz-copy-source'];
     if (copySource) {
       const source = decodeURIComponent(String(copySource)).replace(/^\//, '').split('/');
@@ -105,6 +114,21 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function getObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const key = (request.params as any)['*'] as string;
+    const query = request.query as Record<string, string | undefined>;
+    if (query.uploadId && !query.tagging) {
+      const parts = await s3.listParts({ bucket: params.bucket, key, uploadId: query.uploadId, partNumberMarker: query['part-number-marker'] ? Number(query['part-number-marker']) : undefined });
+      return reply.type('application/xml').send(wrapXml('ListPartsResult', {
+        Bucket: parts.bucket,
+        Key: parts.key,
+        UploadId: parts.uploadId,
+        IsTruncated: parts.isTruncated,
+        Parts: parts.parts.map(part => ({ PartNumber: part.partNumber, ETag: part.etag, Size: part.size, LastModified: part.lastModified.toISOString() })),
+      }));
+    }
+    if (query.tagging !== undefined) {
+      const tags = await s3.getObjectTags(params.bucket, key, query.versionId);
+      return reply.type('application/xml').send(wrapXml('Tagging', { TagSet: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) }));
+    }
     const original = await s3.getObject(params.bucket, key);
     const ifMatch = request.headers['if-match'];
     const ifNoneMatch = request.headers['if-none-match'];
@@ -154,6 +178,19 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function deleteObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const key = (request.params as any)['*'] as string;
+    const query = request.query as Record<string, string | undefined>;
+    if (query.uploadId) {
+      await s3.abortMultipartUpload(params.bucket, key, query.uploadId);
+      return reply.code(204).send();
+    }
+    if (query.tagging !== undefined) {
+      await s3.deleteObjectTags(params.bucket, key, query.versionId);
+      return reply.code(204).send();
+    }
+    if (query.versionId) {
+      await s3.deleteObjectVersion(params.bucket, key, query.versionId);
+      return reply.code(204).send();
+    }
     await s3.deleteObject(params.bucket, key);
     reply.code(204).send();
   }
@@ -161,6 +198,13 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function listObjectsV2(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const query = request.query as Record<string, string | undefined>;
+    if (query.uploads !== undefined) {
+      const result = await s3.listMultipartUploads({ bucket: params.bucket, prefix: query.prefix, maxUploads: query['max-uploads'] ? Number(query['max-uploads']) : undefined });
+      return reply.type('application/xml').send(wrapXml('ListMultipartUploadsResult', {
+        Bucket: result.bucket,
+        Uploads: result.uploads.map(upload => ({ Key: upload.key, UploadId: upload.uploadId, Initiated: upload.initiated.toISOString(), StorageClass: upload.storageClass })),
+      }));
+    }
     if (query.location !== undefined) {
       const location = await s3.getBucketLocation(params.bucket);
       return reply.type('application/xml').send(wrapXml('LocationConstraint', location));
@@ -205,6 +249,20 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   }
 
   fastify.put('/:bucket/*', putObject);
+  fastify.post('/:bucket/*', async (request, reply) => {
+    const params = request.params as { bucket: string };
+    const key = (request.params as any)['*'] as string;
+    const query = request.query as Record<string, string | undefined>;
+    if (query.uploads !== undefined) {
+      const result = await s3.createMultipartUpload(params.bucket, key);
+      return reply.type('application/xml').send(wrapXml('InitiateMultipartUploadResult', { Bucket: result.bucket, Key: result.key, UploadId: result.uploadId }));
+    }
+    if (!query.uploadId) throw new S3Error('InvalidRequest', 'uploadId is required.', 400, params.bucket, key);
+    const parts = [...String(request.body || '').matchAll(/<Part>\s*<PartNumber>(\d+)<\/PartNumber>\s*<ETag>([^<]+)<\/ETag>\s*<\/Part>/g)]
+      .map(match => ({ partNumber: Number(match[1]), etag: match[2] }));
+    const result = await s3.completeMultipartUpload({ bucket: params.bucket, key, uploadId: query.uploadId, parts });
+    reply.type('application/xml').send(wrapXml('CompleteMultipartUploadResult', { Bucket: result.bucket, Key: result.key, ETag: result.etag }));
+  });
   fastify.get('/:bucket/*', { exposeHeadRoute: false }, getObject);
   fastify.head('/:bucket/*', headObject);
   fastify.delete('/:bucket/*', deleteObject);
