@@ -154,7 +154,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       const tags = await s3.getObjectTags(params.bucket, key, query.versionId);
       return reply.type('application/xml').send(wrapXml('Tagging', { TagSet: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) }));
     }
-    const original = await s3.getObject(params.bucket, key);
+    const original = await s3.getObject(params.bucket, key, query.versionId);
     const ifMatch = request.headers['if-match'];
     const ifNoneMatch = request.headers['if-none-match'];
     if (ifMatch && ifMatch !== '*' && !String(ifMatch).split(',').map(value => value.trim()).includes(original.metadata.etag)) {
@@ -198,7 +198,8 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function headObject(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const key = (request.params as any)['*'] as string;
-    const { metadata } = await s3.getObject(params.bucket, key);
+    const query = request.query as Record<string, string | undefined>;
+    const { metadata } = await s3.getObject(params.bucket, key, query.versionId);
 
     reply.code(200)
       .header('ETag', metadata.etag)

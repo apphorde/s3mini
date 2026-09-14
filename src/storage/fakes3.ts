@@ -28,6 +28,10 @@ export class FakeS3 {
 
   constructor() {}
 
+  private versionPath(bucket: string, key: string, versionId: string): string {
+    return path.join(STORAGE_BASE, bucket, '.versions', versionId, key);
+  }
+
   async init(): Promise<void> {
     if (this.initialized) return;
     await fs.mkdir(STORAGE_BASE, { recursive: true });
@@ -194,8 +198,11 @@ export class FakeS3 {
     const etag = '"' + crypto.createHash('md5').update(body).digest('hex') + '"';
     const lastModified = Date.now();
     const filePath = path.join(STORAGE_BASE, bucketName, key);
+    const versionFilePath = this.versionPath(bucketName, key, versionId);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.mkdir(path.dirname(versionFilePath), { recursive: true });
     await fs.writeFile(filePath, body);
+    await fs.writeFile(versionFilePath, body);
 
     await this.run(`
       INSERT INTO objs (bucket, key, etag, contentType, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold)
@@ -224,11 +231,14 @@ export class FakeS3 {
     };
   }
 
-  async getObject(bucketName: string, key: string): Promise<{ data: Buffer, metadata: ObjectMetadata }> {
-    const row = await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
+  async getObject(bucketName: string, key: string, versionId?: string): Promise<{ data: Buffer, metadata: ObjectMetadata }> {
+    const row = versionId
+      ? await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [bucketName, key, versionId])
+      : await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY id DESC LIMIT 1', [bucketName, key]);
     if (!row) throw new S3Error('NoSuchKey', 'Object not found', 404, bucketName, key);
 
-    const filePath = path.join(STORAGE_BASE, bucketName, key);
+    const versionFilePath = this.versionPath(bucketName, key, row.versionId);
+    const filePath = await fs.stat(versionFilePath).then(() => versionFilePath).catch(() => path.join(STORAGE_BASE, bucketName, key));
     const data = await fs.readFile(filePath);
 
     const metadata: ObjectMetadata = {
@@ -275,6 +285,7 @@ export class FakeS3 {
     await this.run('DELETE FROM tags WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ?', [bucketName, key]);
     await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
+    await fs.rm(path.join(STORAGE_BASE, bucketName, '.versions'), { recursive: true, force: true });
   }
 
   async getVersioning(bucket: string): Promise<{ status?: 'Enabled' | 'Suspended' }> {
@@ -311,6 +322,7 @@ export class FakeS3 {
     if (!row) throw new S3Error('NoSuchVersion', 'The specified version does not exist.', 404, bucket, key);
     await this.run('DELETE FROM objs WHERE id = ?', [row.id]);
     await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
+    await fs.rm(this.versionPath(bucket, key, versionId), { force: true });
   }
 
   async putObjectTags(bucket: string, key: string, tags: Record<string, string>, versionId = ''): Promise<void> {

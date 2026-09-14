@@ -97,7 +97,10 @@ describe('FakeS3', () => {
     await s3.putVersioning(bucket, 'Enabled');
     expect(await s3.getVersioning(bucket)).toEqual({ status: 'Enabled' });
 
-    const object = await s3.putObject(bucket, 'tagged.txt', Buffer.from('tagged'), {});
+    const object = await s3.putObject(bucket, 'tagged.txt', Buffer.from('first'), {});
+    const latest = await s3.putObject(bucket, 'tagged.txt', Buffer.from('second'), {});
+    expect((await s3.getObject(bucket, 'tagged.txt')).data.toString()).toBe('second');
+    expect((await s3.getObject(bucket, 'tagged.txt', object.versionId)).data.toString()).toBe('first');
     await s3.putObjectTags(bucket, 'tagged.txt', { environment: 'test' }, object.versionId);
     expect(await s3.getObjectTags(bucket, 'tagged.txt', object.versionId)).toEqual({ environment: 'test' });
     await s3.deleteObjectTags(bucket, 'tagged.txt', object.versionId);
@@ -107,7 +110,7 @@ describe('FakeS3', () => {
     expect(await s3.getBucketTags(bucket)).toEqual({ team: 'storage' });
     await s3.deleteBucketTags(bucket);
     expect(await s3.getBucketTags(bucket)).toEqual({});
-    expect((await s3.listObjectVersions(bucket, 'tagged'))[0].VersionId).toBe(object.versionId);
+    expect((await s3.listObjectVersions(bucket, 'tagged'))[0].VersionId).toBe(latest.versionId);
     await s3.deleteObjectVersion(bucket, 'tagged.txt', object.versionId);
   });
 
