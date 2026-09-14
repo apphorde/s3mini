@@ -362,6 +362,22 @@ export class FakeS3 {
     await fs.rm(path.join(STORAGE_BASE, bucketName, '.versions'), { recursive: true, force: true });
   }
 
+  async deleteObjects(bucket: string, keys: string[]): Promise<{ deleted: string[]; errors: Array<{ key: string; code: string }> }> {
+    await this.headBucket(bucket);
+    const deleted: string[] = [];
+    const errors: Array<{ key: string; code: string }> = [];
+    for (const key of keys) {
+      try {
+        await this.deleteObject(bucket, key);
+        deleted.push(key);
+      } catch (error) {
+        if (error instanceof S3Error && error.code === 'NoSuchKey') deleted.push(key);
+        else errors.push({ key, code: error instanceof S3Error ? error.code : 'InternalError' });
+      }
+    }
+    return { deleted, errors };
+  }
+
   async getVersioning(bucket: string): Promise<{ status?: 'Enabled' | 'Suspended' }> {
     await this.headBucket(bucket);
     const row = await this.get('SELECT versioningStatus FROM bucket_settings WHERE bucket = ?', [bucket]);

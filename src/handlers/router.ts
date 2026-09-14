@@ -97,6 +97,18 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   fastify.put('/:bucket', putBucket);
   fastify.head('/:bucket', headBucket);
   fastify.delete('/:bucket', deleteBucket);
+  fastify.post('/:bucket', async (request, reply) => {
+    const params = request.params as { bucket: string };
+    const query = request.query as Record<string, string | undefined>;
+    if (query.delete === undefined) throw new S3Error('InvalidRequest', 'The delete query parameter is required.', 400, params.bucket);
+    const keys = [...String(request.body || '').matchAll(/<Object\b[^>]*>\s*<Key>([^<]*)<\/Key>/g)].map(match => unescapeXml(match[1]));
+    if (!keys.length) throw new S3Error('MalformedXML', 'At least one object key is required.', 400, params.bucket);
+    const result = await s3.deleteObjects(params.bucket, keys);
+    return reply.type('application/xml').send(wrapXml('DeleteResult', {
+      Deleted: result.deleted.map(Key => ({ Key })),
+      Errors: result.errors.map(error => ({ Key: error.key, Code: error.code })),
+    }));
+  });
 
   fastify.options('/:bucket/*', async (request, reply) => {
     const params = request.params as { bucket: string };
@@ -395,6 +407,12 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     const params = request.params as { bucket: string };
     const key = normalizeObjectKey((request.params as any)['*'] as string);
     const query = request.query as Record<string, string | undefined>;
+    if (!key && query.delete !== undefined) {
+      const keys = [...String(request.body || '').matchAll(/<Object\b[^>]*>\s*<Key>([^<]*)<\/Key>/g)].map(match => unescapeXml(match[1]));
+      if (!keys.length) throw new S3Error('MalformedXML', 'At least one object key is required.', 400, params.bucket);
+      const result = await s3.deleteObjects(params.bucket, keys);
+      return reply.type('application/xml').send(wrapXml('DeleteResult', { Deleted: result.deleted.map(Key => ({ Key })), Errors: result.errors.map(error => ({ Key: error.key, Code: error.code })) }));
+    }
     if (query.restore !== undefined) {
       await s3.restoreObject(params.bucket, key);
       return reply.code(202).header('x-amz-restore', 'ongoing-request="false"').send();

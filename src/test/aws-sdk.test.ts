@@ -5,6 +5,7 @@ import {
   CopyObjectCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   DeleteBucketTaggingCommand,
   DeleteObjectTaggingCommand,
   GetObjectCommand,
@@ -94,8 +95,8 @@ describe('AWS SDK v3 compatibility', () => {
     expect(copiedHead.Metadata).toEqual({ color: 'blue' });
 
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
-    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'a.txt' }));
-    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'b.txt' }));
+    const batchDelete = await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: [{ Key: 'a.txt' }, { Key: 'b.txt' }] } }));
+    expect(batchDelete.Deleted?.map(item => item.Key)).toEqual(['a.txt', 'b.txt']);
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'copied.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'checksum.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'already-missing.txt' }));
