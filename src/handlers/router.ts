@@ -1,4 +1,5 @@
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import crypto from 'node:crypto';
 import type { FakeS3 } from '../storage/fakes3.js';
 import { S3Error } from '../types/models.js';
 
@@ -99,6 +100,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       return reply.type('application/xml').code(200).send(wrapXml('CopyObjectResult', { ETag: obj.etag, LastModified: obj.lastModified.toISOString() }));
     }
     const body = request.body as Buffer;
+    const checksum = request.headers['x-amz-checksum-sha256'];
+    const checksumSha256 = crypto.createHash('sha256').update(body).digest('base64');
+    if (checksum && checksum !== checksumSha256) {
+      throw new S3Error('BadDigest', 'The SHA-256 checksum did not match the request body.', 400, params.bucket, key);
+    }
 
     const meta: any = {};
     if (request.headers['content-type']) meta.contentType = request.headers['content-type'];
@@ -108,7 +114,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     if (request.headers['expires']) meta.expires = new Date(request.headers['expires']);
 
     const obj = await s3.putObject(params.bucket, key, body, meta);
-    reply.type('application/xml').code(200).send(wrapXml('PutObjectResult', { ETag: obj.etag }));
+    reply.type('application/xml').code(200).header('x-amz-checksum-sha256', checksumSha256).send(wrapXml('PutObjectResult', { ETag: obj.etag, ChecksumSHA256: checksumSha256 }));
   }
 
   async function getObject(request: FastifyRequest, reply: FastifyReply) {
@@ -140,6 +146,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     let data = original.data;
     let metadata = original.metadata;
+    const checksumSha256 = crypto.createHash('sha256').update(original.data).digest('base64');
     let status = 200;
     const range = request.headers.range;
     let contentRange: string | undefined;
@@ -157,6 +164,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     reply.type(metadata.contentType || 'application/octet-stream')
       .header('ETag', metadata.etag)
       .header('Last-Modified', metadata.lastModified.toUTCString())
+      .header('x-amz-checksum-sha256', checksumSha256)
       .header('Accept-Ranges', 'bytes')
       .code(status);
     if (contentRange) reply.header('Content-Range', contentRange);
@@ -172,6 +180,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       .header('ETag', metadata.etag)
       .header('Last-Modified', metadata.lastModified.toUTCString())
       .header('Content-Type', metadata.contentType)
+      .header('x-amz-checksum-sha256', crypto.createHash('sha256').update((await s3.getObject(params.bucket, key)).data).digest('base64'))
       .send();
   }
 

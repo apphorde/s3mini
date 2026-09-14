@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import crypto from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerRoutes } from '../handlers/router.js';
 import { FakeS3 } from '../storage/fakes3.js';
@@ -87,5 +88,17 @@ describe('S3 HTTP routes', () => {
     });
     expect(completed.statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: `/${bucket}/multi.bin` })).body).toBe('multipart');
+  });
+
+  it('validates and returns SHA-256 checksums', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const body = 'checksum';
+    const checksum = crypto.createHash('sha256').update(body).digest('base64');
+    const put = await app.inject({ method: 'PUT', url: `/${bucket}/checksum.txt`, headers: { 'content-type': 'text/plain', 'x-amz-checksum-sha256': checksum }, payload: body });
+    expect(put.statusCode).toBe(200);
+    expect(put.headers['x-amz-checksum-sha256']).toBe(checksum);
+    const bad = await app.inject({ method: 'PUT', url: `/${bucket}/bad.txt`, headers: { 'content-type': 'text/plain', 'x-amz-checksum-sha256': 'bad' }, payload: body });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.body).toContain('<Code>BadDigest</Code>');
   });
 });
