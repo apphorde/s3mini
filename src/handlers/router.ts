@@ -290,6 +290,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
           Key: version.Key,
           VersionId: version.VersionId,
           IsLatest: version.IsLatest,
+          IsDeleteMarker: version.IsDeleteMarker,
           LastModified: version.LastModified.toISOString(),
           ETag: version.ETag,
           Size: version.Size,

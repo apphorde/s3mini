@@ -82,7 +82,7 @@ export class FakeS3 {
       value TEXT NOT NULL,
       UNIQUE(bucket, key, name)
     )`);
-    for (const column of ['encryption TEXT', 'sseKmsKeyId TEXT', 'objectLockMode TEXT', 'retainUntil INTEGER', 'legalHold TEXT']) {
+    for (const column of ['encryption TEXT', 'sseKmsKeyId TEXT', 'objectLockMode TEXT', 'retainUntil INTEGER', 'legalHold TEXT', 'deleteMarker INTEGER']) {
       try { await this.run(`ALTER TABLE objs ADD COLUMN ${column}`); } catch { /* Existing databases already have the column. */ }
     }
     await this.run(`CREATE TABLE IF NOT EXISTS multipart_uploads (
@@ -219,13 +219,13 @@ export class FakeS3 {
     await fs.writeFile(versionFilePath, body);
 
     await this.run(`
-      INSERT INTO objs (bucket, key, etag, contentType, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      INSERT INTO objs (bucket, key, etag, contentType, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold, deleteMarker)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         bucketName, key, etag, meta.contentType || null, meta.contentDisposition || null,
         meta.contentEncoding || null, meta.cacheControl || null, 
         meta.expires ? new Date(meta.expires).getTime() : null,
-        lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null, meta.objectLockMode || null, meta.retainUntil ? new Date(meta.retainUntil).getTime() : null, meta.legalHold || null
+        lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null, meta.objectLockMode || null, meta.retainUntil ? new Date(meta.retainUntil).getTime() : null, meta.legalHold || null, 0
       ]
     );
 
@@ -251,6 +251,7 @@ export class FakeS3 {
       ? await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [bucketName, key, versionId])
       : await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY id DESC LIMIT 1', [bucketName, key]);
     if (!row) throw new S3Error('NoSuchKey', 'Object not found', 404, bucketName, key);
+    if (row.deleteMarker) throw new S3Error('NoSuchKey', 'The object is deleted.', 404, bucketName, key);
 
     const versionFilePath = this.versionPath(bucketName, key, row.versionId);
     const filePath = await fs.stat(versionFilePath).then(() => versionFilePath).catch(() => path.join(STORAGE_BASE, bucketName, key));
@@ -309,6 +310,13 @@ export class FakeS3 {
     const found = await this.get('SELECT id, objectLockMode, retainUntil, legalHold FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     if (!found) throw new S3Error('NoSuchKey', 'Object not found', 404, bucketName, key);
     if (found.legalHold === 'ON' || (found.retainUntil && found.retainUntil > Date.now())) throw new S3Error('AccessDenied', 'Object retention prevents deletion.', 403, bucketName, key);
+    const versioning = await this.getVersioning(bucketName);
+    if (versioning.status === 'Enabled') {
+      const markerId = crypto.randomBytes(8).toString('hex') + '+';
+      await this.run('INSERT INTO objs (bucket, key, etag, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker) VALUES (?, ?, NULL, ?, 0, ?, ?, ?, ?, 1)', [bucketName, key, Date.now(), 'STANDARD', markerId, '000000000000000000000000', 's3mini']);
+      await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
+      return;
+    }
     await this.run('DELETE FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM tags WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ?', [bucketName, key]);
@@ -340,6 +348,7 @@ export class FakeS3 {
         ETag: row.etag,
         Size: row.size,
         StorageClass: row.storageClass,
+        IsDeleteMarker: Boolean(row.deleteMarker),
         Owner: { ID: row.ownerId, DisplayName: row.ownerDisplayName },
       }));
   }

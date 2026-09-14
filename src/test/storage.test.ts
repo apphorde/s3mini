@@ -130,6 +130,15 @@ describe('FakeS3', () => {
     expect(await s3.getBucketConfiguration(bucket, 'corsConfiguration')).toBeUndefined();
   });
 
+  it('creates delete markers when versioning is enabled', async () => {
+    await s3.createBucket(bucket);
+    await s3.putVersioning(bucket, 'Enabled');
+    await s3.putObject(bucket, 'marker.txt', Buffer.from('data'), {});
+    await s3.deleteObject(bucket, 'marker.txt');
+    await expect(s3.getObject(bucket, 'marker.txt')).rejects.toMatchObject({ code: 'NoSuchKey' });
+    expect((await s3.listObjectVersions(bucket, 'marker'))[0].IsDeleteMarker).toBe(true);
+  });
+
   it('copies objects and serves byte ranges', async () => {
     await s3.createBucket(bucket);
     await s3.putObject(bucket, 'source.txt', Buffer.from('abcdef'), { contentType: 'text/plain' });
