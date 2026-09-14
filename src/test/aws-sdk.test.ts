@@ -1,11 +1,14 @@
 import {
   CreateBucketCommand,
+  CreateMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   ListObjectsV2Command,
   PutObjectCommand,
+  UploadPartCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
 import Fastify from 'fastify';
@@ -57,5 +60,21 @@ describe('AWS SDK v3 compatibility', () => {
 
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
+  });
+
+  it('supports SDK multipart upload commands', async () => {
+    await client.send(new CreateBucketCommand({ Bucket: bucket }));
+    const initiated = await client.send(new CreateMultipartUploadCommand({ Bucket: bucket, Key: 'multipart.txt' }));
+    expect(initiated.UploadId).toBeTruthy();
+    const part = await client.send(new UploadPartCommand({ Bucket: bucket, Key: 'multipart.txt', UploadId: initiated.UploadId, PartNumber: 1, Body: 'multipart SDK' }));
+    expect(part.ETag).toBeTruthy();
+    await client.send(new CompleteMultipartUploadCommand({
+      Bucket: bucket,
+      Key: 'multipart.txt',
+      UploadId: initiated.UploadId,
+      MultipartUpload: { Parts: [{ PartNumber: 1, ETag: part.ETag }] },
+    }));
+    const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'multipart.txt' }));
+    expect(await object.Body?.transformToString()).toBe('multipart SDK');
   });
 });

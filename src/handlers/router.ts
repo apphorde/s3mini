@@ -383,8 +383,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       return reply.type('application/xml').send(wrapXml('InitiateMultipartUploadResult', { Bucket: result.bucket, Key: result.key, UploadId: result.uploadId }));
     }
     if (!query.uploadId) throw new S3Error('InvalidRequest', 'uploadId is required.', 400, params.bucket, key);
-    const parts = [...String(request.body || '').matchAll(/<Part>\s*<PartNumber>(\d+)<\/PartNumber>\s*<ETag>([^<]+)<\/ETag>\s*<\/Part>/g)]
-      .map(match => ({ partNumber: Number(match[1]), etag: match[2] }));
+    const parts = [...String(request.body || '').matchAll(/<Part\b[^>]*>([\s\S]*?)<\/Part>/g)]
+      .map(match => ({ partNumber: Number(readXmlTag(match[1], 'PartNumber')), etag: unescapeXml(readXmlTag(match[1], 'ETag') || '') }))
+      .filter(part => Number.isInteger(part.partNumber) && part.partNumber > 0 && part.etag);
     const result = await s3.completeMultipartUpload({ bucket: params.bucket, key, uploadId: query.uploadId, parts });
     reply.type('application/xml').send(wrapXml('CompleteMultipartUploadResult', { Bucket: result.bucket, Key: result.key, ETag: result.etag }));
   });
@@ -409,6 +410,10 @@ function toXml(obj: any): string {
 
 function escapeXml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function unescapeXml(value: string): string {
+  return value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 }
 
 function normalizeObjectKey(key: string): string {
