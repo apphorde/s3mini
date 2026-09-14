@@ -181,4 +181,17 @@ describe('S3 HTTP routes', () => {
     expect(get.statusCode).toBe(200);
     expect(get.body).toContain('<CannedACL>public-read</CannedACL>');
   });
+
+  it('enforces explicit public bucket policy denies', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({
+      method: 'PUT',
+      url: `/${bucket}?policy`,
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ statements: [{ effect: 'Deny', principal: '*', action: 's3:PutObject', resource: `arn:aws:s3:::${bucket}/*` }] }),
+    });
+    const denied = await app.inject({ method: 'PUT', url: `/${bucket}/blocked.txt`, headers: { 'content-type': 'text/plain' }, payload: 'blocked' });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.body).toContain('<Code>AccessDenied</Code>');
+  });
 });

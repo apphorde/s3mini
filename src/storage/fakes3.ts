@@ -468,6 +468,21 @@ export class FakeS3 {
     await this.run(`UPDATE bucket_settings SET ${name} = NULL WHERE bucket = ?`, [bucket]);
   }
 
+  async isRequestDenied(bucket: string, key: string | undefined, action: string): Promise<boolean> {
+    const policy = await this.getBucketConfiguration<{ statements?: Array<any> }>(bucket, 'policy');
+    if (!policy?.statements) return false;
+    const resource = `arn:aws:s3:::${bucket}${key ? `/${key}` : ''}`;
+    return policy.statements.some(statement => {
+      if (statement.effect !== 'Deny') return false;
+      const actions = Array.isArray(statement.action) ? statement.action : [statement.action];
+      const resources = Array.isArray(statement.resource) ? statement.resource : [statement.resource];
+      const principals = statement.principal === '*' || statement.principal?.aws === '*';
+      const actionMatches = actions.includes('*') || actions.includes(action) || actions.includes(action.replace(/^s3:/, 's3:*'));
+      const resourceMatches = resources.includes('*') || resources.includes(resource) || resources.some((value: unknown) => typeof value === 'string' && value.endsWith('/*') && resource.startsWith(value.slice(0, -1)));
+      return principals && actionMatches && resourceMatches;
+    });
+  }
+
   async listObjectsV2(bucketName: string, prefix?: string): Promise<any[]> {
     const rows = await this.all('SELECT * FROM objs WHERE bucket = ?', [bucketName]);
     const filtered = rows.filter((r: any) => !prefix || r.key.startsWith(prefix));

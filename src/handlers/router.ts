@@ -16,9 +16,15 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     if (hasPresign && (!accessKeyId || !secretAccessKey || !verifyPresignedSigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, { accessKeyId: accessKeyId || '', secretAccessKey: secretAccessKey || '', region: process.env.S3MINI_REGION || 'us-east-1' }))) {
       throw new S3Error('SignatureDoesNotMatch', 'The presigned URL signature does not match.', 403);
     }
-    if (!authorization) return;
-    if (!accessKeyId || !secretAccessKey || !verifySigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, { accessKeyId, secretAccessKey, region: process.env.S3MINI_REGION || 'us-east-1' })) {
+    if (authorization && (!accessKeyId || !secretAccessKey || !verifySigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, { accessKeyId: accessKeyId || '', secretAccessKey: secretAccessKey || '', region: process.env.S3MINI_REGION || 'us-east-1' }))) {
       throw new S3Error('SignatureDoesNotMatch', 'The request signature does not match.', 403);
+    }
+    const params = request.params as { bucket?: string; '*': string };
+    const query = request.query as Record<string, string | undefined>;
+    const key = params['*'] ? normalizeObjectKey(params['*']) : undefined;
+    if (params.bucket && !query.policy && !query.acl && (key || request.method !== 'PUT')) {
+      const action = key ? `${request.method === 'GET' ? 'Get' : request.method === 'PUT' ? 'Put' : request.method === 'DELETE' ? 'Delete' : request.method}Object` : request.method === 'GET' ? 'ListBucket' : `${request.method}Bucket`;
+      if (await s3.isRequestDenied(params.bucket, key, `s3:${action}`)) throw new S3Error('AccessDenied', 'Access denied by bucket policy.', 403, params.bucket, key);
     }
   });
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
