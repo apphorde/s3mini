@@ -122,6 +122,15 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     if (encryption) meta.serverSideEncryption = encryption;
     if (kmsKeyId) meta.sseKmsKeyId = kmsKeyId;
+    const lockMode = request.headers['x-amz-object-lock-mode'];
+    const retainUntil = request.headers['x-amz-object-lock-retain-until-date'];
+    const legalHold = request.headers['x-amz-object-lock-legal-hold'];
+    if (lockMode && lockMode !== 'GOVERNANCE' && lockMode !== 'COMPLIANCE') throw new S3Error('InvalidRequest', 'Unsupported object lock mode.', 400, params.bucket, key);
+    if (retainUntil && Number.isNaN(Date.parse(String(retainUntil)))) throw new S3Error('InvalidRequest', 'Invalid retention date.', 400, params.bucket, key);
+    if (legalHold && legalHold !== 'ON' && legalHold !== 'OFF') throw new S3Error('InvalidRequest', 'Invalid legal hold status.', 400, params.bucket, key);
+    if (lockMode) meta.objectLockMode = lockMode;
+    if (retainUntil) meta.retainUntil = new Date(String(retainUntil));
+    if (legalHold) meta.legalHold = legalHold;
 
     const obj = await s3.putObject(params.bucket, key, body, meta);
     reply.type('application/xml').code(200).header('x-amz-checksum-sha256', checksumSha256).send(wrapXml('PutObjectResult', { ETag: obj.etag, ChecksumSHA256: checksumSha256 }));
@@ -179,6 +188,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       .code(status);
     if (metadata.serverSideEncryption) reply.header('x-amz-server-side-encryption', metadata.serverSideEncryption);
     if (metadata.sseKmsKeyId) reply.header('x-amz-server-side-encryption-aws-kms-key-id', metadata.sseKmsKeyId);
+    if (metadata.objectLockMode) reply.header('x-amz-object-lock-mode', metadata.objectLockMode);
+    if (metadata.objectLockRetainUntilDate) reply.header('x-amz-object-lock-retain-until-date', metadata.objectLockRetainUntilDate.toUTCString());
+    if (metadata.objectLockLegalHold !== undefined) reply.header('x-amz-object-lock-legal-hold', metadata.objectLockLegalHold ? 'ON' : 'OFF');
     if (contentRange) reply.header('Content-Range', contentRange);
     reply.send(data);
   }
@@ -195,6 +207,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       .header('x-amz-checksum-sha256', crypto.createHash('sha256').update((await s3.getObject(params.bucket, key)).data).digest('base64'));
     if (metadata.serverSideEncryption) reply.header('x-amz-server-side-encryption', metadata.serverSideEncryption);
     if (metadata.sseKmsKeyId) reply.header('x-amz-server-side-encryption-aws-kms-key-id', metadata.sseKmsKeyId);
+    if (metadata.objectLockMode) reply.header('x-amz-object-lock-mode', metadata.objectLockMode);
+    if (metadata.objectLockRetainUntilDate) reply.header('x-amz-object-lock-retain-until-date', metadata.objectLockRetainUntilDate.toUTCString());
+    if (metadata.objectLockLegalHold !== undefined) reply.header('x-amz-object-lock-legal-hold', metadata.objectLockLegalHold ? 'ON' : 'OFF');
     reply.send();
   }
 

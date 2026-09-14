@@ -111,4 +111,18 @@ describe('S3 HTTP routes', () => {
     const invalid = await app.inject({ method: 'PUT', url: `/${bucket}/invalid.txt`, headers: { 'content-type': 'text/plain', 'x-amz-server-side-encryption': 'aws:kms' }, payload: 'secret' });
     expect(invalid.statusCode).toBe(400);
   });
+
+  it('enforces object retention during deletion', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const retained = await app.inject({
+      method: 'PUT',
+      url: `/${bucket}/retained.txt`,
+      headers: { 'content-type': 'text/plain', 'x-amz-object-lock-mode': 'COMPLIANCE', 'x-amz-object-lock-retain-until-date': new Date(Date.now() + 60_000).toISOString() },
+      payload: 'retained',
+    });
+    expect(retained.statusCode).toBe(200);
+    const blocked = await app.inject({ method: 'DELETE', url: `/${bucket}/retained.txt` });
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.body).toContain('<Code>AccessDenied</Code>');
+  });
 });

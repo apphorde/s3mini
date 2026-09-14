@@ -71,7 +71,7 @@ export class FakeS3 {
       value TEXT NOT NULL,
       UNIQUE(bucket, key, name)
     )`);
-    for (const column of ['encryption TEXT', 'sseKmsKeyId TEXT']) {
+    for (const column of ['encryption TEXT', 'sseKmsKeyId TEXT', 'objectLockMode TEXT', 'retainUntil INTEGER', 'legalHold TEXT']) {
       try { await this.run(`ALTER TABLE objs ADD COLUMN ${column}`); } catch { /* Existing databases already have the column. */ }
     }
     await this.run(`CREATE TABLE IF NOT EXISTS multipart_uploads (
@@ -196,13 +196,13 @@ export class FakeS3 {
     await fs.writeFile(filePath, body);
 
     await this.run(`
-      INSERT INTO objs (bucket, key, etag, contentType, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      INSERT INTO objs (bucket, key, etag, contentType, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         bucketName, key, etag, meta.contentType || null, meta.contentDisposition || null,
         meta.contentEncoding || null, meta.cacheControl || null, 
         meta.expires ? new Date(meta.expires).getTime() : null,
-        lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null
+        lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null, meta.objectLockMode || null, meta.retainUntil ? new Date(meta.retainUntil).getTime() : null, meta.legalHold || null
       ]
     );
 
@@ -215,6 +215,9 @@ export class FakeS3 {
       userMetadata: meta.userMetadata || {},
       serverSideEncryption: meta.serverSideEncryption,
       sseKmsKeyId: meta.sseKmsKeyId,
+      objectLockMode: meta.objectLockMode,
+      objectLockRetainUntilDate: meta.retainUntil ? new Date(meta.retainUntil) : undefined,
+      objectLockLegalHold: meta.legalHold === 'ON',
       size: body.length // FIX: added missing size
     };
   }
@@ -232,7 +235,8 @@ export class FakeS3 {
       contentEncoding: row.contentEncoding || undefined, cacheControl: row.cacheControl || undefined,
       expires: row.expires ? new Date(row.expires) : undefined, lastModified: new Date(row.lastModified),
       storageClass: row.storageClass, ownerId: row.ownerId, ownerDisplayName: row.ownerDisplayName,
-      userMetadata: {}, serverSideEncryption: row.encryption || undefined, sseKmsKeyId: row.sseKmsKeyId || undefined
+      userMetadata: {}, serverSideEncryption: row.encryption || undefined, sseKmsKeyId: row.sseKmsKeyId || undefined,
+      objectLockMode: row.objectLockMode || undefined, objectLockRetainUntilDate: row.retainUntil ? new Date(row.retainUntil) : undefined, objectLockLegalHold: row.legalHold === 'ON'
     };
     return { data, metadata };
   }
@@ -262,8 +266,9 @@ export class FakeS3 {
   }
 
   async deleteObject(bucketName: string, key: string): Promise<void> {
-    const found = await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
+    const found = await this.get('SELECT id, objectLockMode, retainUntil, legalHold FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     if (!found) throw new S3Error('NoSuchKey', 'Object not found', 404, bucketName, key);
+    if (found.legalHold === 'ON' || (found.retainUntil && found.retainUntil > Date.now())) throw new S3Error('AccessDenied', 'Object retention prevents deletion.', 403, bucketName, key);
     await this.run('DELETE FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM tags WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ?', [bucketName, key]);

@@ -30,6 +30,9 @@ export interface ObjectMetadata {
   userMetadata: Record<string, string>;
   serverSideEncryption?: 'AES256' | 'aws:kms';
   sseKmsKeyId?: string;
+  objectLockMode?: 'GOVERNANCE' | 'COMPLIANCE';
+  objectLockRetainUntilDate?: Date;
+  objectLockLegalHold?: boolean;
 }
 
 export interface UploadedPart {
