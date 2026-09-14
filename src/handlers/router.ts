@@ -26,6 +26,22 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function putBucket(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const query = request.query as Record<string, string | undefined>;
+    if (query.versioning !== undefined) {
+      const body = String(request.body || '');
+      const status = readXmlTag(body, 'Status') as 'Enabled' | 'Suspended' | undefined;
+      if (!status) throw new S3Error('MalformedXML', 'Versioning status is required.', 400, params.bucket);
+      await s3.putVersioning(params.bucket, status);
+      return reply.code(200).send();
+    }
+    if (query.tagging !== undefined) {
+      await s3.putBucketTags(params.bucket, parseTagXml(String(request.body || '')));
+      return reply.code(200).send();
+    }
+    const configuration = configurationQuery(query);
+    if (configuration) {
+      await s3.putBucketConfiguration(params.bucket, configuration, parseJsonOrXml(String(request.body || '')));
+      return reply.code(200).send();
+    }
     await s3.createBucket(params.bucket, query.locationConstraint);
     reply.code(200).send();
   }
@@ -38,6 +54,16 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
 
   async function deleteBucket(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
+    const query = request.query as Record<string, string | undefined>;
+    if (query.tagging !== undefined) {
+      await s3.deleteBucketTags(params.bucket);
+      return reply.code(204).send();
+    }
+    const configuration = configurationQuery(query);
+    if (configuration) {
+      await s3.deleteBucketConfiguration(params.bucket, configuration);
+      return reply.code(204).send();
+    }
     await s3.deleteBucket(params.bucket);
     reply.code(204).send();
   }
@@ -98,15 +124,45 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   async function listObjectsV2(request: FastifyRequest, reply: FastifyReply) {
     const params = request.params as { bucket: string };
     const query = request.query as Record<string, string | undefined>;
-    const contents = await s3.listObjectsV2(params.bucket, query.prefix);
+    if (query.location !== undefined) {
+      const location = await s3.getBucketLocation(params.bucket);
+      return reply.type('application/xml').send(wrapXml('LocationConstraint', location));
+    }
+    if (query.versioning !== undefined) {
+      const versioning = await s3.getVersioning(params.bucket);
+      return reply.type('application/xml').send(wrapXml('VersioningConfiguration', versioning.status ? { Status: versioning.status } : {}));
+    }
+    if (query.tagging !== undefined) {
+      const tags = await s3.getBucketTags(params.bucket);
+      return reply.type('application/xml').send(wrapXml('Tagging', { TagSet: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) }));
+    }
+    const configuration = configurationQuery(query);
+    if (configuration) {
+      const value = await s3.getBucketConfiguration<Record<string, unknown>>(params.bucket, configuration);
+      return reply.type('application/xml').send(wrapXml(configuration, value || {}));
+    }
+    const result = await s3.listObjectsV2Advanced({
+      bucket: params.bucket,
+      prefix: query.prefix,
+      delimiter: query.delimiter,
+      maxKeys: query['max-keys'] ? Number(query['max-keys']) : undefined,
+      continuationToken: query['continuation-token'],
+      startAfter: query['start-after'],
+    });
 
     const response = {
       Name: params.bucket,
-      IsTruncated: false,
-      Contents: contents.map(c => ({
-        Key: c.Key, LastModified: c.LastModified.toISOString(), ETag: c.ETag,
-        Size: c.Size, StorageClass: c.StorageClass
-      }))
+      Prefix: result.prefix,
+      Delimiter: result.delimiter,
+      MaxKeys: result.maxKeys,
+      KeyCount: result.keyCount,
+      IsTruncated: result.isTruncated,
+      NextContinuationToken: result.nextContinuationToken,
+      Contents: result.contents.map(c => ({
+        Key: c.key, LastModified: c.lastModified.toISOString(), ETag: c.etag,
+        Size: c.size, StorageClass: c.storageClass
+      })),
+      CommonPrefixes: result.commonPrefixes.map(Prefix => ({ Prefix })),
     };
     reply.type('application/xml').send(wrapXml('ListObjectsV2Result', response));
   }
@@ -119,7 +175,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
 }
 
 function toXml(obj: any): string {
-    if (typeof obj !== 'object' || obj === null) return String(obj);
+    if (typeof obj !== 'object' || obj === null) return escapeXml(String(obj));
     return Object.entries(obj).map(([key, val]) => {
         if (Array.isArray(val)) {
             return val.map(item => `<${key}>${toXml(item)}</${key}>`).join('');
@@ -131,7 +187,40 @@ function toXml(obj: any): string {
     }).join('\n');
 }
 
+function escapeXml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
 function wrapXml(root: string, content: any): string {
   const body = toXml(content);
   return '<?xml version="1.0" encoding="UTF-8"?>\n<' + root + '>\n' + body + '\n</' + root + '>';
+}
+
+function readXmlTag(body: string, tag: string): string | undefined {
+  return body.match(new RegExp(`<${tag}>([^<]*)</${tag}>`))?.[1];
+}
+
+function parseTagXml(body: string): Record<string, string> {
+  const tags: Record<string, string> = {};
+  for (const match of body.matchAll(/<Tag>\s*<Key>([^<]*)<\/Key>\s*<Value>([^<]*)<\/Value>\s*<\/Tag>/g)) tags[match[1]] = match[2];
+  return tags;
+}
+
+function parseJsonOrXml(body: string): unknown {
+  try { return JSON.parse(body); } catch { return { raw: body }; }
+}
+
+function configurationQuery(query: Record<string, string | undefined>): 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration' | undefined {
+  const map = {
+    cors: 'corsConfiguration',
+    lifecycle: 'lifecycleConfiguration',
+    policy: 'policy',
+    encryption: 'encryptionConfiguration',
+    website: 'websiteConfiguration',
+    logging: 'loggingStatus',
+    notification: 'notificationConfiguration',
+    replication: 'replicationConfiguration',
+  } as const;
+  const key = Object.keys(map).find(name => query[name] !== undefined) as keyof typeof map | undefined;
+  return key ? map[key] : undefined;
 }

@@ -110,4 +110,13 @@ describe('FakeS3', () => {
     expect((await s3.listObjectVersions(bucket, 'tagged'))[0].VersionId).toBe(object.versionId);
     await s3.deleteObjectVersion(bucket, 'tagged.txt', object.versionId);
   });
+
+  it('persists bucket location and configuration documents', async () => {
+    await s3.createBucket(bucket, 'eu-west-1');
+    expect(await s3.getBucketLocation(bucket)).toBe('eu-west-1');
+    await s3.putBucketConfiguration(bucket, 'corsConfiguration', { rules: [{ allowedOrigins: ['*'] }] });
+    expect(await s3.getBucketConfiguration(bucket, 'corsConfiguration')).toEqual({ rules: [{ allowedOrigins: ['*'] }] });
+    await s3.deleteBucketConfiguration(bucket, 'corsConfiguration');
+    expect(await s3.getBucketConfiguration(bucket, 'corsConfiguration')).toBeUndefined();
+  });
 });

@@ -312,6 +312,28 @@ export class FakeS3 {
     await this.run('UPDATE bucket_settings SET bucketTags = NULL WHERE bucket = ?', [bucket]);
   }
 
+  async getBucketLocation(bucket: string): Promise<string> {
+    const row = await this.get('SELECT locationConstraint FROM buckets WHERE name = ?', [bucket]);
+    if (!row) throw new S3Error('NoSuchBucket', 'Bucket not found', 404, bucket);
+    return row.locationConstraint;
+  }
+
+  async putBucketConfiguration(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration', value: unknown): Promise<void> {
+    await this.headBucket(bucket);
+    await this.run(`UPDATE bucket_settings SET ${name} = ? WHERE bucket = ?`, [JSON.stringify(value), bucket]);
+  }
+
+  async getBucketConfiguration<T>(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration'): Promise<T | undefined> {
+    await this.headBucket(bucket);
+    const row = await this.get(`SELECT ${name} FROM bucket_settings WHERE bucket = ?`, [bucket]);
+    return row?.[name] ? JSON.parse(row[name]) as T : undefined;
+  }
+
+  async deleteBucketConfiguration(bucket: string, name: 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration'): Promise<void> {
+    await this.headBucket(bucket);
+    await this.run(`UPDATE bucket_settings SET ${name} = NULL WHERE bucket = ?`, [bucket]);
+  }
+
   async listObjectsV2(bucketName: string, prefix?: string): Promise<any[]> {
     const rows = await this.all('SELECT * FROM objs WHERE bucket = ?', [bucketName]);
     const filtered = rows.filter((r: any) => !prefix || r.key.startsWith(prefix));
