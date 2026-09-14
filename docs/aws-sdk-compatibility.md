@@ -2,7 +2,10 @@
 
 S3MINI targets the common S3 protocol used by AWS S3, MinIO, and Backblaze B2's
 S3-compatible API. The primary acceptance client is AWS SDK for JavaScript v3
-(`@aws-sdk/client-s3`) against a self-hosted path-style endpoint.
+(`@aws-sdk/client-s3`) against a self-hosted path-style endpoint. The SDK is a
+development dependency with bundled declarations exposed through
+`src/types/aws-s3.ts`; internal storage models remain normalized instead of
+duplicating AWS wire types.
 
 ## Client Defaults
 
