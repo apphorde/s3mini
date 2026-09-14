@@ -19,32 +19,42 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [x] Basic object metadata: content type, disposition, encoding, cache control, expires, storage class
 - [x] Persistent hybrid storage: SQLite metadata and binary files under `/data/objects`
 - [x] Docker image exposing port `9000`
+- [x] ListObjectsV2 pagination and delimiter/common-prefix handling
+- [x] Multipart upload lifecycle: initiate, upload, list, complete, and abort
+- [x] Object version listing and version-specific reads/deletes
+- [x] Object and bucket tagging
+- [x] Bucket location, configuration persistence, and CORS preflight handling
+- [x] CopyObject, byte ranges, conditional reads, and SHA-256 checksums
+- [x] Server-side encryption metadata for AES256 and aws:kms requests
+- [x] Object-lock retention and legal-hold deletion checks
+- [x] RestoreObject and basic `SELECT * FROM S3Object` behavior
+- [x] Optional SigV4 header and presigned URL verification
 
 ## Planned S3 API Features
 
 ### Multipart Uploads
 
-- [ ] CreateMultipartUpload
-- [ ] UploadPart
+- [x] CreateMultipartUpload
+- [x] UploadPart
 - [ ] UploadPartCopy
-- [ ] ListParts
-- [ ] ListMultipartUploads
-- [ ] CompleteMultipartUpload
-- [ ] AbortMultipartUpload
+- [x] ListParts
+- [x] ListMultipartUploads
+- [x] CompleteMultipartUpload
+- [x] AbortMultipartUpload
 
 ### Versioning and Tagging
 
-- [ ] PutBucketVersioning / GetBucketVersioning
-- [ ] ListObjectVersions
+- [x] PutBucketVersioning / GetBucketVersioning
+- [x] ListObjectVersions
 - [ ] DeleteObject version and delete-marker semantics
-- [ ] PutObjectTagging / GetObjectTagging / DeleteObjectTagging
-- [ ] PutBucketTagging / GetBucketTagging / DeleteBucketTagging
+- [x] PutObjectTagging / GetObjectTagging / DeleteObjectTagging
+- [x] PutBucketTagging / GetBucketTagging / DeleteBucketTagging
 
 ### Bucket Configuration
 
-- [ ] GetBucketLocation
-- [ ] Bucket ACLs and object ACLs
-- [ ] CORS configuration
+- [x] GetBucketLocation
+- [x] Bucket ACL configuration
+- [x] CORS configuration and preflight behavior
 - [ ] Lifecycle configuration
 - [ ] Bucket policy and public-access-block configuration
 - [ ] Website configuration
@@ -53,13 +63,14 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 
 ### Object Features
 
-- [ ] CopyObject and UploadPartCopy
-- [ ] Conditional requests and byte ranges
-- [ ] Checksum validation and response checksums
-- [ ] Server-side encryption behavior (SSE-S3, SSE-KMS, SSE-C)
-- [ ] Object Lock, legal holds, and retention
-- [ ] RestoreObject and SelectObjectContent
-- [ ] SigV4 authentication and presigned URL validation
+- [x] CopyObject
+- [ ] UploadPartCopy
+- [x] Conditional requests and byte ranges
+- [x] SHA-256 checksum validation and response checksums
+- [x] Server-side encryption metadata for SSE-S3/SSE-KMS request modes
+- [x] Object Lock, legal holds, and retention checks
+- [x] RestoreObject and basic SelectObjectContent
+- [x] Optional SigV4 authentication and presigned URL validation
 
 ### Control-Plane and Specialized AWS Features
 
