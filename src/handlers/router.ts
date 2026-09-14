@@ -166,6 +166,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     if (request.headers['content-encoding']) meta.contentEncoding = request.headers['content-encoding'];
     if (request.headers['cache-control']) meta.cacheControl = request.headers['cache-control'];
     if (request.headers['expires']) meta.expires = new Date(request.headers['expires']);
+    meta.userMetadata = Object.fromEntries(Object.entries(request.headers)
+      .filter(([name]) => name.toLowerCase().startsWith('x-amz-meta-'))
+      .map(([name, value]) => [name.slice('x-amz-meta-'.length).toLowerCase(), Array.isArray(value) ? value.join(',') : String(value)]));
     const encryption = request.headers['x-amz-server-side-encryption'];
     const kmsKeyId = request.headers['x-amz-server-side-encryption-aws-kms-key-id'];
     if (encryption && encryption !== 'AES256' && encryption !== 'aws:kms') {
@@ -242,6 +245,10 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     reply.type(metadata.contentType || 'application/octet-stream')
       .header('ETag', metadata.etag)
       .header('Last-Modified', metadata.lastModified.toUTCString())
+      .header('Content-Length', String(data.length))
+      .header('Cache-Control', metadata.cacheControl || '')
+      .header('Content-Disposition', metadata.contentDisposition || '')
+      .header('Content-Encoding', metadata.contentEncoding || '')
       .header('x-amz-checksum-sha256', checksumSha256)
       .header('Accept-Ranges', 'bytes')
       .code(status);
@@ -250,6 +257,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     if (metadata.objectLockMode) reply.header('x-amz-object-lock-mode', metadata.objectLockMode);
     if (metadata.objectLockRetainUntilDate) reply.header('x-amz-object-lock-retain-until-date', metadata.objectLockRetainUntilDate.toUTCString());
     if (metadata.objectLockLegalHold !== undefined) reply.header('x-amz-object-lock-legal-hold', metadata.objectLockLegalHold ? 'ON' : 'OFF');
+    for (const [name, value] of Object.entries(metadata.userMetadata)) reply.header(`x-amz-meta-${name}`, value);
     if (contentRange) reply.header('Content-Range', contentRange);
     reply.send(data);
   }
@@ -265,12 +273,17 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       .header('ETag', metadata.etag)
       .header('Last-Modified', metadata.lastModified.toUTCString())
       .header('Content-Type', metadata.contentType)
+      .header('Content-Length', String(metadata.size))
+      .header('Cache-Control', metadata.cacheControl || '')
+      .header('Content-Disposition', metadata.contentDisposition || '')
+      .header('Content-Encoding', metadata.contentEncoding || '')
       .header('x-amz-checksum-sha256', crypto.createHash('sha256').update((await s3.getObject(params.bucket, key)).data).digest('base64'));
     if (metadata.serverSideEncryption) reply.header('x-amz-server-side-encryption', metadata.serverSideEncryption);
     if (metadata.sseKmsKeyId) reply.header('x-amz-server-side-encryption-aws-kms-key-id', metadata.sseKmsKeyId);
     if (metadata.objectLockMode) reply.header('x-amz-object-lock-mode', metadata.objectLockMode);
     if (metadata.objectLockRetainUntilDate) reply.header('x-amz-object-lock-retain-until-date', metadata.objectLockRetainUntilDate.toUTCString());
     if (metadata.objectLockLegalHold !== undefined) reply.header('x-amz-object-lock-legal-hold', metadata.objectLockLegalHold ? 'ON' : 'OFF');
+    for (const [name, value] of Object.entries(metadata.userMetadata)) reply.header(`x-amz-meta-${name}`, value);
     reply.send();
   }
 

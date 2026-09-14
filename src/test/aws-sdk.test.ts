@@ -6,6 +6,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   UploadPartCommand,
@@ -51,7 +52,7 @@ describe('AWS SDK v3 compatibility', () => {
   it('supports SDK bucket and object CRUD', async () => {
     await client.send(new CreateBucketCommand({ Bucket: bucket }));
     await client.send(new HeadBucketCommand({ Bucket: bucket }));
-    await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'sdk.txt', Body: 'hello SDK', ContentType: 'text/plain' }));
+    await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'sdk.txt', Body: 'hello SDK', ContentType: 'text/plain', Metadata: { color: 'blue' }, CacheControl: 'max-age=60' }));
     await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'a.txt', Body: 'a' }));
     await client.send(new PutObjectCommand({ Bucket: bucket, Key: 'b.txt', Body: 'b' }));
 
@@ -64,6 +65,11 @@ describe('AWS SDK v3 compatibility', () => {
     expect(secondPage.Contents?.map(object => object.Key)).toEqual(['b.txt']);
     const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
     expect(await object.Body?.transformToString()).toBe('hello SDK');
+    const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
+    expect(head.ContentType).toBe('text/plain');
+    expect(head.CacheControl).toBe('max-age=60');
+    expect(head.Metadata).toEqual({ color: 'blue' });
+    await client.send(new GetObjectCommand({ Bucket: bucket, Key: 'sdk.txt', IfMatch: head.ETag }));
 
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'sdk.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'a.txt' }));
