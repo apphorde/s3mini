@@ -18,6 +18,7 @@ container, or reverse-proxied deployment.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
 - Optional SigV4 header and presigned URL verification are implemented.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
+- AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
@@ -36,8 +37,8 @@ database locking during test execution.
 ## Next Steps
 
 1. Expand AWS SDK coverage for `HeadObject`, metadata, conditional requests, tagging, and versioning.
-2. Implement lifecycle expiration and transition processing.
-3. Add bucket-policy and public-access enforcement.
+2. Expand lifecycle processing beyond expiration to transitions and noncurrent versions.
+3. Expand bucket-policy and public-access enforcement beyond explicit deny statements.
 4. Improve object ACL semantics and authorization enforcement.
 5. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
 6. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.

@@ -38,6 +38,10 @@ const client = new S3Client({
 | Multipart upload | Create/upload/list/complete/abort | Required |
 | Bucket versioning | Put/get versioning | Required |
 | Object tagging | Put/get/delete tagging | Required |
+| Object ranges | `GetObjectCommand` with `Range` | Required |
+| Object checksums | SHA-256 request/response checksums | Required |
+| Lifecycle expiration | Prefix/day expiration subset | Partial |
+| Bucket policy | Explicit public `Deny` subset | Partial |
 
 Authentication, XML error codes, HTTP status codes, ETags, metadata headers,
 path-style addressing, pagination, and conditional requests are part of each
@@ -45,3 +49,7 @@ operation's compatibility requirement.
 
 Features outside this core target remain explicitly unsupported until they have
 dedicated behavior and SDK tests.
+
+The compatibility suite currently verifies 34 tests, including AWS SDK v3
+bucket/object CRUD, pagination, multipart upload, CopyObject, tagging,
+versioning, ranges, checksums, and conditional reads.
