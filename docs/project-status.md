@@ -19,6 +19,7 @@ container, or reverse-proxied deployment.
 - Optional SigV4 header and presigned URL verification are implemented.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
+- The current compatibility checkpoint is tracked in git history with 34 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
@@ -36,12 +37,18 @@ database locking during test execution.
 
 ## Next Steps
 
-1. Expand AWS SDK coverage for `HeadObject`, metadata, conditional requests, tagging, and versioning.
-2. Expand lifecycle processing beyond expiration to transitions and noncurrent versions.
-3. Expand bucket-policy and public-access enforcement beyond explicit deny statements.
-4. Improve object ACL semantics and authorization enforcement.
-5. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
-6. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
+1. Expand lifecycle processing beyond expiration to transitions and noncurrent versions.
+2. Expand bucket-policy and public-access enforcement beyond explicit deny statements.
+3. Improve object ACL semantics and authorization enforcement.
+4. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
+5. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
+
+## Next Session Handoff
+
+Start by checking `git status`, recent history, and the todo list. The next
+implementation slice should be lifecycle transition/noncurrent-version behavior,
+followed by broader policy and ACL authorization. Preserve the AWS SDK v3 test
+harness in `src/test/aws-sdk.test.ts` and keep the compatibility suite green.
 
 ## Known Scope
 

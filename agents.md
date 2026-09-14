@@ -28,6 +28,17 @@ self-hosted clients such as MinIO clients and compatible tooling.
 3. Shared behavior with MinIO and Backblaze B2 S3 APIs.
 4. Clear, documented deviations for unsupported features.
 
+## Current Handoff
+
+- Latest pushed checkpoint: inspect the most recent commit on `main`.
+- Verification baseline: 34 tests passing and `npm run build` passing.
+- AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
+  DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
+- Next implementation slice: lifecycle transitions and noncurrent-version rules.
+- Following slices: broader bucket-policy/public-access enforcement, object ACL
+  authorization, and MinIO/Backblaze compatibility tests.
+- Update this handoff and `docs/project-status.md` when the next checkpoint changes.
+
 ## Security and Privacy
 
 - Never commit credentials, access keys, signing secrets, private keys, tokens, or private deployment configuration.
