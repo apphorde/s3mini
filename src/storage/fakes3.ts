@@ -489,6 +489,11 @@ export class FakeS3 {
     return { partNumber: request.partNumber, etag, size: request.body.length, lastModified: new Date(lastModified) };
   }
 
+  async uploadPartCopy(bucket: string, key: string, uploadId: string, partNumber: number, sourceBucket: string, sourceKey: string): Promise<MultipartPart> {
+    const source = await this.getObject(sourceBucket, sourceKey);
+    return this.uploadPart({ bucket, key, uploadId, partNumber, body: source.data });
+  }
+
   async listParts(request: ListPartsRequest): Promise<ListPartsResult> {
     const upload = await this.get('SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?', [request.uploadId, request.bucket, request.key]);
     if (!upload) throw new S3Error('NoSuchUpload', 'The specified multipart upload does not exist.', 404, request.bucket, request.key);

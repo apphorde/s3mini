@@ -121,6 +121,14 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     const key = (request.params as any)['*'] as string;
     const query = request.query as Record<string, string | undefined>;
     if (query.uploadId && query.partNumber) {
+      const copySource = request.headers['x-amz-copy-source'];
+      if (copySource) {
+        const source = decodeURIComponent(String(copySource)).replace(/^\//, '').split('/');
+        const sourceBucket = source.shift();
+        if (!sourceBucket || !source.length) throw new S3Error('InvalidRequest', 'x-amz-copy-source is invalid.', 400, params.bucket, key);
+        const part = await s3.uploadPartCopy(params.bucket, key, query.uploadId, Number(query.partNumber), sourceBucket, source.join('/'));
+        return reply.type('application/xml').code(200).send(wrapXml('CopyPartResult', { ETag: part.etag, LastModified: part.lastModified.toISOString() }));
+      }
       const part = await s3.uploadPart({ bucket: params.bucket, key, uploadId: query.uploadId, partNumber: Number(query.partNumber), body: request.body as Buffer });
       return reply.code(200).header('ETag', part.etag).send();
     }

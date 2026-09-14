@@ -161,4 +161,14 @@ describe('S3 HTTP routes', () => {
     expect(selected.statusCode).toBe(200);
     expect(selected.body).toContain('id,name');
   });
+
+  it('supports UploadPartCopy', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/source.bin`, headers: { 'content-type': 'application/octet-stream' }, payload: 'copied-part' });
+    const initiated = await app.inject({ method: 'POST', url: `/${bucket}/destination.bin?uploads` });
+    const uploadId = initiated.body.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1];
+    const copied = await app.inject({ method: 'PUT', url: `/${bucket}/destination.bin?uploadId=${uploadId}&partNumber=1`, headers: { 'x-amz-copy-source': `/${bucket}/source.bin` } });
+    expect(copied.statusCode).toBe(200);
+    expect(copied.body).toContain('<CopyPartResult>');
+  });
 });
