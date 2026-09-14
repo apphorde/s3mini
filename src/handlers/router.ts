@@ -2,10 +2,20 @@ import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import crypto from 'node:crypto';
 import type { FakeS3 } from '../storage/fakes3.js';
 import { S3Error } from '../types/models.js';
+import { verifySigV4 } from '../auth/sigv4.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   fastify.addContentTypeParser(['application/octet-stream', 'application/xml', 'text/xml', 'text/csv'], { parseAs: 'buffer' }, (_request, body, done) => {
     done(null, body);
+  });
+  fastify.addHook('preValidation', async (request) => {
+    const authorization = request.headers.authorization;
+    if (!authorization) return;
+    const accessKeyId = process.env.S3MINI_ACCESS_KEY;
+    const secretAccessKey = process.env.S3MINI_SECRET_KEY;
+    if (!accessKeyId || !secretAccessKey || !verifySigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, { accessKeyId, secretAccessKey, region: process.env.S3MINI_REGION || 'us-east-1' })) {
+      throw new S3Error('SignatureDoesNotMatch', 'The request signature does not match.', 403);
+    }
   });
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
     if (error instanceof S3Error) {
