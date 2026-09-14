@@ -3,6 +3,9 @@ import type { FakeS3 } from '../storage/fakes3.js';
 import { S3Error } from '../types/models.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
+  fastify.addContentTypeParser(['application/octet-stream', 'application/xml', 'text/xml'], { parseAs: 'buffer' }, (_request, body, done) => {
+    done(null, body);
+  });
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
     if (error instanceof S3Error) {
       reply.type('application/xml').code(error.httpCode).send(error.toResponseXml(request.id));
@@ -68,7 +71,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     reply.code(204).send();
   }
 
-  fastify.get('/', listBuckets);
+  fastify.get('/', { exposeHeadRoute: false }, listBuckets);
   fastify.put('/:bucket', putBucket);
   fastify.head('/:bucket', headBucket);
   fastify.delete('/:bucket', deleteBucket);
@@ -202,10 +205,10 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   }
 
   fastify.put('/:bucket/*', putObject);
-  fastify.get('/:bucket/*', getObject);
+  fastify.get('/:bucket/*', { exposeHeadRoute: false }, getObject);
   fastify.head('/:bucket/*', headObject);
   fastify.delete('/:bucket/*', deleteObject);
-  fastify.get('/:bucket', listObjectsV2);
+  fastify.get('/:bucket', { exposeHeadRoute: false }, listObjectsV2);
 }
 
 function toXml(obj: any): string {
