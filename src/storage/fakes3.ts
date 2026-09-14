@@ -2,13 +2,7 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs/promises';
 import crypto from 'crypto';
-import type { 
-  Bucket, 
-  ObjectMetadata, 
-  Tag, 
-  BucketCorsConfiguration, 
-  ObjectSummary 
-} from '../types/models.js';
+import type { Bucket, ObjectMetadata, ObjectSummary } from '../types/models.js';
 import { S3Error } from '../types/models.js';
 
 export const STORAGE_BASE = '/data/objects';
@@ -107,6 +101,24 @@ export class FakeS3 {
   async deleteBucket(name: string): Promise<void> {
     const bucket = await this.get('SELECT name FROM buckets WHERE name = ?', [name]);
     if (!bucket) throw new S3Error('NoSuchBucket', 'Bucket not found', 404, name);
+    const object = await this.get('SELECT id FROM objs WHERE bucket = ? LIMIT 1', [name]);
+    if (object) throw new S3Error('BucketNotEmpty', 'The bucket you tried to delete is not empty.', 409, name);
+    await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM buckets WHERE name = ?', [name]);
+    await fs.rm(path.join(STORAGE_BASE, name), { recursive: true, force: true });
+  }
+
+  async close(): Promise<void> {
+    if (!this.db) return;
+    await new Promise<void>((resolve, reject) => {
+      this.db.close((error: Error | null) => error ? reject(error) : resolve());
+    });
+    this.db = undefined;
+    this.initialized = false;
+  }
+
+  async clearBucket(name: string): Promise<void> {
     await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
     await this.run('DELETE FROM buckets WHERE name = ?', [name]);

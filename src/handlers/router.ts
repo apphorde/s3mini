@@ -1,7 +1,6 @@
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import cors from '@fastify/cors';
-import type { FakeS3 } from '../storage/fakes3';
-import { S3Error } from '../types/models';
+import type { FakeS3 } from '../storage/fakes3.js';
+import { S3Error } from '../types/models.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
@@ -12,8 +11,6 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       reply.type('application/xml').code(500).send(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>${error.message}</Message><RequestId>${request.id}</RequestId></Error>`);
     }
   });
-
-  await fastify.register(cors, { origin: '*' });
 
   // --- Bucket Operations ---
 

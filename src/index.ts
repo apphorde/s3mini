@@ -1,7 +1,6 @@
 import Fastify from 'fastify';
-import cors from '@fastify/cors';
-import { FakeS3 } from './storage/fakes3'
-import { registerRoutes } from './handlers/router'
+import { FakeS3 } from './storage/fakes3.js';
+import { registerRoutes } from './handlers/router.js';
 
 const fastify = Fastify({ 
   logger: true,
@@ -11,10 +10,6 @@ const fastify = Fastify({
 async function bootstrap() {
   const s3 = new FakeS3();
   await s3.init();
-
-  await fastify.register(cors, {
-    origin: '*',
-  });
 
   await registerRoutes(fastify, s3);
 

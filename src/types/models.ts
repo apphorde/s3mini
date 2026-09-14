@@ -132,7 +132,6 @@ export interface CopyResult {
 }
 
 export function generateETag(body: Buffer): string {
-  const crypto = require('crypto');
   return '"' + crypto.createHash('md5').update(body).digest('hex') + '"';
 }
 
@@ -145,3 +144,4 @@ export function generateVersionId(): string {
 
 export const DEFAULT_OWNER_ID = '000000000000000000000000';
 export const COPY_SOURCE_MAX = 5 * 1024 * 1024;
+import crypto from 'node:crypto';

@@ -1,77 +1,80 @@
-# S3MINI — Feature Completeness Catalog
+# S3MINI Feature Catalog
 
-## What We WILL Implement (S3-Compatible Subset)
+This document separates the AWS S3 surface area from the subset currently implemented by
+S3MINI. A checked item means implemented and tested; an unchecked item is planned or out of
+scope. The server is API-only and stores its SQLite metadata and object files below `/data`.
 
-### Bucket Operations
-- [x] CreateBucket (`PUT /?create`)
-- [x] DeleteBucket (`DELETE /`)
-- [x] ListBuckets (`GET /`)
-- [x] HeadBucket (`HEAD /`)
-- [x] GetBucketLocation (`GET /?location`)
+## Implemented
 
-### Object Operations (Core CRUD)
-- [x] PutObject (`PUT /{key}`)
-- [x] GetObject (`GET /{key}`)
-- [x] HeadObject (`HEAD /{key}`)
-- [x] DeleteObject (`DELETE /{key}`)
-- [x] CopyObject (`PUT x-amz-copy-source`)
-- [x] ListObjectsV2 (`GET /?list-type=2`)
+- [x] ListBuckets: `GET /`
+- [x] CreateBucket: `PUT /{bucket}`
+- [x] HeadBucket: `HEAD /{bucket}`
+- [x] DeleteBucket: `DELETE /{bucket}`
+- [x] PutObject: `PUT /{bucket}/{key}`
+- [x] GetObject: `GET /{bucket}/{key}`
+- [x] HeadObject: `HEAD /{bucket}/{key}`
+- [x] DeleteObject: `DELETE /{bucket}/{key}`
+- [x] ListObjectsV2: `GET /{bucket}` with `prefix`
+- [x] S3-style XML errors for implemented operations
+- [x] Basic object metadata: content type, disposition, encoding, cache control, expires, storage class
+- [x] Persistent hybrid storage: SQLite metadata and binary files under `/data/objects`
+- [x] Docker image exposing port `9000`
+
+## Planned S3 API Features
 
 ### Multipart Uploads
-- [x] CreateMultipartUpload (`POST /{key}?uploads`)
-- [x] UploadPart (`PUT /{key}?uploadId=X&partNumber=Y`)
-- [x] ListParts (`GET /{key}?uploadId=X`)
-- [x] AbortMultipartUpload (`DELETE /{key}?uploadId=X`)
-- [x] CompleteMultipartUpload (`POST /{key}?uploadId=X`)
 
-### Object Tagging
-- [x] PutObjectTagging (`PUT /{key}?tagging`)
-- [x] GetObjectTagging (`GET /{key}?tagging`)
-- [x] DeleteObjectTagging (`DELETE /{key}?tagging`)
+- [ ] CreateMultipartUpload
+- [ ] UploadPart
+- [ ] UploadPartCopy
+- [ ] ListParts
+- [ ] ListMultipartUploads
+- [ ] CompleteMultipartUpload
+- [ ] AbortMultipartUpload
 
-### Versioning
-- [x] PutBucketVersioning (`PUT Bucket?versioning`)
-- [x] GetBucketVersioning (`GET Bucket?versioning`)
+### Versioning and Tagging
 
-### Server-Side Encryption Headers (passthrough, no actual encryption)
-- [x] x-amz-server-side-encryption (all object operations)
-- [x] x-amz-server-side-encryption-aws-kms-key-id
-- [x] x-amz-server-side-encryption-context
-- [x] x-amz-client-side-encryption*
-- [ ] SSE-S3, SSE-KMS, SSE-C — documented as passthrough in headers
+- [ ] PutBucketVersioning / GetBucketVersioning
+- [ ] ListObjectVersions
+- [ ] DeleteObject version and delete-marker semantics
+- [ ] PutObjectTagging / GetObjectTagging / DeleteObjectTagging
+- [ ] PutBucketTagging / GetBucketTagging / DeleteBucketTagging
 
-### Object Metadata (user & system)
-- [x] Content-Type, Content-Length, ETag, Last-Modified
-- [x] x-amz-meta-* custom metadata
-- [x] Cache-Control, Content-Disposition, Content-Encoding, Content-Language, Expires
+### Bucket Configuration
 
-### Common S3-style Error Responses
-> All documented in the OpenAPI spec below.
+- [ ] GetBucketLocation
+- [ ] Bucket ACLs and object ACLs
+- [ ] CORS configuration
+- [ ] Lifecycle configuration
+- [ ] Bucket policy and public-access-block configuration
+- [ ] Website configuration
+- [ ] Default encryption configuration
+- [ ] Requester pays, logging, notifications, replication, analytics, metrics, and inventory
 
----
+### Object Features
 
-## What We WILL NOT Implement (Out of Scope)
+- [ ] CopyObject and UploadPartCopy
+- [ ] Conditional requests and byte ranges
+- [ ] Checksum validation and response checksums
+- [ ] Server-side encryption behavior (SSE-S3, SSE-KMS, SSE-C)
+- [ ] Object Lock, legal holds, and retention
+- [ ] RestoreObject and SelectObjectContent
+- [ ] SigV4 authentication and presigned URL validation
 
-### Tiered/Intelligent Storage
-- [ ] Infrequent Access / IA storage class
-- [ ] Glacier / Deep Archive restoration
-- [ ] Intelligent-Tiering configuration
-- [ ] Lifecycle transition rules to cold tiers
-> _We may support `STANDARD` and `ONEZONE_IA` storage-class metadata, but no actual tiering logic._
+### Control-Plane and Specialized AWS Features
 
-### Replication
-- [ ] Cross-Region Replication (CRR)
-- [ ] Source-controlled replication
-- [ ] Multi-Region Access Points (MRAP)
+- [ ] S3 Access Points and Object Lambda
+- [ ] Multi-Region Access Points
+- [ ] S3 Batch Operations
+- [ ] Storage Lens
+- [ ] S3 Express directory buckets
 
-### Advanced S3 features that don't make sense for a tiny server
-- [ ] Object Lock / WORM retention
-- [ ] Bucket policy enforcement
-- [ ] Presigned URL validation with AWS SigV4 signing *generation* (we just accept requests signed by the client). _We do NOT implement presigned-URL **creation** either to keep it simple._
-- [ ] S3 Select (`?select`)
-- [ ] Inventory configuration
-- [ ] Analytics metrics / reports
-- [ ] Notification configuration (Lambda/SNS/Queue)
-- [ ] Access Point, Multi-Part Upload with parallel uploads across regions
-- [ ] Object Lambda Access Points
-- [ ] Direct S3 Transfer acceleration (cloudfront backends)
+## Explicitly Out of Scope
+
+- [ ] Multi-tier storage and automatic transitions between storage classes
+- [ ] Glacier, Deep Archive, and Intelligent-Tiering backends
+- [ ] Replication to external regions or storage systems
+- [ ] A web UI; S3MINI provides an API only
+
+The feature list is intentionally explicit so the OpenAPI contract and implementation status do
+not imply AWS compatibility that has not yet been delivered.
