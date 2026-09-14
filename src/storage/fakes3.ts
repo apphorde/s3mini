@@ -123,6 +123,13 @@ export class FakeS3 {
       tags TEXT NOT NULL,
       PRIMARY KEY(bucket, key, versionId)
     )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS object_acl (
+      bucket TEXT NOT NULL,
+      key TEXT NOT NULL,
+      versionId TEXT NOT NULL DEFAULT '',
+      acl TEXT NOT NULL,
+      PRIMARY KEY(bucket, key, versionId)
+    )`);
     this.initialized = true;
   }
 
@@ -180,6 +187,7 @@ export class FakeS3 {
     await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
     await this.run('DELETE FROM object_tags WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM object_acl WHERE bucket = ?', [name]);
     await this.run('DELETE FROM bucket_settings WHERE bucket = ?', [name]);
     await this.run('DELETE FROM buckets WHERE name = ?', [name]);
     await fs.rm(path.join(STORAGE_BASE, name), { recursive: true, force: true });
@@ -198,6 +206,7 @@ export class FakeS3 {
     await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
     await this.run('DELETE FROM object_tags WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM object_acl WHERE bucket = ?', [name]);
     await this.run('DELETE FROM bucket_settings WHERE bucket = ?', [name]);
     await this.run('DELETE FROM buckets WHERE name = ?', [name]);
     await fs.rm(path.join(STORAGE_BASE, name), { recursive: true, force: true });
@@ -320,6 +329,7 @@ export class FakeS3 {
     await this.run('DELETE FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM tags WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ?', [bucketName, key]);
+    await this.run('DELETE FROM object_acl WHERE bucket = ? AND key = ?', [bucketName, key]);
     await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
     await fs.rm(path.join(STORAGE_BASE, bucketName, '.versions'), { recursive: true, force: true });
   }
@@ -380,6 +390,19 @@ export class FakeS3 {
   async deleteObjectTags(bucket: string, key: string, versionId = ''): Promise<void> {
     await this.headBucket(bucket);
     await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
+  }
+
+  async putObjectAcl(bucket: string, key: string, acl: unknown, versionId = ''): Promise<void> {
+    await this.headBucket(bucket);
+    await this.getObject(bucket, key, versionId || undefined);
+    await this.run('INSERT OR REPLACE INTO object_acl (bucket, key, versionId, acl) VALUES (?, ?, ?, ?)', [bucket, key, versionId, JSON.stringify(acl)]);
+  }
+
+  async getObjectAcl<T>(bucket: string, key: string, versionId = ''): Promise<T> {
+    await this.headBucket(bucket);
+    await this.getObject(bucket, key, versionId || undefined);
+    const row = await this.get('SELECT acl FROM object_acl WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
+    return (row ? JSON.parse(row.acl) : { CannedACL: 'private' }) as T;
   }
 
   async putBucketTags(bucket: string, tags: Record<string, string>): Promise<void> {

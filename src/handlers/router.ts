@@ -136,6 +136,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       await s3.putObjectTags(params.bucket, key, parseTagXml(String(request.body || '')), query.versionId);
       return reply.code(200).send();
     }
+    if (query.acl !== undefined) {
+      const canned = request.headers['x-amz-acl'] || readXmlTag(String(request.body || ''), 'CannedACL') || 'private';
+      await s3.putObjectAcl(params.bucket, key, { CannedACL: canned }, query.versionId);
+      return reply.code(200).send();
+    }
     const copySource = request.headers['x-amz-copy-source'];
     if (copySource) {
       const source = decodeURIComponent(String(copySource)).replace(/^\//, '').split('/');
@@ -198,6 +203,10 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     if (query.tagging !== undefined) {
       const tags = await s3.getObjectTags(params.bucket, key, query.versionId);
       return reply.type('application/xml').send(wrapXml('Tagging', { TagSet: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })) }));
+    }
+    if (query.acl !== undefined) {
+      const acl = await s3.getObjectAcl<Record<string, unknown>>(params.bucket, key, query.versionId);
+      return reply.type('application/xml').send(wrapXml('AccessControlPolicy', acl));
     }
     const original = await s3.getObject(params.bucket, key, query.versionId);
     const ifMatch = request.headers['if-match'];

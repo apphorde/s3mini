@@ -171,4 +171,14 @@ describe('S3 HTTP routes', () => {
     expect(copied.statusCode).toBe(200);
     expect(copied.body).toContain('<CopyPartResult>');
   });
+
+  it('supports object ACL operations', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/acl.txt`, headers: { 'content-type': 'text/plain' }, payload: 'acl' });
+    const put = await app.inject({ method: 'PUT', url: `/${bucket}/acl.txt?acl`, headers: { 'x-amz-acl': 'public-read' } });
+    expect(put.statusCode).toBe(200);
+    const get = await app.inject({ method: 'GET', url: `/${bucket}/acl.txt?acl` });
+    expect(get.statusCode).toBe(200);
+    expect(get.body).toContain('<CannedACL>public-read</CannedACL>');
+  });
 });
