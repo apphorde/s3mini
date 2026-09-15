@@ -596,6 +596,7 @@ export class FakeS3 {
       contents: page.flatMap(([, value]) => typeof value === 'string' ? [] : [value]),
       commonPrefixes: page.flatMap(([, value]) => typeof value === 'string' ? [value] : []),
       startAfter: request.startAfter,
+      encodingType: request.encodingType,
     };
     if (request.continuationToken) result.continuationToken = request.continuationToken;
     if (isTruncated && lastEntry) result.nextContinuationToken = Buffer.from(lastEntry).toString('base64url');

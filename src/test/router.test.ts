@@ -58,6 +58,15 @@ describe('S3 HTTP routes', () => {
     expect(notModified.statusCode).toBe(304);
   });
 
+  it('supports URL-encoded ListObjectsV2 responses', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/folder/space%20key.txt`, headers: { 'content-type': 'text/plain' }, payload: 'encoded' });
+    const list = await app.inject({ method: 'GET', url: `/${bucket}?encoding-type=url` });
+    expect(list.statusCode).toBe(200);
+    expect(list.body).toContain('<EncodingType>url</EncodingType>');
+    expect(list.body).toContain('folder%2Fspace%20key.txt');
+  });
+
   it('supports bucket versioning and tagging query operations', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     expect((await app.inject({ method: 'PUT', url: `/${bucket}?versioning`, headers: { 'content-type': 'text/xml' }, payload: '<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>' })).statusCode).toBe(200);

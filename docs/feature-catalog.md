@@ -70,7 +70,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 ### Object Features
 
 - [x] CopyObject
-- [ ] UploadPartCopy
+- [x] UploadPartCopy
 - [x] Conditional requests and byte ranges
 - [x] SHA-256 checksum validation and response checksums
 - [x] Server-side encryption metadata for SSE-S3/SSE-KMS request modes

@@ -20,13 +20,14 @@ container, or reverse-proxied deployment.
 - Lifecycle configuration accepts AWS-style XML over the HTTP API and applies the parsed rules lazily during reads and listings.
 - Payload integrity accepts AWS SHA-256 and Backblaze SHA-1 headers in addition to Content-MD5.
 - Object storage classes are validated against the supported API enum before persistence.
+- ListObjectsV2 supports AWS `encoding-type=url` responses for reserved characters in keys and prefixes.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
 - Optional SigV4 header and presigned URL verification are implemented.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
-- The current compatibility checkpoint is tracked in git history with 43 passing tests.
+- The current compatibility checkpoint is tracked in git history with 44 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification

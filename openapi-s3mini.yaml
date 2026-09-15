@@ -55,6 +55,7 @@ paths:
           - $ref: '#/components/parameters/Lifecycle'
           - $ref: '#/components/parameters/Policy'
           - $ref: '#/components/parameters/ACL'
+          - $ref: '#/components/parameters/EncodingType'
         responses:
           '200':
             description: Objects in the bucket.
@@ -162,6 +163,12 @@ components:
       required: false
       schema: { type: boolean, default: false }
       description: Configure or retrieve the bucket or object ACL. Object ACL bodies may use canned ACLs or XML AccessControlPolicy grants; authorization support is partial.
+    EncodingType:
+      name: encoding-type
+      in: query
+      required: false
+      schema: { type: string, enum: [url] }
+      description: URL-encode object keys and common prefixes in ListObjectsV2 responses.
   responses:
     S3Error:
       description: S3-compatible XML error.

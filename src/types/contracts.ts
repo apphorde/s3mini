@@ -113,6 +113,7 @@ export interface ListObjectsV2Result {
   continuationToken?: string;
   nextContinuationToken?: string;
   startAfter?: string;
+  encodingType?: 'url';
 }
 
 export interface PutObjectRequest {

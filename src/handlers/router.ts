@@ -423,8 +423,10 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       maxKeys: query['max-keys'] ? Number(query['max-keys']) : undefined,
       continuationToken: query['continuation-token'],
       startAfter: query['start-after'],
+      encodingType: query['encoding-type'] === 'url' ? 'url' : undefined,
     });
 
+    const encodeListValue = (value: string) => result.encodingType === 'url' ? encodeURIComponent(value) : value;
     const response = {
       Name: params.bucket,
       Prefix: result.prefix,
@@ -433,11 +435,12 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       KeyCount: result.keyCount,
       IsTruncated: result.isTruncated,
       NextContinuationToken: result.nextContinuationToken,
-      Contents: result.contents.map(c => ({
-        Key: c.key, LastModified: c.lastModified.toISOString(), ETag: c.etag,
+       Contents: result.contents.map(c => ({
+        Key: encodeListValue(c.key), LastModified: c.lastModified.toISOString(), ETag: c.etag,
         Size: c.size, StorageClass: c.storageClass
       })),
-      CommonPrefixes: result.commonPrefixes.map(Prefix => ({ Prefix })),
+       CommonPrefixes: result.commonPrefixes.map(Prefix => ({ Prefix: encodeListValue(Prefix) })),
+       EncodingType: result.encodingType,
     };
     reply.type('application/xml').send(wrapXml('ListObjectsV2Result', response));
   }
