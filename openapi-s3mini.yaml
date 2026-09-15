@@ -27,6 +27,8 @@ paths:
           - $ref: '#/components/parameters/Bucket'
           - $ref: '#/components/parameters/LocationConstraint'
           - $ref: '#/components/parameters/Lifecycle'
+          - $ref: '#/components/parameters/Policy'
+          - $ref: '#/components/parameters/ACL'
         responses:
           '200': { description: Bucket created. }
           '409': { $ref: '#/components/responses/S3Error' }
@@ -51,6 +53,8 @@ paths:
           - $ref: '#/components/parameters/Bucket'
           - $ref: '#/components/parameters/Prefix'
           - $ref: '#/components/parameters/Lifecycle'
+          - $ref: '#/components/parameters/Policy'
+          - $ref: '#/components/parameters/ACL'
         responses:
           '200':
             description: Objects in the bucket.
@@ -70,7 +74,8 @@ paths:
       operationId: PutObject
       tags: [Objects]
       parameters:
-        - $ref: '#/components/parameters/StorageClass'
+         - $ref: '#/components/parameters/StorageClass'
+         - $ref: '#/components/parameters/ACL'
         - { name: Content-Disposition, in: header, schema: { type: string } }
         - { name: Content-Encoding, in: header, schema: { type: string } }
         - { name: Cache-Control, in: header, schema: { type: string } }
@@ -141,6 +146,18 @@ components:
       required: false
       schema: { type: boolean, default: false }
       description: Configure or retrieve lifecycle rules. Processing is lazy and occurs during object reads and listings.
+    Policy:
+      name: policy
+      in: query
+      required: false
+      schema: { type: boolean, default: false }
+      description: Configure or retrieve the bucket policy.
+    ACL:
+      name: acl
+      in: query
+      required: false
+      schema: { type: boolean, default: false }
+      description: Configure or retrieve the bucket or object ACL.
   responses:
     S3Error:
       description: S3-compatible XML error.

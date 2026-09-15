@@ -194,4 +194,33 @@ describe('S3 HTTP routes', () => {
     expect(denied.statusCode).toBe(403);
     expect(denied.body).toContain('<Code>AccessDenied</Code>');
   });
+
+  it('enforces policy allows, wildcard resources, and string conditions', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/allowed.txt`, headers: { 'content-type': 'text/plain' }, payload: 'allowed' });
+    await app.inject({
+      method: 'PUT',
+      url: `/${bucket}?policy`,
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ statements: [{ effect: 'Allow', principal: '*', action: 's3:GetObject', resource: `arn:aws:s3:::${bucket}/allowed*`, condition: { StringEquals: { 's3:prefix': 'allowed' } } }] }),
+    });
+    const allowed = await app.inject({ method: 'GET', url: `/${bucket}/allowed.txt?prefix=allowed` });
+    expect(allowed.statusCode).toBe(200);
+    const denied = await app.inject({ method: 'GET', url: `/${bucket}/allowed.txt?prefix=other` });
+    expect(denied.statusCode).toBe(403);
+  });
+
+  it('enforces private and public-read object ACLs for anonymous requests when auth is configured', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/acl.txt`, headers: { 'content-type': 'text/plain' }, payload: 'acl' });
+    process.env.S3MINI_ACCESS_KEY = 's3mini';
+    process.env.S3MINI_SECRET_KEY = 's3mini-secret';
+    const privateRead = await app.inject({ method: 'GET', url: `/${bucket}/acl.txt` });
+    expect(privateRead.statusCode).toBe(403);
+    await app.inject({ method: 'PUT', url: `/${bucket}/acl.txt?acl`, headers: { 'x-amz-acl': 'public-read' } });
+    const publicRead = await app.inject({ method: 'GET', url: `/${bucket}/acl.txt` });
+    expect(publicRead.statusCode).toBe(200);
+    delete process.env.S3MINI_ACCESS_KEY;
+    delete process.env.S3MINI_SECRET_KEY;
+  });
 });

@@ -34,8 +34,8 @@ self-hosted clients such as MinIO clients and compatible tooling.
 - Verification baseline: 34 tests passing and `npm run build` passing.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
-- Next implementation slice: broader bucket-policy/public-access enforcement, object ACL
-  authorization, and MinIO/Backblaze compatibility tests.
+- Next implementation slice: richer object ACL grants and MinIO/Backblaze compatibility
+  tests.
 - Update this handoff and `docs/project-status.md` when the next checkpoint changes.
 
 ## Security and Privacy

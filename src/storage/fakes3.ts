@@ -511,19 +511,20 @@ export class FakeS3 {
     await this.run(`UPDATE bucket_settings SET ${name} = NULL WHERE bucket = ?`, [bucket]);
   }
 
-  async isRequestDenied(bucket: string, key: string | undefined, action: string): Promise<boolean> {
+  async isRequestDenied(bucket: string, key: string | undefined, action: string, principal = '*', context: Record<string, string | undefined> = {}): Promise<boolean> {
     const policy = await this.getBucketConfiguration<{ statements?: Array<any> }>(bucket, 'policy');
     if (!policy?.statements) return false;
     const resource = `arn:aws:s3:::${bucket}${key ? `/${key}` : ''}`;
-    return policy.statements.some(statement => {
-      if (statement.effect !== 'Deny') return false;
-      const actions = Array.isArray(statement.action) ? statement.action : [statement.action];
-      const resources = Array.isArray(statement.resource) ? statement.resource : [statement.resource];
-      const principals = statement.principal === '*' || statement.principal?.aws === '*';
-      const actionMatches = actions.includes('*') || actions.includes(action) || actions.includes(action.replace(/^s3:/, 's3:*'));
-      const resourceMatches = resources.includes('*') || resources.includes(resource) || resources.some((value: unknown) => typeof value === 'string' && value.endsWith('/*') && resource.startsWith(value.slice(0, -1)));
-      return principals && actionMatches && resourceMatches;
-    });
+    const matching = policy.statements.filter(statement => policyStatementMatches(statement, resource, action, principal, context));
+    if (matching.some(statement => statement.effect === 'Deny')) return true;
+    return matching.some(statement => statement.effect === 'Allow') ? false : policy.statements.some(statement => statement.effect === 'Allow');
+  }
+
+  async isObjectRequestDenied(bucket: string, key: string, action: string, principal: string): Promise<boolean> {
+    const acl = await this.getObjectAcl<{ CannedACL?: string }>(bucket, key).catch(() => ({ CannedACL: 'private' }));
+    if (principal === 's3mini' || principal === process.env.S3MINI_ACCESS_KEY) return false;
+    if (principal === 'anonymous') return acl.CannedACL !== 'public-read' && acl.CannedACL !== 'public-read-write';
+    return acl.CannedACL !== 'public-read' && acl.CannedACL !== 'public-read-write' && acl.CannedACL !== 'authenticated-read';
   }
 
   async listObjectsV2(bucketName: string, prefix?: string): Promise<any[]> {
@@ -692,4 +693,34 @@ function lifecycleTransition(rule: any, noncurrent: boolean, lastModified: numbe
     .sort((left, right) => Number(right.days ?? right.noncurrentDays ?? 0) - Number(left.days ?? left.noncurrentDays ?? 0))
     .map(transition => transition.storageClass || transition.StorageClass)
     .find(Boolean);
+}
+
+function policyStatementMatches(statement: any, resource: string, action: string, principal: string, context: Record<string, string | undefined>): boolean {
+  const actions = Array.isArray(statement.action) ? statement.action : [statement.action];
+  const resources = Array.isArray(statement.resource) ? statement.resource : [statement.resource];
+  const principals = statement.principal === '*' || statement.principal?.aws === '*' || [statement.principal, statement.principal?.aws].includes(principal);
+  const actionMatches = actions.some((value: unknown) => typeof value === 'string' && wildcardMatches(value, action));
+  const resourceMatches = resources.some((value: unknown) => typeof value === 'string' && wildcardMatches(value, resource));
+  if (!principals || !actionMatches || !resourceMatches) return false;
+  return policyConditionsMatch(statement.condition, context);
+}
+
+function policyConditionsMatch(condition: any, context: Record<string, string | undefined>): boolean {
+  if (!condition) return true;
+  for (const [operator, entries] of Object.entries(condition as Record<string, any>)) {
+    for (const [name, expectedValue] of Object.entries(entries || {})) {
+      const actual = context[name];
+      const expected = Array.isArray(expectedValue) ? expectedValue.map(String) : [String(expectedValue)];
+      const matches = operator === 'StringLike'
+        ? expected.some(value => actual !== undefined && wildcardMatches(value, actual))
+        : expected.includes(actual || '');
+      if (operator === 'StringNotEquals' ? expected.includes(actual || '') : !matches) return false;
+    }
+  }
+  return true;
+}
+
+function wildcardMatches(pattern: string, value: string): boolean {
+  const expression = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+  return new RegExp(expression).test(value);
 }

@@ -22,9 +22,23 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     const params = request.params as { bucket?: string; '*': string };
     const query = request.query as Record<string, string | undefined>;
     const key = params['*'] ? normalizeObjectKey(params['*']) : undefined;
-    if (params.bucket && !query.policy && !query.acl && (key || request.method !== 'PUT')) {
-      const action = key ? `${request.method === 'GET' ? 'Get' : request.method === 'PUT' ? 'Put' : request.method === 'DELETE' ? 'Delete' : request.method}Object` : request.method === 'GET' ? 'ListBucket' : `${request.method}Bucket`;
-      if (await s3.isRequestDenied(params.bucket, key, `s3:${action}`)) throw new S3Error('AccessDenied', 'Access denied by bucket policy.', 403, params.bucket, key);
+    if (params.bucket && query.policy === undefined && query.acl === undefined && (key || request.method !== 'PUT')) {
+      const action = key
+        ? `${request.method === 'GET' || request.method === 'HEAD' ? 'Get' : request.method === 'PUT' ? 'Put' : request.method === 'DELETE' ? 'Delete' : request.method}Object`
+        : request.method === 'GET' ? 'ListBucket' : `${request.method}Bucket`;
+      const credentialsConfigured = Boolean(accessKeyId && secretAccessKey);
+      const authenticatedPrincipal = authorization || hasPresign ? accessKeyId || '' : 'anonymous';
+      const context = {
+        's3:x-amz-acl': String(request.headers['x-amz-acl'] || ''),
+        's3:prefix': query.prefix,
+        'aws:PrincipalArn': authenticatedPrincipal,
+      };
+      if (await s3.isRequestDenied(params.bucket, key, `s3:${action}`, authenticatedPrincipal, context)) {
+        throw new S3Error('AccessDenied', 'Access denied by bucket policy.', 403, params.bucket, key);
+      }
+      if (credentialsConfigured && key && authenticatedPrincipal === 'anonymous' && ['GetObject', 'PutObject', 'DeleteObject'].includes(action) && await s3.isObjectRequestDenied(params.bucket, key, action, authenticatedPrincipal)) {
+        throw new S3Error('AccessDenied', 'Access denied by object ACL.', 403, params.bucket, key);
+      }
     }
   });
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
