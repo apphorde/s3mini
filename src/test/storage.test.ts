@@ -22,6 +22,17 @@ describe('FakeS3', () => {
     expect(result.find((item) => item.name === bucket)?.locationConstraint).toBe('eu-west-1');
   });
 
+  it('persists access keys without exposing secrets in listings', async () => {
+    const created = await s3.createAccessKey('test-admin');
+    expect(created.accessKeyId).toMatch(/^s3mini-/);
+    expect(created.secretAccessKey).toBeTruthy();
+    expect((await s3.listAccessKeys()).find(key => key.accessKeyId === created.accessKeyId)).toMatchObject({ displayName: 'test-admin', status: 'Active' });
+    expect(await s3.getAccessKey(created.accessKeyId)).toMatchObject({ secretAccessKey: created.secretAccessKey, status: 'Active' });
+    await s3.setAccessKeyStatus(created.accessKeyId, 'Disabled');
+    expect(await s3.getAccessKey(created.accessKeyId)).toMatchObject({ status: 'Disabled' });
+    expect((await s3.listAccessKeys()).find(key => key.accessKeyId === created.accessKeyId)).not.toHaveProperty('secretAccessKey');
+  });
+
   it('rejects invalid bucket names, locations, and traversal keys', async () => {
     await expect(s3.createBucket('Bad_Name')).rejects.toMatchObject({ code: 'InvalidBucketName' });
     await expect(s3.createBucket('valid-bucket', 'moon-1')).rejects.toMatchObject({ code: 'InvalidLocationConstraint' });

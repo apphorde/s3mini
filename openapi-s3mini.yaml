@@ -3,8 +3,10 @@ info:
   title: S3MINI S3-Compatible API
   version: 0.1.0
   description: |
-    API contract for the currently implemented S3MINI subset. The complete AWS feature matrix
-    and implementation status are documented in docs/feature-catalog.md.
+    API contract for the currently implemented S3MINI subset. Metadata is stored in
+    /data/s3mini.sqlite and access-key persistence primitives exist, but no HTTP control-plane
+    endpoints are exposed yet. The complete AWS feature matrix and implementation status are
+    documented in docs/feature-catalog.md.
 servers:
   - url: http://localhost:9000
 paths:

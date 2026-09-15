@@ -4,6 +4,9 @@
   "description": "A minimal S3-compatible object storage server in TypeScript",
   "type": "module",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
@@ -15,13 +18,11 @@
     "@fastify/cors": "^11.0.0",
     "fast-querystring": "^1.1.2",
     "fastify": "^5.6.0",
-    "sqlite3": "^5.1.7",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1131.0",
     "@types/node": "^24.0.0",
-    "@types/sqlite3": "^3.1.11",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",

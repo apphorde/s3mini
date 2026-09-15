@@ -1,4 +1,4 @@
-import sqlite3 from 'sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs/promises';
 import crypto from 'crypto';
@@ -22,9 +22,18 @@ import type {
 } from '../types/contracts.js';
 
 export const STORAGE_BASE = '/data/objects';
+export const DATABASE_PATH = '/data/s3mini.sqlite';
+
+export interface AccessKeyRecord {
+  accessKeyId: string;
+  displayName: string;
+  status: 'Active' | 'Disabled';
+  createdAt: Date;
+  lastUsedAt?: Date;
+}
 
 export class FakeS3 {
-  private db: any;
+  private db?: DatabaseSync;
   private initialized = false;
 
   constructor() {}
@@ -42,14 +51,13 @@ export class FakeS3 {
   async init(): Promise<void> {
     if (this.initialized) return;
     await fs.mkdir(STORAGE_BASE, { recursive: true });
-    const dbPath = path.join(STORAGE_BASE, 'meta.db');
-    
-    this.db = await new Promise<any>((resolve, reject) => {
-      const db = new sqlite3.Database(dbPath, (err) => {
-        if (err) reject(err);
-        else resolve(db);
-      });
-    });
+    try {
+      await fs.access(DATABASE_PATH);
+    } catch {
+      try { await fs.copyFile(path.join(STORAGE_BASE, 'meta.db'), DATABASE_PATH); } catch { /* Start with a new database. */ }
+    }
+    this.db = new DatabaseSync(DATABASE_PATH);
+    this.db.exec('PRAGMA journal_mode = WAL');
 
     await this.run(`CREATE TABLE IF NOT EXISTS buckets (
       name TEXT PRIMARY KEY,
@@ -131,25 +139,27 @@ export class FakeS3 {
       acl TEXT NOT NULL,
       PRIMARY KEY(bucket, key, versionId)
     )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS access_keys (
+      accessKeyId TEXT PRIMARY KEY,
+      secretAccessKey TEXT NOT NULL,
+      displayName TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'Active',
+      createdAt INTEGER NOT NULL,
+      lastUsedAt INTEGER
+    )`);
     this.initialized = true;
   }
 
-  private run(sql: string, params: any[] = []): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.db.run(sql, params, (err: any) => (err ? reject(err) : resolve()));
-    });
+  private async run(sql: string, params: any[] = []): Promise<void> {
+    this.db?.prepare(sql).run(...params);
   }
 
-  private get(sql: string, params: any[] = []): Promise<any> {
-    return new Promise((resolve, reject) => {
-      this.db.get(sql, params, (err: any, row: any) => (err ? reject(err) : resolve(row)));
-    });
+  private async get(sql: string, params: any[] = []): Promise<any> {
+    return this.db?.prepare(sql).get(...params);
   }
 
-  private all(sql: string, params: any[] = []): Promise<any[]> {
-    return new Promise((resolve, reject) => {
-      this.db.all(sql, params, (err: any, rows: any[]) => (err ? reject(err) : resolve(rows)));
-    });
+  private async all(sql: string, params: any[] = []): Promise<any[]> {
+    return (this.db?.prepare(sql).all(...params) || []) as any[];
   }
 
   async listBuckets(): Promise<Bucket[]> {
@@ -244,11 +254,40 @@ export class FakeS3 {
 
   async close(): Promise<void> {
     if (!this.db) return;
-    await new Promise<void>((resolve, reject) => {
-      this.db.close((error: Error | null) => error ? reject(error) : resolve());
-    });
+    this.db.close();
     this.db = undefined;
     this.initialized = false;
+  }
+
+  async createAccessKey(displayName = ''): Promise<{ accessKeyId: string; secretAccessKey: string }> {
+    const accessKeyId = `s3mini-${crypto.randomBytes(12).toString('base64url')}`;
+    const secretAccessKey = crypto.randomBytes(32).toString('base64url');
+    await this.run('INSERT INTO access_keys (accessKeyId, secretAccessKey, displayName, status, createdAt) VALUES (?, ?, ?, ?, ?)', [accessKeyId, secretAccessKey, displayName, 'Active', Date.now()]);
+    return { accessKeyId, secretAccessKey };
+  }
+
+  async listAccessKeys(): Promise<AccessKeyRecord[]> {
+    const rows = await this.all('SELECT accessKeyId, displayName, status, createdAt, lastUsedAt FROM access_keys ORDER BY createdAt DESC');
+    return rows.map(row => ({
+      accessKeyId: row.accessKeyId,
+      displayName: row.displayName,
+      status: row.status,
+      createdAt: new Date(row.createdAt),
+      lastUsedAt: row.lastUsedAt ? new Date(row.lastUsedAt) : undefined,
+    }));
+  }
+
+  async getAccessKey(accessKeyId: string): Promise<{ accessKeyId: string; secretAccessKey: string; status: 'Active' | 'Disabled' } | undefined> {
+    const row = await this.get('SELECT accessKeyId, secretAccessKey, status FROM access_keys WHERE accessKeyId = ?', [accessKeyId]);
+    return row ? { accessKeyId: row.accessKeyId, secretAccessKey: row.secretAccessKey, status: row.status } : undefined;
+  }
+
+  async setAccessKeyStatus(accessKeyId: string, status: 'Active' | 'Disabled'): Promise<void> {
+    await this.run('UPDATE access_keys SET status = ? WHERE accessKeyId = ?', [status, accessKeyId]);
+  }
+
+  async markAccessKeyUsed(accessKeyId: string): Promise<void> {
+    await this.run('UPDATE access_keys SET lastUsedAt = ? WHERE accessKeyId = ?', [Date.now(), accessKeyId]);
   }
 
   async clearBucket(name: string): Promise<void> {
