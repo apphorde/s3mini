@@ -290,6 +290,10 @@ export class FakeS3 {
     await this.run('UPDATE access_keys SET lastUsedAt = ? WHERE accessKeyId = ?', [Date.now(), accessKeyId]);
   }
 
+  async hasActiveAccessKeys(): Promise<boolean> {
+    return Boolean(await this.get("SELECT 1 FROM access_keys WHERE status = 'Active' LIMIT 1"));
+  }
+
   async clearBucket(name: string): Promise<void> {
     await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
@@ -563,7 +567,7 @@ export class FakeS3 {
 
   async isObjectRequestDenied(bucket: string, key: string, action: string, principal: string): Promise<boolean> {
     const acl = await this.getObjectAcl<{ CannedACL?: string }>(bucket, key).catch(() => ({ CannedACL: 'private' }));
-    if (principal === 's3mini' || principal === process.env.S3MINI_ACCESS_KEY) return false;
+    if (principal !== 'anonymous') return false;
     const requiredPermission = action === 'GetObject' ? 'READ' : action === 'GetObjectAcl' ? 'READ_ACP' : action === 'PutObjectAcl' ? 'WRITE_ACP' : 'WRITE';
     if (acl.CannedACL) {
       if (acl.CannedACL === 'public-read') return requiredPermission === 'READ';

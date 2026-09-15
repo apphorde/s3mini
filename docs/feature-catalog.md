@@ -18,7 +18,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [x] S3-style XML errors for implemented operations
 - [x] Basic object metadata: content type, disposition, encoding, cache control, expires, storage class
 - [x] Persistent hybrid storage: SQLite metadata in `/data/s3mini.sqlite` and binary files under `/data/objects`
-- [x] Persistent access-key storage primitives (HTTP control plane pending)
+- [x] Persistent access-key storage and authenticated HTTP control plane
 - [x] Docker image exposing port `9000`
 - [x] ListObjectsV2 pagination and delimiter/common-prefix handling
 - [x] Multipart upload lifecycle: initiate, upload, list, complete, and abort

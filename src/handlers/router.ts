@@ -9,16 +9,20 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     done(null, body);
   });
   fastify.addHook('preValidation', async (request) => {
+    if (request.url.startsWith('/admin/')) return;
     const authorization = request.headers.authorization;
     const hasPresign = new URL(request.raw.url || '/', 'http://localhost').searchParams.has('X-Amz-Algorithm');
-    const accessKeyId = process.env.S3MINI_ACCESS_KEY;
-    const secretAccessKey = process.env.S3MINI_SECRET_KEY;
-    if (hasPresign && (!accessKeyId || !secretAccessKey || !verifyPresignedSigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, { accessKeyId: accessKeyId || '', secretAccessKey: secretAccessKey || '', region: process.env.S3MINI_REGION || 'us-east-1' }))) {
+    const credentials = await resolveCredentials(s3, request, hasPresign);
+    const accessKeyId = credentials?.accessKeyId;
+    const secretAccessKey = credentials?.secretAccessKey;
+    const signingCredentials = credentials ? { ...credentials, region: process.env.S3MINI_REGION || 'us-east-1' } : undefined;
+    if (hasPresign && (!signingCredentials || !verifyPresignedSigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, signingCredentials))) {
       throw new S3Error('SignatureDoesNotMatch', 'The presigned URL signature does not match.', 403);
     }
-    if (authorization && (!accessKeyId || !secretAccessKey || !verifySigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, { accessKeyId: accessKeyId || '', secretAccessKey: secretAccessKey || '', region: process.env.S3MINI_REGION || 'us-east-1' }))) {
+    if (authorization && (!signingCredentials || !verifySigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, signingCredentials))) {
       throw new S3Error('SignatureDoesNotMatch', 'The request signature does not match.', 403);
     }
+    if (credentials && (authorization || hasPresign)) await s3.markAccessKeyUsed(credentials.accessKeyId);
     const params = request.params as { bucket?: string; '*': string };
     const query = request.query as Record<string, string | undefined>;
     const key = params['*'] ? normalizeObjectKey(params['*']) : undefined;
@@ -26,7 +30,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       const action = key
         ? `${request.method === 'GET' || request.method === 'HEAD' ? 'Get' : request.method === 'PUT' ? 'Put' : request.method === 'DELETE' ? 'Delete' : request.method}Object`
         : request.method === 'GET' ? 'ListBucket' : `${request.method}Bucket`;
-      const credentialsConfigured = Boolean(accessKeyId && secretAccessKey);
+      const credentialsConfigured = Boolean(process.env.S3MINI_ACCESS_KEY && process.env.S3MINI_SECRET_KEY);
       const authenticatedPrincipal = authorization || hasPresign ? accessKeyId || '' : 'anonymous';
       const context = {
         's3:x-amz-acl': String(request.headers['x-amz-acl'] || ''),
@@ -48,6 +52,27 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       fastify.log.error(error);
       reply.type('application/xml').code(500).send(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>${error.message}</Message><RequestId>${request.id}</RequestId></Error>`);
     }
+  });
+
+  async function requireAdmin(request: FastifyRequest): Promise<void> {
+    const configuredToken = process.env.S3MINI_ADMIN_TOKEN;
+    const suppliedToken = request.headers.authorization?.startsWith('Bearer ') ? request.headers.authorization.slice(7) : undefined;
+    if (!configuredToken || !suppliedToken || !timingSafeTokenEqual(suppliedToken, configuredToken)) {
+      throw new S3Error('AccessDenied', 'The admin token is invalid.', 403);
+    }
+  }
+
+  fastify.get('/admin/access-keys', { preHandler: requireAdmin }, async (_request, reply) => {
+    return reply.send(await s3.listAccessKeys());
+  });
+  fastify.post('/admin/access-keys', { preHandler: requireAdmin }, async (request, reply) => {
+    const body = (request.body && typeof request.body === 'object') ? request.body as { displayName?: string } : {};
+    return reply.code(201).send(await s3.createAccessKey(body.displayName || ''));
+  });
+  fastify.delete('/admin/access-keys/:accessKeyId', { preHandler: requireAdmin }, async (request, reply) => {
+    const { accessKeyId } = request.params as { accessKeyId: string };
+    await s3.setAccessKeyStatus(accessKeyId, 'Disabled');
+    return reply.code(204).send();
   });
 
   // --- Bucket Operations ---
@@ -589,4 +614,26 @@ function configurationQuery(query: Record<string, string | undefined>): 'corsCon
   } as const;
   const key = Object.keys(map).find(name => query[name] !== undefined) as keyof typeof map | undefined;
   return key ? map[key] : undefined;
+}
+
+async function resolveCredentials(s3: FakeS3, request: FastifyRequest, hasPresign: boolean): Promise<{ accessKeyId: string; secretAccessKey: string } | undefined> {
+  const authorization = request.headers.authorization;
+  if (!authorization && !hasPresign) return undefined;
+  const url = new URL(request.raw.url || '/', 'http://localhost');
+  const credentialValue = hasPresign
+    ? url.searchParams.get('X-Amz-Credential') || undefined
+    : authorization?.match(/Credential=([^,\s]+)/)?.[1];
+  const accessKeyId = credentialValue ? decodeURIComponent(credentialValue).split('/')[0] : process.env.S3MINI_ACCESS_KEY;
+  if (!accessKeyId) return undefined;
+  if (accessKeyId === process.env.S3MINI_ACCESS_KEY && process.env.S3MINI_SECRET_KEY) {
+    return { accessKeyId, secretAccessKey: process.env.S3MINI_SECRET_KEY };
+  }
+  const stored = await s3.getAccessKey(accessKeyId);
+  return stored?.status === 'Active' ? stored : undefined;
+}
+
+function timingSafeTokenEqual(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left);
+  const rightBytes = Buffer.from(right);
+  return leftBytes.length === rightBytes.length && crypto.timingSafeEqual(leftBytes, rightBytes);
 }

@@ -32,6 +32,7 @@ describe('AWS SDK v3 compatibility', () => {
   let app: ReturnType<typeof Fastify>;
   let s3: FakeS3;
   let client: S3Client;
+  let endpoint: string;
   let bucket: string;
 
   beforeEach(async () => {
@@ -42,9 +43,9 @@ describe('AWS SDK v3 compatibility', () => {
     await s3.init();
     app = Fastify();
     await registerRoutes(app, s3);
-    const address = await app.listen({ host: '127.0.0.1', port: 0 });
+    endpoint = await app.listen({ host: '127.0.0.1', port: 0 });
     client = new S3Client({
-      endpoint: address,
+      endpoint,
       region: 'us-east-1',
       forcePathStyle: true,
       credentials: { accessKeyId: 's3mini', secretAccessKey: 's3mini-secret' },
@@ -101,6 +102,17 @@ describe('AWS SDK v3 compatibility', () => {
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'checksum.txt' }));
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: 'already-missing.txt' }));
     await client.send(new DeleteBucketCommand({ Bucket: bucket }));
+  });
+
+  it('authenticates using a persisted access key', async () => {
+    const credentials = await s3.createAccessKey('sdk-persisted');
+    delete process.env.S3MINI_ACCESS_KEY;
+    delete process.env.S3MINI_SECRET_KEY;
+    const persistedClient = new S3Client({ endpoint, region: 'us-east-1', forcePathStyle: true, credentials });
+    await persistedClient.send(new CreateBucketCommand({ Bucket: bucket }));
+    await persistedClient.send(new PutObjectCommand({ Bucket: bucket, Key: 'persisted.txt', Body: 'persisted' }));
+    persistedClient.destroy();
+    await s3.setAccessKeyStatus(credentials.accessKeyId, 'Disabled');
   });
 
   it('supports SDK multipart upload commands', async () => {

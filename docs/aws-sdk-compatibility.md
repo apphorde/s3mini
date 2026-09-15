@@ -49,6 +49,7 @@ const client = new S3Client({
 | Storage classes | Supported storage-class enum validation | Implemented |
 | List encoding | ListObjectsV2 `encoding-type=url` response mode | Implemented |
 | Persistence | Node `node:sqlite` metadata database and access-key primitives | Implemented |
+| Access-key control plane | Bearer-protected list, issue, and disable endpoints | Implemented |
 
 Authentication, XML error codes, HTTP status codes, ETags, metadata headers,
 path-style addressing, pagination, and conditional requests are part of each

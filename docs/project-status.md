@@ -22,14 +22,14 @@ container, or reverse-proxied deployment.
 - Object storage classes are validated against the supported API enum before persistence.
 - ListObjectsV2 supports AWS `encoding-type=url` responses for reserved characters in keys and prefixes.
 - SQLite metadata now uses `/data/s3mini.sqlite` through Node's built-in `node:sqlite` driver, with legacy `/data/objects/meta.db` migration on first start.
-- Persistent access-key storage primitives are available; the HTTP control plane is the next slice.
+- Persistent access-key storage and a bearer-token-protected HTTP control plane are implemented for listing, issuing, and disabling keys.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
 - Optional SigV4 header and presigned URL verification are implemented.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
-- The current compatibility checkpoint is tracked in git history with 45 passing tests.
+- The current compatibility checkpoint is tracked in git history with 47 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
@@ -47,14 +47,14 @@ database locking during test execution.
 
 ## Next Steps
 
-1. Add the authenticated HTTP control plane for access-key management.
+1. Add a light web dashboard over the authenticated control plane.
 2. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
 3. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
 
 ## Next Session Handoff
 
 Start by checking `git status`, recent history, and the todo list. The next
-implementation slice should be the authenticated access-key control plane. Preserve the AWS SDK
+implementation slice should be a light web dashboard over the access-key control plane. Preserve the AWS SDK
 v3 test harness in `src/test/aws-sdk.test.ts` and keep the compatibility suite
 green.
 

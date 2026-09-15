@@ -279,4 +279,19 @@ describe('S3 HTTP routes', () => {
     delete process.env.S3MINI_ACCESS_KEY;
     delete process.env.S3MINI_SECRET_KEY;
   });
+
+  it('protects the access-key control plane with an admin bearer token', async () => {
+    process.env.S3MINI_ADMIN_TOKEN = 'test-admin-token';
+    const denied = await app.inject({ method: 'GET', url: '/admin/access-keys' });
+    expect(denied.statusCode).toBe(403);
+    const created = await app.inject({ method: 'POST', url: '/admin/access-keys', headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' }, payload: JSON.stringify({ displayName: 'control-plane-test' }) });
+    expect(created.statusCode).toBe(201);
+    const credentials = created.json() as { accessKeyId: string; secretAccessKey: string };
+    expect(credentials.secretAccessKey).toBeTruthy();
+    const listed = await app.inject({ method: 'GET', url: '/admin/access-keys', headers: { authorization: 'Bearer test-admin-token' } });
+    expect(listed.body).toContain(credentials.accessKeyId);
+    expect(listed.body).not.toContain(credentials.secretAccessKey);
+    expect((await app.inject({ method: 'DELETE', url: `/admin/access-keys/${credentials.accessKeyId}`, headers: { authorization: 'Bearer test-admin-token' } })).statusCode).toBe(204);
+    delete process.env.S3MINI_ADMIN_TOKEN;
+  });
 });

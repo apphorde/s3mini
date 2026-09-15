@@ -4,12 +4,53 @@ info:
   version: 0.1.0
   description: |
     API contract for the currently implemented S3MINI subset. Metadata is stored in
-    /data/s3mini.sqlite and access-key persistence primitives exist, but no HTTP control-plane
-    endpoints are exposed yet. The complete AWS feature matrix and implementation status are
-    documented in docs/feature-catalog.md.
+    /data/s3mini.sqlite. Access-key control-plane endpoints require the S3MINI_ADMIN_TOKEN bearer
+    token. The complete AWS feature matrix and implementation status are documented in
+    docs/feature-catalog.md.
 servers:
   - url: http://localhost:9000
+security:
+  - {}
 paths:
+  /admin/access-keys:
+    get:
+      operationId: ListAccessKeys
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      responses:
+        '200':
+          description: Active and disabled access keys without secret material.
+          content:
+            application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AccessKey' } } }
+        '403': { $ref: '#/components/responses/S3Error' }
+    post:
+      operationId: CreateAccessKey
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, properties: { displayName: { type: string } } }
+      responses:
+        '201':
+          description: Created credentials. The secret is returned only in this response.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/IssuedAccessKey' } }
+        '403': { $ref: '#/components/responses/S3Error' }
+  /admin/access-keys/{accessKeyId}:
+    delete:
+      operationId: DisableAccessKey
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      parameters:
+        - name: accessKeyId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Access key disabled. }
+        '403': { $ref: '#/components/responses/S3Error' }
   /:
     get:
       operationId: ListBuckets
@@ -129,6 +170,28 @@ paths:
         '204': { description: Object deleted. }
         '404': { $ref: '#/components/responses/S3Error' }
 components:
+  securitySchemes:
+    AdminBearer:
+      type: http
+      scheme: bearer
+      description: Value of the S3MINI_ADMIN_TOKEN environment variable.
+  schemas:
+    AccessKey:
+      type: object
+      required: [accessKeyId, displayName, status, createdAt]
+      properties:
+        accessKeyId: { type: string }
+        displayName: { type: string }
+        status: { type: string, enum: [Active, Disabled] }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+    IssuedAccessKey:
+      allOf:
+        - $ref: '#/components/schemas/AccessKey'
+        - type: object
+          required: [secretAccessKey]
+          properties:
+            secretAccessKey: { type: string }
   parameters:
     Bucket:
       name: bucket
