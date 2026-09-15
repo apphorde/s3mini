@@ -165,23 +165,47 @@ export class FakeS3 {
     if (!configuration?.rules?.length) return;
     const rows = await this.all('SELECT * FROM objs WHERE bucket = ?', [bucket]);
     const now = Date.now();
+    const versioning = await this.getVersioning(bucket);
+    const rowsByKey = new Map<string, any[]>();
     for (const row of rows as any[]) {
-      const rule = configuration.rules.find(candidate => {
-        if (candidate.status && candidate.status !== 'Enabled') return false;
-        const prefix = candidate.filter?.prefix ?? candidate.prefix ?? '';
-        if (prefix && !row.key.startsWith(prefix)) return false;
-        const expiration = candidate.expiration;
-        if (!expiration) return false;
-        if (expiration.date && now < Date.parse(expiration.date)) return false;
-        if (expiration.days !== undefined && now < row.lastModified + Number(expiration.days) * 86_400_000) return false;
-        return true;
-      });
-      if (!rule) continue;
-      await this.run('DELETE FROM objs WHERE id = ?', [row.id]);
-      await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, row.key, row.versionId]);
-      await fs.rm(this.versionPath(bucket, row.key, row.versionId), { force: true });
-      await fs.rm(path.join(STORAGE_BASE, bucket, row.key), { force: true });
+      const versions = rowsByKey.get(row.key) || [];
+      versions.push(row);
+      rowsByKey.set(row.key, versions);
     }
+
+    for (const [key, versions] of rowsByKey) {
+      versions.sort((left, right) => right.id - left.id);
+      for (const [index, row] of versions.entries()) {
+        const noncurrent = index > 0;
+        const rule = configuration.rules.find(candidate => lifecycleRuleMatches(candidate, row.key));
+        if (!rule) continue;
+
+        const transition = lifecycleTransition(rule, noncurrent, row.lastModified, now);
+        if (transition && row.storageClass !== transition) {
+          await this.run('UPDATE objs SET storageClass = ? WHERE id = ?', [transition, row.id]);
+        }
+
+        const expiration = noncurrent ? rule.noncurrentVersionExpiration : rule.expiration;
+        if (!expiration || !lifecycleAgeReached(expiration, row.lastModified, now)) continue;
+        if (row.deleteMarker && !expiration.expiredObjectDeleteMarker) continue;
+        if (noncurrent || !versioning.status || row.deleteMarker) {
+          await this.removeObjectVersion(bucket, row, !noncurrent && !versioning.status);
+          continue;
+        }
+
+        // Versioned lifecycle expiration hides the current version with a marker.
+        await this.run('INSERT INTO objs (bucket, key, etag, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker) VALUES (?, ?, NULL, ?, 0, ?, ?, ?, ?, 1)', [bucket, key, now, 'STANDARD', crypto.randomBytes(8).toString('hex') + '+', '000000000000000000000000', 's3mini']);
+        await fs.rm(path.join(STORAGE_BASE, bucket, key), { force: true });
+      }
+    }
+  }
+
+  private async removeObjectVersion(bucket: string, row: any, removeCurrentFile = false): Promise<void> {
+    await this.run('DELETE FROM objs WHERE id = ?', [row.id]);
+    await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, row.key, row.versionId]);
+    await this.run('DELETE FROM object_acl WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, row.key, row.versionId]);
+    await fs.rm(this.versionPath(bucket, row.key, row.versionId), { force: true });
+    if (row.deleteMarker || removeCurrentFile) await fs.rm(path.join(STORAGE_BASE, bucket, row.key), { force: true });
   }
 
   async createBucket(name: string, locationConstraint: string = 'us-east-1'): Promise<void> {
@@ -645,4 +669,27 @@ export class FakeS3 {
       isTruncated: filtered.length > (request.maxUploads ?? 1000),
     };
   }
+}
+
+function lifecycleRuleMatches(rule: any, key: string): boolean {
+  if (rule.status && rule.status !== 'Enabled') return false;
+  const prefix = rule.filter?.prefix ?? rule.prefix ?? '';
+  return !prefix || key.startsWith(prefix);
+}
+
+function lifecycleAgeReached(condition: any, lastModified: number, now: number): boolean {
+  if (condition.date !== undefined) return now >= Date.parse(String(condition.date));
+  const days = condition.days ?? condition.noncurrentDays;
+  if (days !== undefined) return now >= lastModified + Number(days) * 86_400_000;
+  return false;
+}
+
+function lifecycleTransition(rule: any, noncurrent: boolean, lastModified: number, now: number): string | undefined {
+  const transitions = noncurrent ? rule.noncurrentVersionTransitions : rule.transitions;
+  if (!Array.isArray(transitions)) return undefined;
+  return transitions
+    .filter(transition => lifecycleAgeReached(transition, lastModified, now))
+    .sort((left, right) => Number(right.days ?? right.noncurrentDays ?? 0) - Number(left.days ?? left.noncurrentDays ?? 0))
+    .map(transition => transition.storageClass || transition.StorageClass)
+    .find(Boolean);
 }

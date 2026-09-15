@@ -1,4 +1,11 @@
-export type StorageClass = 'STANDARD' | 'ONEZONE_IA';
+export type StorageClass =
+  | 'STANDARD'
+  | 'STANDARD_IA'
+  | 'ONEZONE_IA'
+  | 'INTELLIGENT_TIERING'
+  | 'GLACIER'
+  | 'DEEP_ARCHIVE'
+  | 'GLACIER_IR';
 
 export const VALID_LOCATION_CONSTRAINTS: string[] = [
   'us-east-1', 'us-west-1', 'us-west-2', 'eu-west-1',

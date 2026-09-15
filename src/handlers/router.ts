@@ -181,6 +181,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
 
     const meta: any = {};
+    if (request.headers['x-amz-storage-class']) meta.storageClass = request.headers['x-amz-storage-class'];
     if (request.headers['content-type']) meta.contentType = request.headers['content-type'];
     if (request.headers['content-disposition']) meta.contentDisposition = request.headers['content-disposition'];
     if (request.headers['content-encoding']) meta.contentEncoding = request.headers['content-encoding'];

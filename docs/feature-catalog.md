@@ -58,7 +58,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [x] Bucket ACL configuration
 - [x] Object ACL storage and query operations
 - [x] CORS configuration and preflight behavior
-- [x] Lifecycle expiration configuration and processing (partial)
+- [x] Lifecycle expiration, current/noncurrent transitions, and noncurrent-version expiration (lazy processing)
 - [x] Bucket policy explicit-deny enforcement (partial)
 - [ ] Website configuration
 - [ ] Default encryption configuration
@@ -85,7 +85,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 
 ## Explicitly Out of Scope
 
-- [ ] Multi-tier storage and automatic transitions between storage classes
+- [x] Lifecycle metadata transitions between supported storage classes
 - [ ] Glacier, Deep Archive, and Intelligent-Tiering backends
 - [ ] Replication to external regions or storage systems
 - [ ] A web UI; S3MINI provides an API only

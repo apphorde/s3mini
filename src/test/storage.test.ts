@@ -149,6 +149,36 @@ describe('FakeS3', () => {
     expect((await s3.listObjectsV2Advanced({ bucket })).contents.map(item => item.key)).toEqual(['keep.txt']);
   });
 
+  it('transitions current and noncurrent versions and expires old versions', async () => {
+    await s3.createBucket(bucket);
+    await s3.putVersioning(bucket, 'Enabled');
+    const first = await s3.putObject(bucket, 'archive.txt', Buffer.from('first'), {});
+    await s3.putObject(bucket, 'archive.txt', Buffer.from('second'), {});
+    await s3.putBucketConfiguration(bucket, 'lifecycleConfiguration', {
+      rules: [{
+        status: 'Enabled',
+        filter: { prefix: 'archive' },
+        noncurrentVersionTransitions: [{ noncurrentDays: 0, storageClass: 'GLACIER' }],
+        noncurrentVersionExpiration: { noncurrentDays: 0 },
+      }],
+    });
+
+    await s3.getObject(bucket, 'archive.txt');
+    await expect(s3.getObject(bucket, 'archive.txt', first.versionId)).rejects.toMatchObject({ code: 'NoSuchKey' });
+    expect((await s3.listObjectVersions(bucket, 'archive.txt')).some(version => version.VersionId === first.versionId)).toBe(false);
+  });
+
+  it('applies current-version lifecycle transitions', async () => {
+    await s3.createBucket(bucket);
+    await s3.putObject(bucket, 'cold.txt', Buffer.from('cold'), {});
+    await s3.putBucketConfiguration(bucket, 'lifecycleConfiguration', {
+      rules: [{ status: 'Enabled', prefix: 'cold', transitions: [{ days: 0, storageClass: 'GLACIER' }] }],
+    });
+
+    await s3.getObject(bucket, 'cold.txt');
+    expect((await s3.getObject(bucket, 'cold.txt')).metadata.storageClass).toBe('GLACIER');
+  });
+
   it('copies objects and serves byte ranges', async () => {
     await s3.createBucket(bucket);
     await s3.putObject(bucket, 'source.txt', Buffer.from('abcdef'), { contentType: 'text/plain' });

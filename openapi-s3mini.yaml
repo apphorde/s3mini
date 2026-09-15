@@ -26,6 +26,7 @@ paths:
         parameters:
           - $ref: '#/components/parameters/Bucket'
           - $ref: '#/components/parameters/LocationConstraint'
+          - $ref: '#/components/parameters/Lifecycle'
         responses:
           '200': { description: Bucket created. }
           '409': { $ref: '#/components/responses/S3Error' }
@@ -49,6 +50,7 @@ paths:
         parameters:
           - $ref: '#/components/parameters/Bucket'
           - $ref: '#/components/parameters/Prefix'
+          - $ref: '#/components/parameters/Lifecycle'
         responses:
           '200':
             description: Objects in the bucket.
@@ -132,7 +134,13 @@ components:
     StorageClass:
       name: x-amz-storage-class
       in: header
-      schema: { type: string, enum: [STANDARD, ONEZONE_IA], default: STANDARD }
+       schema: { type: string, enum: [STANDARD, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, GLACIER_IR], default: STANDARD }
+    Lifecycle:
+      name: lifecycle
+      in: query
+      required: false
+      schema: { type: boolean, default: false }
+      description: Configure or retrieve lifecycle rules. Processing is lazy and occurs during object reads and listings.
   responses:
     S3Error:
       description: S3-compatible XML error.
