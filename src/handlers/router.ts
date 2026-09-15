@@ -191,6 +191,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     const body = request.body as Buffer;
     const checksum = request.headers['x-amz-checksum-sha256'];
+    const contentMd5 = request.headers['content-md5'];
+    const contentMd5Digest = crypto.createHash('md5').update(body).digest('base64');
+    if (contentMd5 && String(contentMd5) !== contentMd5Digest) {
+      throw new S3Error('BadDigest', 'The Content-MD5 checksum did not match the request body.', 400, params.bucket, key);
+    }
     const checksumSha256 = crypto.createHash('sha256').update(body).digest('base64');
     if (checksum && checksum !== checksumSha256) {
       throw new S3Error('BadDigest', 'The SHA-256 checksum did not match the request body.', 400, params.bucket, key);
@@ -199,6 +204,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     const meta: any = {};
     if (request.headers['x-amz-storage-class']) meta.storageClass = request.headers['x-amz-storage-class'];
     if (request.headers['content-type']) meta.contentType = request.headers['content-type'];
+    if (request.headers['content-language']) meta.contentLanguage = request.headers['content-language'];
     if (request.headers['content-disposition']) meta.contentDisposition = request.headers['content-disposition'];
     if (request.headers['content-encoding']) meta.contentEncoding = request.headers['content-encoding'];
     if (request.headers['cache-control']) meta.cacheControl = request.headers['cache-control'];
@@ -284,6 +290,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       .header('ETag', metadata.etag)
       .header('Last-Modified', metadata.lastModified.toUTCString())
       .header('Content-Length', String(data.length))
+      .header('Content-Language', metadata.contentLanguage || '')
       .header('Cache-Control', metadata.cacheControl || '')
       .header('Content-Disposition', metadata.contentDisposition || '')
       .header('Content-Encoding', metadata.contentEncoding || '')
@@ -311,6 +318,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
       .header('ETag', metadata.etag)
       .header('Last-Modified', metadata.lastModified.toUTCString())
       .header('Content-Type', metadata.contentType)
+      .header('Content-Language', metadata.contentLanguage || '')
       .header('Content-Length', String(metadata.size))
       .header('Cache-Control', metadata.cacheControl || '')
       .header('Content-Disposition', metadata.contentDisposition || '')

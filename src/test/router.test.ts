@@ -102,6 +102,18 @@ describe('S3 HTTP routes', () => {
     expect(bad.body).toContain('<Code>BadDigest</Code>');
   });
 
+  it('validates Content-MD5 and preserves Content-Language', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const body = 'md5 body';
+    const digest = crypto.createHash('md5').update(body).digest('base64');
+    const put = await app.inject({ method: 'PUT', url: `/${bucket}/md5.txt`, headers: { 'content-type': 'text/plain', 'content-md5': digest, 'content-language': 'en-US' }, payload: body });
+    expect(put.statusCode).toBe(200);
+    expect((await app.inject({ method: 'HEAD', url: `/${bucket}/md5.txt` })).headers['content-language']).toBe('en-US');
+    const bad = await app.inject({ method: 'PUT', url: `/${bucket}/bad-md5.txt`, headers: { 'content-type': 'text/plain', 'content-md5': 'bad' }, payload: body });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.body).toContain('<Code>BadDigest</Code>');
+  });
+
   it('persists supported server-side encryption metadata', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     const put = await app.inject({ method: 'PUT', url: `/${bucket}/encrypted.txt`, headers: { 'content-type': 'text/plain', 'x-amz-server-side-encryption': 'AES256' }, payload: 'secret' });

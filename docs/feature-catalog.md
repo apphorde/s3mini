@@ -25,6 +25,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [x] Object and bucket tagging
 - [x] Bucket location, configuration persistence, and CORS preflight handling
 - [x] CopyObject, byte ranges, conditional reads, and SHA-256 checksums
+- [x] Content-MD5 validation and Content-Language metadata
 - [x] Server-side encryption metadata for AES256 and aws:kms requests
 - [x] Object-lock retention and legal-hold deletion checks
 - [x] RestoreObject and basic `SELECT * FROM S3Object` behavior

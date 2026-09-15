@@ -61,7 +61,8 @@ export class FakeS3 {
       bucket TEXT NOT NULL,
       key TEXT NOT NULL,
       etag TEXT,
-      contentType TEXT,
+       contentType TEXT,
+       contentLanguage TEXT,
       contentDisposition TEXT,
       contentEncoding TEXT,
       cacheControl TEXT,
@@ -82,7 +83,7 @@ export class FakeS3 {
       value TEXT NOT NULL,
       UNIQUE(bucket, key, name)
     )`);
-    for (const column of ['encryption TEXT', 'sseKmsKeyId TEXT', 'objectLockMode TEXT', 'retainUntil INTEGER', 'legalHold TEXT', 'deleteMarker INTEGER', 'userMetadata TEXT']) {
+    for (const column of ['contentLanguage TEXT', 'encryption TEXT', 'sseKmsKeyId TEXT', 'objectLockMode TEXT', 'retainUntil INTEGER', 'legalHold TEXT', 'deleteMarker INTEGER', 'userMetadata TEXT']) {
       try { await this.run(`ALTER TABLE objs ADD COLUMN ${column}`); } catch { /* Existing databases already have the column. */ }
     }
     await this.run(`CREATE TABLE IF NOT EXISTS multipart_uploads (
@@ -276,10 +277,10 @@ export class FakeS3 {
     await fs.writeFile(versionFilePath, body);
 
     await this.run(`
-      INSERT INTO objs (bucket, key, etag, contentType, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold, deleteMarker, userMetadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       INSERT INTO objs (bucket, key, etag, contentType, contentLanguage, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold, deleteMarker, userMetadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        bucketName, key, etag, meta.contentType || null, meta.contentDisposition || null,
+         bucketName, key, etag, meta.contentType || null, meta.contentLanguage || null, meta.contentDisposition || null,
         meta.contentEncoding || null, meta.cacheControl || null, 
         meta.expires ? new Date(meta.expires).getTime() : null,
         lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null, meta.objectLockMode || null, meta.retainUntil ? new Date(meta.retainUntil).getTime() : null, meta.legalHold || null, 0, JSON.stringify(meta.userMetadata || {})
@@ -287,7 +288,7 @@ export class FakeS3 {
     );
 
     return {
-      key, bucket: bucketName, versionId, etag, contentType: meta.contentType || 'application/octet-stream',
+       key, bucket: bucketName, versionId, etag, contentType: meta.contentType || 'application/octet-stream', contentLanguage: meta.contentLanguage,
       contentDisposition: meta.contentDisposition, contentEncoding: meta.contentEncoding,
       cacheControl: meta.cacheControl, expires: meta.expires ? new Date(meta.expires) : undefined,
       lastModified: new Date(lastModified), storageClass: meta.storageClass || 'STANDARD',
@@ -316,8 +317,8 @@ export class FakeS3 {
     const data = await fs.readFile(filePath);
 
     const metadata: ObjectMetadata = {
-      key: row.key, bucket: row.bucket, versionId: row.versionId, size: row.size, etag: row.etag,
-      contentType: row.contentType || 'application/octet-stream', contentDisposition: row.contentDisposition || undefined,
+       key: row.key, bucket: row.bucket, versionId: row.versionId, size: row.size, etag: row.etag,
+       contentType: row.contentType || 'application/octet-stream', contentLanguage: row.contentLanguage || undefined, contentDisposition: row.contentDisposition || undefined,
       contentEncoding: row.contentEncoding || undefined, cacheControl: row.cacheControl || undefined,
       expires: row.expires ? new Date(row.expires) : undefined, lastModified: new Date(row.lastModified),
       storageClass: row.storageClass, ownerId: row.ownerId, ownerDisplayName: row.ownerDisplayName,
@@ -343,6 +344,7 @@ export class FakeS3 {
     const source = await this.getObject(sourceBucket, sourceKey);
     return this.putObject(destinationBucket, destinationKey, source.data, {
       contentType: source.metadata.contentType,
+      contentLanguage: source.metadata.contentLanguage,
       contentDisposition: source.metadata.contentDisposition,
       contentEncoding: source.metadata.contentEncoding,
       cacheControl: source.metadata.cacheControl,

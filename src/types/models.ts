@@ -25,11 +25,11 @@ export interface ObjectMetadata {
   size: number;
   etag: string;
   contentType: string;
+  contentLanguage?: string;
   contentDisposition?: string;
   contentEncoding?: string;
   cacheControl?: string;
   expires?: Date;
-  contentLanguage?: string;
   lastModified: Date;
   storageClass: StorageClass;
   ownerId: string;

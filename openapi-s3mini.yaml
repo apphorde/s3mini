@@ -76,7 +76,9 @@ paths:
       parameters:
          - $ref: '#/components/parameters/StorageClass'
          - $ref: '#/components/parameters/ACL'
-        - { name: Content-Disposition, in: header, schema: { type: string } }
+         - { name: Content-Disposition, in: header, schema: { type: string } }
+         - { name: Content-Language, in: header, schema: { type: string } }
+         - { name: Content-MD5, in: header, schema: { type: string }, description: Base64 MD5 digest validated when supplied. }
         - { name: Content-Encoding, in: header, schema: { type: string } }
         - { name: Cache-Control, in: header, schema: { type: string } }
         - { name: Expires, in: header, schema: { type: string, format: date-time } }
