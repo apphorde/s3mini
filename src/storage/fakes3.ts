@@ -523,8 +523,19 @@ export class FakeS3 {
   async isObjectRequestDenied(bucket: string, key: string, action: string, principal: string): Promise<boolean> {
     const acl = await this.getObjectAcl<{ CannedACL?: string }>(bucket, key).catch(() => ({ CannedACL: 'private' }));
     if (principal === 's3mini' || principal === process.env.S3MINI_ACCESS_KEY) return false;
-    if (principal === 'anonymous') return acl.CannedACL !== 'public-read' && acl.CannedACL !== 'public-read-write';
-    return acl.CannedACL !== 'public-read' && acl.CannedACL !== 'public-read-write' && acl.CannedACL !== 'authenticated-read';
+    const requiredPermission = action === 'GetObject' ? 'READ' : action === 'GetObjectAcl' ? 'READ_ACP' : action === 'PutObjectAcl' ? 'WRITE_ACP' : 'WRITE';
+    if (acl.CannedACL) {
+      if (acl.CannedACL === 'public-read') return requiredPermission === 'READ';
+      if (acl.CannedACL === 'public-read-write') return requiredPermission === 'READ' || requiredPermission === 'WRITE';
+      if (acl.CannedACL === 'authenticated-read') return !(principal !== 'anonymous' && requiredPermission === 'READ');
+      return true;
+    }
+    const grants = Array.isArray((acl as any).Grants) ? (acl as any).Grants : [];
+    return !grants.some((grant: any) => {
+      const grantee = grant.Grantee || {};
+      const matches = grantee.ID === principal || (principal === 'anonymous' && grantee.URI === 'http://acs.amazonaws.com/groups/global/AllUsers') || (principal !== 'anonymous' && grantee.URI === 'http://acs.amazonaws.com/groups/global/AuthenticatedUsers');
+      return matches && grant.Permission === requiredPermission;
+    });
   }
 
   async listObjectsV2(bucketName: string, prefix?: string): Promise<any[]> {

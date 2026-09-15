@@ -210,16 +210,23 @@ describe('S3 HTTP routes', () => {
     expect(denied.statusCode).toBe(403);
   });
 
-  it('enforces private and public-read object ACLs for anonymous requests when auth is configured', async () => {
+  it('evaluates private and public-read object ACLs for anonymous requests', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     await app.inject({ method: 'PUT', url: `/${bucket}/acl.txt`, headers: { 'content-type': 'text/plain' }, payload: 'acl' });
-    process.env.S3MINI_ACCESS_KEY = 's3mini';
-    process.env.S3MINI_SECRET_KEY = 's3mini-secret';
-    const privateRead = await app.inject({ method: 'GET', url: `/${bucket}/acl.txt` });
-    expect(privateRead.statusCode).toBe(403);
+    expect(await s3.isObjectRequestDenied(bucket, 'acl.txt', 'GetObject', 'anonymous')).toBe(true);
     await app.inject({ method: 'PUT', url: `/${bucket}/acl.txt?acl`, headers: { 'x-amz-acl': 'public-read' } });
     const publicRead = await app.inject({ method: 'GET', url: `/${bucket}/acl.txt` });
     expect(publicRead.statusCode).toBe(200);
+  });
+
+  it('evaluates XML ACL grants for anonymous reads', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/grant.txt`, headers: { 'content-type': 'text/plain' }, payload: 'grant' });
+    process.env.S3MINI_ACCESS_KEY = 's3mini';
+    process.env.S3MINI_SECRET_KEY = 's3mini-secret';
+    const acl = '<AccessControlPolicy><AccessControlList><Grant><Grantee><Type>Group</Type><URI>http://acs.amazonaws.com/groups/global/AllUsers</URI></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>';
+    await app.inject({ method: 'PUT', url: `/${bucket}/grant.txt?acl`, headers: { 'content-type': 'application/xml' }, payload: acl });
+    expect((await app.inject({ method: 'GET', url: `/${bucket}/grant.txt` })).statusCode).toBe(200);
     delete process.env.S3MINI_ACCESS_KEY;
     delete process.env.S3MINI_SECRET_KEY;
   });

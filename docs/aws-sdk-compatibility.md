@@ -42,6 +42,7 @@ const client = new S3Client({
 | Object checksums | SHA-256 request/response checksums | Required |
 | Lifecycle expiration | Prefix/day expiration subset | Partial |
 | Bucket policy | Allow/Deny statements, wildcard matching, principals, and basic string conditions | Partial |
+| Object ACL grants | Canned ACLs and XML read grants for public/authenticated principals | Partial |
 
 Authentication, XML error codes, HTTP status codes, ETags, metadata headers,
 path-style addressing, pagination, and conditional requests are part of each

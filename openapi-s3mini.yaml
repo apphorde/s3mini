@@ -157,7 +157,7 @@ components:
       in: query
       required: false
       schema: { type: boolean, default: false }
-      description: Configure or retrieve the bucket or object ACL.
+      description: Configure or retrieve the bucket or object ACL. Object ACL bodies may use canned ACLs or XML AccessControlPolicy grants; authorization support is partial.
   responses:
     S3Error:
       description: S3-compatible XML error.

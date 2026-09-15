@@ -176,7 +176,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     if (query.acl !== undefined) {
       const canned = request.headers['x-amz-acl'] || readXmlTag(String(request.body || ''), 'CannedACL') || 'private';
-      await s3.putObjectAcl(params.bucket, key, { CannedACL: canned }, query.versionId);
+      const body = String(request.body || '');
+      const acl = body.includes('<Grant>') ? parseAclXml(body) : { CannedACL: canned };
+      await s3.putObjectAcl(params.bucket, key, acl, query.versionId);
       return reply.code(200).send();
     }
     const copySource = request.headers['x-amz-copy-source'];
@@ -492,6 +494,20 @@ function parseTagXml(body: string): Record<string, string> {
   const tags: Record<string, string> = {};
   for (const match of body.matchAll(/<Tag\b[^>]*>\s*<Key>([^<]*)<\/Key>\s*<Value>([^<]*)<\/Value>\s*<\/Tag>/g)) tags[match[1]] = match[2];
   return tags;
+}
+
+function parseAclXml(body: string): Record<string, unknown> {
+  const grants = [...body.matchAll(/<Grant>\s*<Grantee(?:\s+[^>]*)?>([\s\S]*?)<\/Grantee>\s*<Permission>([^<]+)<\/Permission>\s*<\/Grant>/g)]
+    .map(match => {
+      const granteeBody = match[1];
+      const grantee: Record<string, string> = {};
+      for (const name of ['Type', 'ID', 'URI', 'DisplayName']) {
+        const value = readXmlTag(granteeBody, name);
+        if (value) grantee[name] = unescapeXml(value);
+      }
+      return { Grantee: grantee, Permission: unescapeXml(match[2]) };
+    });
+  return { Owner: { ID: '000000000000000000000000', DisplayName: 's3mini' }, Grants: grants };
 }
 
 function parseJsonOrXml(body: unknown): unknown {
