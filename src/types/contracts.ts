@@ -1,7 +1,14 @@
 // Type contracts for the S3-compatible API. This module intentionally contains
 // no runtime values, classes, or implementation helpers.
 
-export type StorageClass = 'STANDARD' | 'ONEZONE_IA';
+export type StorageClass =
+  | 'STANDARD'
+  | 'STANDARD_IA'
+  | 'ONEZONE_IA'
+  | 'INTELLIGENT_TIERING'
+  | 'GLACIER'
+  | 'DEEP_ARCHIVE'
+  | 'GLACIER_IR';
 export type LocationConstraint =
   | 'us-east-1'
   | 'us-west-1'

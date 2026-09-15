@@ -1,7 +1,7 @@
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
 import type { FakeS3 } from '../storage/fakes3.js';
-import { S3Error } from '../types/models.js';
+import { S3Error, VALID_STORAGE_CLASSES } from '../types/models.js';
 import { verifyPresignedSigV4, verifySigV4 } from '../auth/sigv4.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
@@ -213,7 +213,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
 
     const meta: any = {};
-    if (request.headers['x-amz-storage-class']) meta.storageClass = request.headers['x-amz-storage-class'];
+    const storageClass = request.headers['x-amz-storage-class'];
+    if (storageClass && !VALID_STORAGE_CLASSES.includes(String(storageClass) as any)) {
+      throw new S3Error('InvalidStorageClass', 'The storage class is not supported.', 400, params.bucket, key);
+    }
+    if (storageClass) meta.storageClass = storageClass;
     if (request.headers['content-type']) meta.contentType = request.headers['content-type'];
     if (request.headers['content-language']) meta.contentLanguage = request.headers['content-language'];
     if (request.headers['content-disposition']) meta.contentDisposition = request.headers['content-disposition'];

@@ -135,6 +135,13 @@ describe('S3 HTTP routes', () => {
     expect(bad.body).toContain('<Code>BadDigest</Code>');
   });
 
+  it('rejects unsupported storage classes', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const response = await app.inject({ method: 'PUT', url: `/${bucket}/invalid-class.txt`, headers: { 'content-type': 'text/plain', 'x-amz-storage-class': 'MADE_UP' }, payload: 'invalid' });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('<Code>InvalidStorageClass</Code>');
+  });
+
   it('persists supported server-side encryption metadata', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     const put = await app.inject({ method: 'PUT', url: `/${bucket}/encrypted.txt`, headers: { 'content-type': 'text/plain', 'x-amz-server-side-encryption': 'AES256' }, payload: 'secret' });
