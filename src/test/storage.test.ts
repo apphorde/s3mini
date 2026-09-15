@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { FakeS3 } from '../storage/fakes3.js';
+import { S3Mini } from '../storage/s3mini.js';
 import { S3Error } from '../types/models.js';
 
-describe('FakeS3', () => {
-  let s3: FakeS3;
+describe('S3Mini', () => {
+  let s3: S3Mini;
   const bucket = `test-${Date.now()}`;
 
   beforeEach(async () => {
-    s3 = new FakeS3();
+    s3 = new S3Mini();
     await s3.init();
   });
 

@@ -26,11 +26,11 @@ import crypto from 'node:crypto';
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerRoutes } from '../handlers/router.js';
-import { FakeS3 } from '../storage/fakes3.js';
+import { S3Mini } from '../storage/s3mini.js';
 
 describe('AWS SDK v3 compatibility', () => {
   let app: ReturnType<typeof Fastify>;
-  let s3: FakeS3;
+  let s3: S3Mini;
   let client: S3Client;
   let endpoint: string;
   let bucket: string;
@@ -39,7 +39,7 @@ describe('AWS SDK v3 compatibility', () => {
     process.env.S3MINI_ACCESS_KEY = 's3mini';
     process.env.S3MINI_SECRET_KEY = 's3mini-secret';
     bucket = `sdk-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    s3 = new FakeS3();
+    s3 = new S3Mini();
     await s3.init();
     app = Fastify();
     await registerRoutes(app, s3);

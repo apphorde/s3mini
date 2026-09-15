@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { FakeS3 } from './storage/fakes3.js';
+import { S3Mini } from './storage/s3mini.js';
 import { registerRoutes } from './handlers/router.js';
 
 const fastify = Fastify({ 
@@ -8,7 +8,7 @@ const fastify = Fastify({
 });
 
 async function bootstrap() {
-  const s3 = new FakeS3();
+  const s3 = new S3Mini();
   await s3.init();
 
   await registerRoutes(fastify, s3);

@@ -2,16 +2,16 @@ import Fastify from 'fastify';
 import crypto from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerRoutes } from '../handlers/router.js';
-import { FakeS3 } from '../storage/fakes3.js';
+import { S3Mini } from '../storage/s3mini.js';
 
 describe('S3 HTTP routes', () => {
   let app: ReturnType<typeof Fastify>;
-  let s3: FakeS3;
+  let s3: S3Mini;
   let bucket: string;
 
   beforeEach(async () => {
     bucket = `http-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    s3 = new FakeS3();
+    s3 = new S3Mini();
     await s3.init();
     app = Fastify();
     await registerRoutes(app, s3);

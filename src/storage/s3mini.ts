@@ -32,7 +32,7 @@ export interface AccessKeyRecord {
   lastUsedAt?: Date;
 }
 
-export class FakeS3 {
+export class S3Mini {
   private db?: DatabaseSync;
   private initialized = false;
 

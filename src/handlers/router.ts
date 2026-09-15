@@ -1,10 +1,10 @@
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
-import type { FakeS3 } from '../storage/fakes3.js';
+import type { S3Mini } from '../storage/s3mini.js';
 import { S3Error, VALID_STORAGE_CLASSES } from '../types/models.js';
 import { verifyPresignedSigV4, verifySigV4 } from '../auth/sigv4.js';
 
-export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
+export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini) {
   fastify.addContentTypeParser(['application/octet-stream', 'application/xml', 'text/xml', 'text/csv'], { parseAs: 'buffer' }, (_request, body, done) => {
     done(null, body);
   });
@@ -617,7 +617,7 @@ function configurationQuery(query: Record<string, string | undefined>): 'corsCon
   return key ? map[key] : undefined;
 }
 
-async function resolveCredentials(s3: FakeS3, request: FastifyRequest, hasPresign: boolean): Promise<{ accessKeyId: string; secretAccessKey: string } | undefined> {
+async function resolveCredentials(s3: S3Mini, request: FastifyRequest, hasPresign: boolean): Promise<{ accessKeyId: string; secretAccessKey: string } | undefined> {
   const authorization = request.headers.authorization;
   if (!authorization && !hasPresign) return undefined;
   const url = new URL(request.raw.url || '/', 'http://localhost');
