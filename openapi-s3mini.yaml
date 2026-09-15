@@ -147,7 +147,7 @@ components:
       in: query
       required: false
       schema: { type: boolean, default: false }
-      description: Configure or retrieve lifecycle rules. Processing is lazy and occurs during object reads and listings.
+      description: Configure or retrieve lifecycle rules. PUT accepts AWS-style XML or JSON; processing is lazy and occurs during object reads and listings.
     Policy:
       name: policy
       in: query

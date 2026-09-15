@@ -59,7 +59,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [x] Bucket ACL configuration
 - [x] Object ACL storage, query operations, canned ACLs, and basic owner/grant authorization (partial)
 - [x] CORS configuration and preflight behavior
-- [x] Lifecycle expiration, current/noncurrent transitions, and noncurrent-version expiration (lazy processing)
+- [x] Lifecycle XML/JSON configuration, expiration, current/noncurrent transitions, and noncurrent-version expiration (lazy processing)
 - [x] Bucket policy Allow/Deny enforcement with wildcard principals, actions, resources, and basic string conditions (partial)
 - [ ] Website configuration
 - [ ] Default encryption configuration

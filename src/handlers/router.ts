@@ -78,7 +78,8 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     const configuration = configurationQuery(query);
     if (configuration) {
-      await s3.putBucketConfiguration(params.bucket, configuration, parseJsonOrXml(request.body));
+      const value = configuration === 'lifecycleConfiguration' ? parseLifecycleXml(request.body) : parseJsonOrXml(request.body);
+      await s3.putBucketConfiguration(params.bucket, configuration, value);
       return reply.code(200).send();
     }
     await s3.createBucket(params.bucket, query.locationConstraint);
@@ -519,9 +520,42 @@ function parseAclXml(body: string): Record<string, unknown> {
 }
 
 function parseJsonOrXml(body: unknown): unknown {
-  if (typeof body === 'object' && body !== null) return body;
+  if (typeof body === 'object' && body !== null && !Buffer.isBuffer(body)) return body;
   const text = String(body || '');
   try { return JSON.parse(text); } catch { return { raw: text }; }
+}
+
+function parseLifecycleXml(body: unknown): Record<string, unknown> {
+  const text = String(body || '');
+  const rules = [...text.matchAll(/<Rule\b[^>]*>([\s\S]*?)<\/Rule>/g)].map(match => {
+    const ruleBody = match[1];
+    const rule: Record<string, unknown> = {
+      id: readXmlTag(ruleBody, 'ID'),
+      status: readXmlTag(ruleBody, 'Status'),
+      filter: { prefix: readXmlTag(ruleBody, 'Prefix') || '' },
+    };
+    const expiration: Record<string, string> = {};
+    const expirationBody = ruleBody.match(/<Expiration(?:Configuration)?\b[^>]*>([\s\S]*?)<\/(?:Expiration|ExpirationConfiguration)>/)?.[1] || ruleBody;
+    const days = readXmlTag(expirationBody, 'Days');
+    const date = readXmlTag(expirationBody, 'Date');
+    if (days) expiration.days = days;
+    if (date) expiration.date = date;
+    if (Object.keys(expiration).length) rule.expiration = expiration;
+    rule.transitions = [...ruleBody.matchAll(/<Transition\b[^>]*>([\s\S]*?)<\/Transition>/g)].map(item => ({
+      days: readXmlTag(item[1], 'Days'),
+      date: readXmlTag(item[1], 'Date'),
+      storageClass: readXmlTag(item[1], 'StorageClass'),
+    }));
+    rule.noncurrentVersionTransitions = [...ruleBody.matchAll(/<NoncurrentVersionTransition\b[^>]*>([\s\S]*?)<\/NoncurrentVersionTransition>/g)].map(item => ({
+      noncurrentDays: readXmlTag(item[1], 'NoncurrentDays'),
+      storageClass: readXmlTag(item[1], 'StorageClass'),
+    }));
+    const noncurrentExpirationBody = ruleBody.match(/<NoncurrentVersionExpiration\b[^>]*>([\s\S]*?)<\/NoncurrentVersionExpiration>/)?.[1];
+    const noncurrentDays = noncurrentExpirationBody ? readXmlTag(noncurrentExpirationBody, 'NoncurrentDays') : undefined;
+    if (noncurrentDays) rule.noncurrentVersionExpiration = { noncurrentDays };
+    return rule;
+  });
+  return { rules };
 }
 
 function configurationQuery(query: Record<string, string | undefined>): 'corsConfiguration' | 'lifecycleConfiguration' | 'policy' | 'encryptionConfiguration' | 'websiteConfiguration' | 'loggingStatus' | 'notificationConfiguration' | 'replicationConfiguration' | 'acl' | undefined {

@@ -70,6 +70,15 @@ describe('S3 HTTP routes', () => {
     expect(tags.body).toContain('<Key>team</Key>');
   });
 
+  it('accepts lifecycle configuration XML over HTTP', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const lifecycle = '<LifecycleConfiguration><Rule><ID>expire-tmp</ID><Filter><Prefix>tmp/</Prefix></Filter><Status>Enabled</Status><Expiration><Days>0</Days></Expiration></Rule></LifecycleConfiguration>';
+    const configured = await app.inject({ method: 'PUT', url: `/${bucket}?lifecycle`, headers: { 'content-type': 'application/xml' }, payload: lifecycle });
+    expect(configured.statusCode).toBe(200);
+    await app.inject({ method: 'PUT', url: `/${bucket}/tmp/expired.txt`, headers: { 'content-type': 'text/plain' }, payload: 'expired' });
+    expect((await app.inject({ method: 'GET', url: `/${bucket}/tmp/expired.txt` })).statusCode).toBe(404);
+  });
+
   it('supports multipart uploads over HTTP', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     const initiated = await app.inject({ method: 'POST', url: `/${bucket}/multi.bin?uploads` });
