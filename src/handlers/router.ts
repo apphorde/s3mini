@@ -192,6 +192,16 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
     const body = request.body as Buffer;
     const checksum = request.headers['x-amz-checksum-sha256'];
+    const contentSha256 = request.headers['x-amz-content-sha256'];
+    const contentSha256Digest = crypto.createHash('sha256').update(body).digest('hex');
+    if (contentSha256 && contentSha256 !== 'UNSIGNED-PAYLOAD' && String(contentSha256) !== contentSha256Digest) {
+      throw new S3Error('BadDigest', 'The x-amz-content-sha256 checksum did not match the request body.', 400, params.bucket, key);
+    }
+    const b2Sha1 = request.headers['x-bz-content-sha1'];
+    const b2Sha1Digest = crypto.createHash('sha1').update(body).digest('hex');
+    if (b2Sha1 && b2Sha1 !== 'do_not_verify' && String(b2Sha1) !== b2Sha1Digest) {
+      throw new S3Error('BadDigest', 'The x-bz-content-sha1 checksum did not match the request body.', 400, params.bucket, key);
+    }
     const contentMd5 = request.headers['content-md5'];
     const contentMd5Digest = crypto.createHash('md5').update(body).digest('base64');
     if (contentMd5 && String(contentMd5) !== contentMd5Digest) {

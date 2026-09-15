@@ -123,6 +123,18 @@ describe('S3 HTTP routes', () => {
     expect(bad.body).toContain('<Code>BadDigest</Code>');
   });
 
+  it('validates AWS and Backblaze payload digest headers', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const body = 'payload digests';
+    const sha256 = crypto.createHash('sha256').update(body).digest('hex');
+    const sha1 = crypto.createHash('sha1').update(body).digest('hex');
+    const good = await app.inject({ method: 'PUT', url: `/${bucket}/digests.txt`, headers: { 'content-type': 'text/plain', 'x-amz-content-sha256': sha256, 'x-bz-content-sha1': sha1 }, payload: body });
+    expect(good.statusCode, good.body).toBe(200);
+    const bad = await app.inject({ method: 'PUT', url: `/${bucket}/bad-digest.txt`, headers: { 'content-type': 'text/plain', 'x-bz-content-sha1': 'bad' }, payload: body });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.body).toContain('<Code>BadDigest</Code>');
+  });
+
   it('persists supported server-side encryption metadata', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     const put = await app.inject({ method: 'PUT', url: `/${bucket}/encrypted.txt`, headers: { 'content-type': 'text/plain', 'x-amz-server-side-encryption': 'AES256' }, payload: 'secret' });

@@ -79,6 +79,8 @@ paths:
          - { name: Content-Disposition, in: header, schema: { type: string } }
          - { name: Content-Language, in: header, schema: { type: string } }
          - { name: Content-MD5, in: header, schema: { type: string }, description: Base64 MD5 digest validated when supplied. }
+         - { name: x-amz-content-sha256, in: header, schema: { type: string }, description: Hex SHA-256 payload digest or UNSIGNED-PAYLOAD. }
+         - { name: x-bz-content-sha1, in: header, schema: { type: string }, description: Hex SHA-1 payload digest or do_not_verify. }
         - { name: Content-Encoding, in: header, schema: { type: string } }
         - { name: Cache-Control, in: header, schema: { type: string } }
         - { name: Expires, in: header, schema: { type: string, format: date-time } }

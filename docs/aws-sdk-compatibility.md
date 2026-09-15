@@ -45,6 +45,7 @@ const client = new S3Client({
 | Object ACL grants | Canned ACLs and XML read grants for public/authenticated principals | Partial |
 | Content-MD5 and language | Request digest validation and `Content-Language` round-trip | Implemented |
 | Lifecycle XML configuration | AWS-style lifecycle rules accepted through bucket API | Partial |
+| Payload digests | AWS SHA-256 and Backblaze SHA-1 request validation | Implemented |
 
 Authentication, XML error codes, HTTP status codes, ETags, metadata headers,
 path-style addressing, pagination, and conditional requests are part of each
