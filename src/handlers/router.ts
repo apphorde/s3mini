@@ -9,7 +9,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     done(null, body);
   });
   fastify.addHook('preValidation', async (request) => {
-    if (request.url.startsWith('/admin/')) return;
+    if (request.url === '/admin' || request.url.startsWith('/admin/')) return;
     const authorization = request.headers.authorization;
     const hasPresign = new URL(request.raw.url || '/', 'http://localhost').searchParams.has('X-Amz-Algorithm');
     const credentials = await resolveCredentials(s3, request, hasPresign);
@@ -62,6 +62,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: FakeS3) {
     }
   }
 
+  fastify.get('/admin', async (_request, reply) => reply.type('text/html').send(ADMIN_HTML));
   fastify.get('/admin/access-keys', { preHandler: requireAdmin }, async (_request, reply) => {
     return reply.send(await s3.listAccessKeys());
   });
@@ -637,3 +638,57 @@ function timingSafeTokenEqual(left: string, right: string): boolean {
   const rightBytes = Buffer.from(right);
   return leftBytes.length === rightBytes.length && crypto.timingSafeEqual(leftBytes, rightBytes);
 }
+
+const ADMIN_HTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>S3MINI Control Plane</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101418; color: #e6edf3; }
+    body { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
+    h1 { margin: 0 0 8px; letter-spacing: -0.03em; }
+    p { color: #9daab8; }
+    section { border: 1px solid #2b3540; border-radius: 10px; padding: 18px; margin-top: 18px; background: #171d23; }
+    input, button { border: 1px solid #3b4855; border-radius: 6px; padding: 9px 11px; background: #0e1318; color: inherit; }
+    input { min-width: 260px; }
+    button { cursor: pointer; background: #245b82; border-color: #347cac; }
+    button.danger { background: #743b42; border-color: #a95760; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { text-align: left; padding: 10px 6px; border-bottom: 1px solid #2b3540; }
+    code { overflow-wrap: anywhere; }
+    #message { min-height: 1.5em; color: #f0c674; }
+  </style>
+</head>
+<body>
+  <h1>S3MINI Control Plane</h1>
+  <p>Manage access keys for this S3MINI instance. Secrets are shown only when a key is issued.</p>
+  <section>
+    <label>Admin token <input id="token" type="password" autocomplete="off"></label>
+    <button id="load">Load keys</button>
+    <p id="message"></p>
+  </section>
+  <section>
+    <form id="create"><input id="name" placeholder="Display name" maxlength="120"><button>Issue access key</button></form>
+    <pre id="issued"></pre>
+    <table><thead><tr><th>Access key</th><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="keys"></tbody></table>
+  </section>
+  <script>
+    const token = () => document.querySelector('#token').value;
+    const message = text => document.querySelector('#message').textContent = text || '';
+    const html = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
+    const request = (url, options = {}) => fetch(url, { ...options, headers: { ...(options.body ? {'Content-Type': 'application/json'} : {}), Authorization: 'Bearer ' + token(), ...(options.headers || {}) } });
+    async function load() {
+      const response = await request('/admin/access-keys');
+      if (!response.ok) return message('Unable to load keys (' + response.status + ').');
+      const keys = await response.json();
+      document.querySelector('#keys').innerHTML = keys.map(key => '<tr><td><code>' + html(key.accessKeyId) + '</code></td><td>' + html(key.displayName) + '</td><td>' + html(key.status) + '</td><td>' + html(new Date(key.createdAt).toLocaleString()) + '</td><td>' + (key.status === 'Active' ? '<button class="danger" data-id="' + html(key.accessKeyId) + '">Disable</button>' : '') + '</td></tr>').join('');
+      document.querySelectorAll('[data-id]').forEach(button => button.onclick = async () => { await request('/admin/access-keys/' + encodeURIComponent(button.dataset.id), { method: 'DELETE' }); load(); });
+      message('');
+    }
+    document.querySelector('#load').onclick = load;
+    document.querySelector('#create').onsubmit = async event => { event.preventDefault(); const response = await request('/admin/access-keys', { method: 'POST', body: JSON.stringify({ displayName: document.querySelector('#name').value }) }); if (!response.ok) return message('Unable to issue key (' + response.status + ').'); const issued = await response.json(); document.querySelector('#issued').textContent = 'Access key: ' + issued.accessKeyId + '\\nSecret: ' + issued.secretAccessKey; document.querySelector('#name').value = ''; load(); };
+  </script>
+</body>
+</html>`;

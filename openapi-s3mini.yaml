@@ -12,6 +12,15 @@ servers:
 security:
   - {}
 paths:
+  /admin:
+    get:
+      operationId: AdminDashboard
+      tags: [Admin]
+      responses:
+        '200':
+          description: Lightweight access-key management dashboard.
+          content:
+            text/html: { schema: { type: string } }
   /admin/access-keys:
     get:
       operationId: ListAccessKeys

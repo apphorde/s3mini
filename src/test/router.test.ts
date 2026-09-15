@@ -294,4 +294,11 @@ describe('S3 HTTP routes', () => {
     expect((await app.inject({ method: 'DELETE', url: `/admin/access-keys/${credentials.accessKeyId}`, headers: { authorization: 'Bearer test-admin-token' } })).statusCode).toBe(204);
     delete process.env.S3MINI_ADMIN_TOKEN;
   });
+
+  it('serves the dependency-free control-plane dashboard', async () => {
+    const dashboard = await app.inject({ method: 'GET', url: '/admin' });
+    expect(dashboard.statusCode).toBe(200);
+    expect(dashboard.headers['content-type']).toContain('text/html');
+    expect(dashboard.body).toContain('S3MINI Control Plane');
+  });
 });
