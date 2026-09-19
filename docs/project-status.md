@@ -24,13 +24,14 @@ container, or reverse-proxied deployment.
 - SQLite metadata now uses `/data/s3mini.sqlite` through Node's built-in `node:sqlite` driver, with legacy `/data/objects/meta.db` migration on first start.
 - Persistent access-key storage, a bearer-token-protected HTTP control plane, and a dependency-free `/admin` dashboard are implemented for listing, issuing, and disabling keys.
 - Local durability foundation is implemented: WAL/full-sync SQLite, atomic synced object writes, and a transactional pending replication journal.
+- Asynchronous peer delivery is implemented for object writes using `S3MINI_REPLICATION_PEERS`, `S3MINI_REPLICATION_TOKEN`, and `S3MINI_NODE_ID`.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
 - Optional SigV4 header and presigned URL verification are implemented.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
-- The current compatibility checkpoint is tracked in git history with 49 passing tests.
+- The current compatibility checkpoint is tracked in git history with 50 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
@@ -48,7 +49,7 @@ database locking during test execution.
 
 ## Next Steps
 
-1. Add the peer replication worker and authenticated transport over the durable journal.
+1. Add delete/tombstone replication, anti-entropy repair, and peer health state.
 2. Add bucket/policy management to the authenticated control plane and dashboard.
 3. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
 4. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
@@ -56,7 +57,7 @@ database locking during test execution.
 ## Next Session Handoff
 
 Start by checking `git status`, recent history, and the todo list. The next
-implementation slice should be the peer replication worker. Preserve the AWS SDK
+implementation slice should be delete/tombstone replication and anti-entropy repair. Preserve the AWS SDK
 v3 test harness in `src/test/aws-sdk.test.ts` and keep the compatibility suite
 green.
 

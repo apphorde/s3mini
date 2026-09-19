@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import { S3Mini } from './storage/s3mini.js';
 import { registerRoutes } from './handlers/router.js';
+import { ReplicationWorker } from './replication/worker.js';
 
 const fastify = Fastify({ 
   logger: true,
@@ -12,6 +13,12 @@ async function bootstrap() {
   await s3.init();
 
   await registerRoutes(fastify, s3);
+  const replication = new ReplicationWorker(s3);
+  replication.start();
+  fastify.addHook('onClose', async () => {
+    replication.stop();
+    await s3.close();
+  });
 
   try {
     await fastify.listen({ port: 9000, host: '0.0.0.0' });

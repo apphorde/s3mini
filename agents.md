@@ -31,10 +31,10 @@ self-hosted clients such as MinIO clients and compatible tooling.
 ## Current Handoff
 
 - Latest pushed checkpoint: inspect the most recent commit on `main`.
-- Verification baseline: 49 tests passing and `npm run build` passing.
+- Verification baseline: 50 tests passing and `npm run build` passing.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
-- Next implementation slice: peer replication worker over the durable journal.
+- Next implementation slice: delete/tombstone replication and anti-entropy repair.
 - Update this handoff and `docs/project-status.md` when the next checkpoint changes.
 
 ## Security and Privacy

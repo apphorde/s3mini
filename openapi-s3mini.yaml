@@ -61,6 +61,25 @@ paths:
       responses:
         '204': { description: Access key disabled. }
         '403': { $ref: '#/components/responses/S3Error' }
+  /internal/replication:
+    put:
+      operationId: ReplicateObject
+      tags: [Internal]
+      description: Internal authenticated asynchronous object-write delivery. Not part of the public S3 API.
+      parameters:
+        - { name: x-s3mini-replication-token, in: header, required: true, schema: { type: string } }
+        - { name: x-s3mini-bucket, in: header, required: true, schema: { type: string } }
+        - { name: x-s3mini-key, in: header, required: true, schema: { type: string } }
+        - { name: x-s3mini-version-id, in: header, required: true, schema: { type: string } }
+        - { name: x-s3mini-etag, in: header, required: true, schema: { type: string } }
+        - { name: x-s3mini-last-modified, in: header, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream: { schema: { type: string, format: binary } }
+      responses:
+        '204': { description: Replicated object accepted. }
+        '403': { $ref: '#/components/responses/S3Error' }
   /:
     get:
       operationId: ListBuckets

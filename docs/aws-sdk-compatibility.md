@@ -52,6 +52,7 @@ const client = new S3Client({
 | Access-key control plane | Bearer-protected list, issue, and disable endpoints | Implemented |
 | Admin dashboard | Dependency-free `/admin` key-management view | Implemented |
 | Replication durability | Atomic local writes and transactional replication intent journal | Partial |
+| Peer object delivery | Authenticated asynchronous object-write delivery | Partial |
 
 Authentication, XML error codes, HTTP status codes, ETags, metadata headers,
 path-style addressing, pagination, and conditional requests are part of each

@@ -301,4 +301,29 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.headers['content-type']).toContain('text/html');
     expect(dashboard.body).toContain('S3MINI Control Plane');
   });
+
+  it('accepts authenticated replicated object writes without creating a replication loop', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    process.env.S3MINI_REPLICATION_TOKEN = 'replication-token';
+    const body = Buffer.from('replicated body');
+    const etag = `"${crypto.createHash('md5').update(body).digest('hex')}"`;
+    const replicated = await app.inject({
+      method: 'PUT',
+      url: '/internal/replication',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-s3mini-replication-token': 'replication-token',
+        'x-s3mini-bucket': bucket,
+        'x-s3mini-key': 'replica.txt',
+        'x-s3mini-version-id': 'replica-version+',
+        'x-s3mini-etag': etag,
+        'x-s3mini-last-modified': String(Date.now()),
+      },
+      payload: body,
+    });
+    expect(replicated.statusCode).toBe(204);
+    expect((await s3.getObject(bucket, 'replica.txt', 'replica-version+')).data.toString()).toBe('replicated body');
+    expect((await s3.listReplicationEvents()).some(event => event.key === 'replica.txt')).toBe(false);
+    delete process.env.S3MINI_REPLICATION_TOKEN;
+  });
 });

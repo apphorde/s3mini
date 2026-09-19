@@ -49,6 +49,15 @@ export interface ReplicationEvent {
   createdAt: Date;
 }
 
+export interface ReplicatedObject {
+  bucket: string;
+  key: string;
+  versionId: string;
+  etag: string;
+  lastModified: number;
+  body: Buffer;
+}
+
 export class S3Mini {
   private db?: DatabaseSync;
   private initialized = false;
@@ -351,6 +360,36 @@ export class S3Mini {
     await this.run('UPDATE replication_events SET status = ?, attempts = ?, nextAttemptAt = ? WHERE id = ?', [status, attempts, nextAttemptAt?.getTime() || null, id]);
   }
 
+  async readReplicationPayload(event: ReplicationEvent): Promise<Buffer> {
+    return fs.readFile(event.payloadPath);
+  }
+
+  async acceptReplicatedObject(object: ReplicatedObject): Promise<void> {
+    this.validateKey(object.key);
+    if (!/^[A-Za-z0-9._+-]+$/.test(object.versionId)) throw new S3Error('InvalidRequest', 'The replicated version ID is invalid.', 400, object.bucket, object.key);
+    if ('"' + crypto.createHash('md5').update(object.body).digest('hex') + '"' !== object.etag) throw new S3Error('BadDigest', 'The replicated object ETag did not match its body.', 400, object.bucket, object.key);
+    if (!(await this.get('SELECT name FROM buckets WHERE name = ?', [object.bucket]))) throw new S3Error('NoSuchBucket', 'Bucket not found', 404, object.bucket);
+    if (await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [object.bucket, object.key, object.versionId])) return;
+
+    const filePath = path.join(STORAGE_BASE, object.bucket, object.key);
+    const versionFilePath = this.versionPath(object.bucket, object.key, object.versionId);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.mkdir(path.dirname(versionFilePath), { recursive: true });
+    await writeDurableFile(versionFilePath, object.body);
+    const current = await this.get('SELECT lastModified FROM objs WHERE bucket = ? AND key = ? ORDER BY lastModified DESC, id DESC LIMIT 1', [object.bucket, object.key]);
+    if (!current || object.lastModified >= current.lastModified) await writeDurableFile(filePath, object.body);
+
+    this.db?.exec('BEGIN IMMEDIATE');
+    try {
+      await this.run('INSERT INTO objs (bucket, key, etag, contentType, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker, userMetadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [object.bucket, object.key, object.etag, 'application/octet-stream', object.lastModified, object.body.length, 'STANDARD', object.versionId, '000000000000000000000000', 's3mini', 0, '{}']);
+      this.db?.exec('COMMIT');
+    } catch (error) {
+      this.db?.exec('ROLLBACK');
+      await fs.rm(versionFilePath, { force: true });
+      throw error;
+    }
+  }
+
   async clearBucket(name: string): Promise<void> {
     await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
@@ -419,7 +458,7 @@ export class S3Mini {
     await this.applyLifecycle(bucketName);
     const row = versionId
       ? await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [bucketName, key, versionId])
-      : await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY id DESC LIMIT 1', [bucketName, key]);
+       : await this.get('SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY lastModified DESC, id DESC LIMIT 1', [bucketName, key]);
     if (!row) throw new S3Error('NoSuchKey', 'Object not found', 404, bucketName, key);
     if (row.deleteMarker) throw new S3Error('NoSuchKey', 'The object is deleted.', 404, bucketName, key);
 

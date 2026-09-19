@@ -19,7 +19,8 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [x] Basic object metadata: content type, disposition, encoding, cache control, expires, storage class
 - [x] Persistent hybrid storage: SQLite metadata in `/data/s3mini.sqlite` and binary files under `/data/objects`
 - [x] Persistent access-key storage, authenticated HTTP control plane, and lightweight `/admin` dashboard
-- [x] Local durability journal for future asynchronous replication (peer transport pending)
+- [x] Local durability journal for asynchronous replication
+- [x] Asynchronous authenticated peer delivery for object writes (delete repair and quorum pending)
 - [x] Docker image exposing port `9000` with the Node SQLite-compatible base image
 - [x] ListObjectsV2 pagination and delimiter/common-prefix handling
 - [x] Multipart upload lifecycle: initiate, upload, list, complete, and abort

@@ -12,6 +12,8 @@ comes before quorum or failover claims.
 - Each successful `PutObject` creates a durable `replication_events` row in the same SQLite transaction as its object metadata.
 - Events contain the bucket, key, immutable version ID, ETag, size, source node ID, and payload path.
 - Events are initially `Pending` and expose explicit delivery status, attempt count, and retry time for a future worker.
+- When `S3MINI_REPLICATION_PEERS` and `S3MINI_REPLICATION_TOKEN` are configured, a background worker sends pending object writes to each peer with exponential retry backoff.
+- Peers accept writes only through the authenticated internal replication endpoint and do not create another outbound event.
 
 ## Replication Contract
 
@@ -19,7 +21,7 @@ The first network mode will be asynchronous replication. A client write is ackno
 
 Replication identity is `(bucket, key, versionId, sourceNodeId)`. A peer must verify the payload size and ETag before acknowledging delivery. Retries must be idempotent and must never overwrite a different version ID.
 
-Future peer communication must use authenticated TLS, a configured node identity, bounded retries, and backpressure. The journal is the handoff boundary between the S3 request path and that worker.
+Peer communication currently uses the configured internal URL and shared token; production deployments should place it behind authenticated TLS. The journal is the handoff boundary between the S3 request path and that worker.
 
 ## Required Before HA Claims
 
@@ -30,4 +32,4 @@ Future peer communication must use authenticated TLS, a configured node identity
 - Add read-repair and an explicit consistency policy.
 - Test disk-full, process crash, peer loss, clock skew, and partial network failure.
 
-Until those pieces exist, S3MINI is durable on one node with replication intent recorded, but it is not yet a highly available or disaster-tolerant replacement for MinIO or Garage.
+Until those pieces exist, S3MINI is durable on one node with asynchronous object-write replication, but it is not yet a highly available or disaster-tolerant replacement for MinIO or Garage.

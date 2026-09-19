@@ -45,6 +45,20 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini) {
       }
     }
   });
+
+  fastify.put('/internal/replication', async (request, reply) => {
+    const expectedToken = process.env.S3MINI_REPLICATION_TOKEN;
+    const suppliedToken = request.headers['x-s3mini-replication-token'];
+    if (!expectedToken || !suppliedToken || !timingSafeTokenEqual(String(suppliedToken), expectedToken)) throw new S3Error('AccessDenied', 'The replication token is invalid.', 403);
+    const bucket = String(request.headers['x-s3mini-bucket'] || '');
+    const key = String(request.headers['x-s3mini-key'] || '');
+    const versionId = String(request.headers['x-s3mini-version-id'] || '');
+    const etag = String(request.headers['x-s3mini-etag'] || '');
+    const lastModified = Number(request.headers['x-s3mini-last-modified']);
+    if (!bucket || !key || !versionId || !etag || !Number.isFinite(lastModified) || !Buffer.isBuffer(request.body)) throw new S3Error('InvalidRequest', 'Replication metadata is incomplete.', 400);
+    await s3.acceptReplicatedObject({ bucket, key, versionId, etag, lastModified, body: request.body });
+    return reply.code(204).send();
+  });
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
     if (error instanceof S3Error) {
       reply.type('application/xml').code(error.httpCode).send(error.toResponseXml(request.id));
