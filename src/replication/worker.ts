@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import type { ReplicationEvent, ReplicationInventoryItem, S3Mini } from '../storage/s3mini.js';
+import type { PeerHealthState, ReplicationEvent, ReplicationInventoryItem, S3Mini } from '../storage/s3mini.js';
 
 export interface PeerHealth {
   peer: string;
@@ -24,6 +24,7 @@ export class ReplicationWorker {
 
   start(intervalMs = 1000): void {
     if (this.timer || !this.peers.length || !this.token) return;
+    void this.loadPersistedHealth();
     this.timer = setInterval(() => { void this.drainOnce(); }, intervalMs);
     this.timer.unref();
   }
@@ -35,6 +36,12 @@ export class ReplicationWorker {
 
   getPeerHealth(): PeerHealth[] {
     return [...this.health.values()].map(item => ({ ...item }));
+  }
+
+  private async loadPersistedHealth(): Promise<void> {
+    for (const state of await this.s3.listPeerHealth()) {
+      if (this.health.has(state.peer)) this.health.set(state.peer, state);
+    }
   }
 
   async drainOnce(): Promise<void> {
@@ -104,11 +111,15 @@ export class ReplicationWorker {
   }
 
   private markPeerSuccess(peer: string): void {
-    this.health.set(peer, { ...this.health.get(peer), peer, status: 'Healthy', consecutiveFailures: 0, lastSuccessAt: new Date() });
+    const state = { ...this.health.get(peer), peer, status: 'Healthy' as const, consecutiveFailures: 0, lastSuccessAt: new Date() };
+    this.health.set(peer, state);
+    void this.s3.savePeerHealth(state);
   }
 
   private markPeerFailure(peer: string): void {
     const current = this.health.get(peer);
-    this.health.set(peer, { ...current, peer, status: 'Unhealthy', consecutiveFailures: (current?.consecutiveFailures || 0) + 1, lastFailureAt: new Date() });
+    const state = { ...current, peer, status: 'Unhealthy' as const, consecutiveFailures: (current?.consecutiveFailures || 0) + 1, lastFailureAt: new Date() };
+    this.health.set(peer, state);
+    void this.s3.savePeerHealth(state);
   }
 }

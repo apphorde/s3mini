@@ -69,6 +69,14 @@ describe('S3Mini', () => {
     expect((await s3.listReplicationEvents()).find(item => item.id === event!.id)?.status).toBe('Delivered');
   });
 
+  it('persists replication peer health across storage restarts', async () => {
+    await s3.savePeerHealth({ peer: 'http://vpn-peer:9000', status: 'Unhealthy', consecutiveFailures: 3, lastFailureAt: new Date(1700000000000) });
+    await s3.close();
+    s3 = new S3Mini();
+    await s3.init();
+    expect(await s3.listPeerHealth()).toEqual([expect.objectContaining({ peer: 'http://vpn-peer:9000', status: 'Unhealthy', consecutiveFailures: 3, lastFailureAt: new Date(1700000000000) })]);
+  });
+
   it('does not delete a non-empty bucket', async () => {
     await s3.createBucket(bucket);
     await s3.putObject(bucket, 'item', Buffer.from('data'), {});

@@ -60,6 +60,14 @@ export interface ReplicationInventoryItem {
   deleteMarker: boolean;
 }
 
+export interface PeerHealthState {
+  peer: string;
+  status: 'Healthy' | 'Unhealthy' | 'Unknown';
+  consecutiveFailures: number;
+  lastSuccessAt?: Date;
+  lastFailureAt?: Date;
+}
+
 export interface ReplicatedObject {
   bucket: string;
   key: string;
@@ -202,6 +210,13 @@ export class S3Mini {
       UNIQUE(bucket, key, versionId, operation, sourceNodeId)
     )`);
     try { await this.run('ALTER TABLE replication_events ADD COLUMN deleteMarker INTEGER NOT NULL DEFAULT 0'); } catch { /* Existing databases already have the column. */ }
+    await this.run(`CREATE TABLE IF NOT EXISTS replication_peer_health (
+      peer TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'Unknown',
+      consecutiveFailures INTEGER NOT NULL DEFAULT 0,
+      lastSuccessAt INTEGER,
+      lastFailureAt INTEGER
+    )`);
     this.initialized = true;
   }
 
@@ -381,6 +396,25 @@ export class S3Mini {
       lastModified: new Date(row.lastModified),
       deleteMarker: Boolean(row.deleteMarker),
     }));
+  }
+
+  async listPeerHealth(): Promise<PeerHealthState[]> {
+    const rows = await this.all('SELECT * FROM replication_peer_health ORDER BY peer ASC');
+    return rows.map(row => ({
+      peer: row.peer,
+      status: row.status,
+      consecutiveFailures: row.consecutiveFailures,
+      lastSuccessAt: row.lastSuccessAt ? new Date(row.lastSuccessAt) : undefined,
+      lastFailureAt: row.lastFailureAt ? new Date(row.lastFailureAt) : undefined,
+    }));
+  }
+
+  async savePeerHealth(state: PeerHealthState): Promise<void> {
+    await this.run(`INSERT INTO replication_peer_health (peer, status, consecutiveFailures, lastSuccessAt, lastFailureAt)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(peer) DO UPDATE SET status = excluded.status, consecutiveFailures = excluded.consecutiveFailures, lastSuccessAt = excluded.lastSuccessAt, lastFailureAt = excluded.lastFailureAt`, [
+      state.peer, state.status, state.consecutiveFailures, state.lastSuccessAt?.getTime() || null, state.lastFailureAt?.getTime() || null,
+    ]);
   }
 
   async updateReplicationEvent(id: number, status: 'Pending' | 'Delivered' | 'Failed', attempts: number, nextAttemptAt?: Date): Promise<void> {

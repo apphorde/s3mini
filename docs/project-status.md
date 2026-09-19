@@ -26,7 +26,7 @@ container, or reverse-proxied deployment.
 - Local durability foundation is implemented: WAL/full-sync SQLite, atomic synced object writes, and a transactional pending replication journal.
 - Asynchronous peer delivery is implemented for object writes, deletes, and delete markers using `S3MINI_REPLICATION_PEERS`, `S3MINI_REPLICATION_TOKEN`, and `S3MINI_NODE_ID`; initial geolocated testing can use private VPN endpoints.
 - The replication worker compares authenticated peer inventories and replays missing local journal events.
-- Configured peer health is tracked in memory and exposed through the authenticated control plane; replicated PUTs validate their MD5 ETag and inventory repair compares ETags.
+- Configured peer health is persisted in SQLite and exposed through the authenticated control plane; replicated PUTs validate their MD5 ETag and inventory repair compares ETags.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
@@ -51,7 +51,7 @@ database locking during test execution.
 
 ## Next Steps
 
-1. Persist peer health history and add stronger content-hash verification to complement journal and anti-entropy delivery.
+1. Add retry leasing/dead-letter handling and stronger content-hash verification to complement journal and anti-entropy delivery.
 2. Add bucket/policy management to the authenticated control plane and dashboard.
 3. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
 4. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
@@ -59,7 +59,7 @@ database locking during test execution.
 ## Next Session Handoff
 
 Start by checking `git status`, recent history, and the todo list. The next
-implementation slice should be persisted peer health, retry leasing/dead-letter handling, and stronger checksum verification. Preserve the AWS SDK
+implementation slice should be retry leasing/dead-letter handling and stronger checksum verification. Preserve the AWS SDK
 v3 test harness in `src/test/aws-sdk.test.ts` and keep the compatibility suite
 green.
 
