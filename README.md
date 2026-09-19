@@ -18,6 +18,9 @@ See the repository documentation for configuration, S3 compatibility, replicatio
 Set these environment variables to protect `/admin` with the OIDC provider at
 `https://auth.api.apphor.de`:
 
+Copy `.env.example` as a starting point for local configuration. Do not commit
+the resulting `.env` file or any client secret.
+
 ```sh
 S3MINI_OIDC_CLIENT_ID=your-client-id
 S3MINI_OIDC_CLIENT_SECRET=your-client-secret

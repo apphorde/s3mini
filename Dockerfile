@@ -9,5 +9,5 @@ RUN npm prune --omit=dev
 RUN mkdir /data && chown -R 1000:1000 /data
 USER node
 ENV NODE_ENV=production
+ENV S3MINI_OIDC_AUTH_URL=https://auth.api.apphor.de
 EXPOSE 9000
-

@@ -35,6 +35,7 @@ container, or reverse-proxied deployment.
 - The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
 - Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is checked against `/userinfo`, with optional email allowlisting via `S3MINI_OIDC_ADMIN_EMAILS`.
 - OIDC setup is documented in `README.md`: register `/admin/callback`, configure client credentials and audience, and use `S3MINI_OIDC_ADMIN_EMAILS` to restrict administrators.
+- `.env.example` and the production container default wire the OIDC provider URL into the application without including credentials.
 - The dashboard clears its HttpOnly OIDC token on logout and redirects expired or unauthorized API sessions back to the login flow.
 - The dashboard uses a Li3 custom component for reactive status messaging, loaded from the documented CDN import map.
 - The distributed-storage replacement roadmap and reliability invariants are documented in `docs/distributed-roadmap.md`.
