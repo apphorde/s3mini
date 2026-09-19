@@ -206,10 +206,14 @@ export class S3Mini {
       attempts INTEGER NOT NULL DEFAULT 0,
       nextAttemptAt INTEGER,
       deleteMarker INTEGER NOT NULL DEFAULT 0,
+      leaseOwner TEXT,
+      leaseUntil INTEGER,
       createdAt INTEGER NOT NULL,
       UNIQUE(bucket, key, versionId, operation, sourceNodeId)
     )`);
     try { await this.run('ALTER TABLE replication_events ADD COLUMN deleteMarker INTEGER NOT NULL DEFAULT 0'); } catch { /* Existing databases already have the column. */ }
+    try { await this.run('ALTER TABLE replication_events ADD COLUMN leaseOwner TEXT'); } catch { /* Existing databases already have the column. */ }
+    try { await this.run('ALTER TABLE replication_events ADD COLUMN leaseUntil INTEGER'); } catch { /* Existing databases already have the column. */ }
     await this.run(`CREATE TABLE IF NOT EXISTS replication_peer_health (
       peer TEXT PRIMARY KEY,
       status TEXT NOT NULL DEFAULT 'Unknown',
@@ -367,7 +371,11 @@ export class S3Mini {
 
   async listReplicationEvents(limit = 100): Promise<ReplicationEvent[]> {
     const rows = await this.all('SELECT * FROM replication_events ORDER BY id ASC LIMIT ?', [Math.max(1, Math.min(limit, 1000))]);
-    return rows.map(row => ({
+    return rows.map(row => this.replicationEventFromRow(row));
+  }
+
+  private replicationEventFromRow(row: any): ReplicationEvent {
+    return {
       id: row.id,
       bucket: row.bucket,
       key: row.key,
@@ -382,7 +390,7 @@ export class S3Mini {
       attempts: row.attempts,
       nextAttemptAt: row.nextAttemptAt ? new Date(row.nextAttemptAt) : undefined,
       createdAt: new Date(row.createdAt),
-    }));
+    };
   }
 
   async listReplicationInventory(limit = 1000): Promise<ReplicationInventoryItem[]> {
@@ -418,7 +426,25 @@ export class S3Mini {
   }
 
   async updateReplicationEvent(id: number, status: 'Pending' | 'Delivered' | 'Failed', attempts: number, nextAttemptAt?: Date): Promise<void> {
-    await this.run('UPDATE replication_events SET status = ?, attempts = ?, nextAttemptAt = ? WHERE id = ?', [status, attempts, nextAttemptAt?.getTime() || null, id]);
+    await this.run('UPDATE replication_events SET status = ?, attempts = ?, nextAttemptAt = ?, leaseOwner = NULL, leaseUntil = NULL WHERE id = ?', [status, attempts, nextAttemptAt?.getTime() || null, id]);
+  }
+
+  async claimReplicationEvents(owner: string, limit = 100, leaseMs = 60_000): Promise<ReplicationEvent[]> {
+    const now = Date.now();
+    this.db?.exec('BEGIN IMMEDIATE');
+    try {
+      await this.run(`UPDATE replication_events SET leaseOwner = ?, leaseUntil = ?
+        WHERE id IN (SELECT id FROM replication_events
+          WHERE status != 'Delivered' AND (nextAttemptAt IS NULL OR nextAttemptAt <= ?)
+            AND (leaseUntil IS NULL OR leaseUntil <= ?)
+          ORDER BY id ASC LIMIT ?)`, [owner, now + leaseMs, now, now, Math.max(1, Math.min(limit, 1000))]);
+      const rows = await this.all('SELECT * FROM replication_events WHERE leaseOwner = ? AND leaseUntil = ? ORDER BY id ASC', [owner, now + leaseMs]);
+      this.db?.exec('COMMIT');
+      return rows.map(row => this.replicationEventFromRow(row));
+    } catch (error) {
+      this.db?.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   private async queueReplicationEvent(event: Omit<ReplicationEvent, 'id' | 'status' | 'attempts' | 'nextAttemptAt'>): Promise<void> {

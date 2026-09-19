@@ -15,6 +15,7 @@ export class ReplicationWorker {
   private readonly peers: string[];
   private readonly token?: string;
   private readonly health = new Map<string, PeerHealth>();
+  private readonly leaseOwner = `${process.env.S3MINI_NODE_ID || 'node'}:${process.pid}`;
 
   constructor(private readonly s3: S3Mini, options: { peers?: string[]; token?: string } = {}) {
     this.peers = options.peers || (process.env.S3MINI_REPLICATION_PEERS || '').split(',').map(peer => peer.trim()).filter(Boolean);
@@ -48,8 +49,7 @@ export class ReplicationWorker {
     if (this.running || !this.peers.length || !this.token) return;
     this.running = true;
     try {
-      const now = Date.now();
-      const events = (await this.s3.listReplicationEvents(100)).filter(event => event.status !== 'Delivered' && (!event.nextAttemptAt || event.nextAttemptAt.getTime() <= now));
+      const events = await this.s3.claimReplicationEvents(this.leaseOwner, 100);
       for (const event of events) await this.deliver(event);
       await this.repairMissingEvents(await this.s3.listReplicationEvents(1000));
     } finally {

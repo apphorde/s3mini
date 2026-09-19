@@ -65,6 +65,8 @@ describe('S3Mini', () => {
     const object = await s3.putObject(bucket, 'replicated.txt', Buffer.from('replicate me'), {});
     const event = (await s3.listReplicationEvents()).find(item => item.bucket === bucket && item.key === 'replicated.txt' && item.versionId === object.versionId);
     expect(event).toMatchObject({ operation: 'PutObject', status: 'Pending', etag: object.etag, size: 12 });
+    expect((await s3.claimReplicationEvents('test-worker')).map(item => item.id)).toEqual([event!.id]);
+    expect(await s3.claimReplicationEvents('other-worker')).toEqual([]);
     await s3.updateReplicationEvent(event!.id, 'Delivered', 1);
     expect((await s3.listReplicationEvents()).find(item => item.id === event!.id)?.status).toBe('Delivered');
   });
