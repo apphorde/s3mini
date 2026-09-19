@@ -35,6 +35,7 @@ self-hosted clients such as MinIO clients and compatible tooling.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
 - Next implementation slice: improve OIDC operational configuration and Li3 dashboard components, then add compatibility coverage for remaining MinIO and Backblaze B2 edge cases. OIDC dashboard login uses `auth.api.apphor.de`; keep its client credentials and allowlist in environment variables. Initial geolocated test nodes may connect over private VPN endpoints; keep secrets in environment variables.
+- OIDC configuration reference: `S3MINI_OIDC_CLIENT_ID`, `S3MINI_OIDC_CLIENT_SECRET`, `S3MINI_OIDC_REDIRECT_URI`, `S3MINI_OIDC_AUTH_URL`, `S3MINI_OIDC_AUDIENCE`, and optional `S3MINI_OIDC_ADMIN_EMAILS`.
 - Update this handoff and `docs/project-status.md` when the next checkpoint changes.
 
 ## Security and Privacy

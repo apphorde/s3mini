@@ -12,3 +12,21 @@ npm start
 Build from source with `npm run build` and run the test suite with `npm test`.
 
 See the repository documentation for configuration, S3 compatibility, replication, and administration.
+
+## Dashboard OIDC
+
+Set these environment variables to protect `/admin` with the OIDC provider at
+`https://auth.api.apphor.de`:
+
+```sh
+S3MINI_OIDC_CLIENT_ID=your-client-id
+S3MINI_OIDC_CLIENT_SECRET=your-client-secret
+S3MINI_OIDC_REDIRECT_URI=https://storage.example.com/admin/callback
+S3MINI_OIDC_AUDIENCE=your-client-id
+S3MINI_OIDC_ADMIN_EMAILS=admin@example.com
+```
+
+Register the exact redirect URI with the OIDC client. `S3MINI_OIDC_AUTH_URL`
+can override the provider base URL. The admin email allowlist is optional; when
+omitted, any authenticated provider user is accepted. Client secrets and
+allowlists must remain in environment variables or local untracked config.
