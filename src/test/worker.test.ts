@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import crypto from 'node:crypto';
 import { ReplicationWorker } from '../replication/worker.js';
 import { S3Mini } from '../storage/s3mini.js';
 
@@ -27,6 +28,7 @@ describe('ReplicationWorker', () => {
         key: 'healthy.txt',
         versionId: object.versionId,
         etag: object.etag,
+        sha256: crypto.createHash('sha256').update('healthy').digest('hex'),
         size: object.size,
         lastModified: object.lastModified,
         deleteMarker: false,

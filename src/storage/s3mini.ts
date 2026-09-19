@@ -57,6 +57,7 @@ export interface ReplicationInventoryItem {
   key: string;
   versionId: string;
   etag: string;
+  sha256: string;
   size: number;
   lastModified: Date;
   deleteMarker: boolean;
@@ -403,15 +404,16 @@ export class S3Mini {
 
   async listReplicationInventory(limit = 1000): Promise<ReplicationInventoryItem[]> {
     const rows = await this.all('SELECT bucket, key, versionId, etag, size, lastModified, deleteMarker FROM objs ORDER BY bucket, key, lastModified, id LIMIT ?', [Math.max(1, Math.min(limit, 10000))]);
-    return rows.map(row => ({
+    return Promise.all(rows.map(async row => ({
       bucket: row.bucket,
       key: row.key,
       versionId: row.versionId,
       etag: row.etag || '',
+      sha256: row.deleteMarker ? '' : crypto.createHash('sha256').update(await fs.readFile(this.versionPath(row.bucket, row.key, row.versionId))).digest('hex'),
       size: row.size,
       lastModified: new Date(row.lastModified),
       deleteMarker: Boolean(row.deleteMarker),
-    }));
+    })));
   }
 
   async listPeerHealth(): Promise<PeerHealthState[]> {

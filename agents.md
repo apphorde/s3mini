@@ -34,7 +34,7 @@ self-hosted clients such as MinIO clients and compatible tooling.
 - Verification baseline: 61 tests passing and `npm run build` passing.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
-- Next implementation slice: extend SHA-256 validation to inventory comparisons and older event migration paths, then improve OIDC operational configuration and Li3 dashboard components. OIDC dashboard login uses `auth.api.apphor.de`; keep its client credentials and allowlist in environment variables. Initial geolocated test nodes may connect over private VPN endpoints; keep secrets in environment variables.
+- Next implementation slice: improve OIDC operational configuration and Li3 dashboard components, then add compatibility coverage for remaining MinIO and Backblaze B2 edge cases. OIDC dashboard login uses `auth.api.apphor.de`; keep its client credentials and allowlist in environment variables. Initial geolocated test nodes may connect over private VPN endpoints; keep secrets in environment variables.
 - Update this handoff and `docs/project-status.md` when the next checkpoint changes.
 
 ## Security and Privacy

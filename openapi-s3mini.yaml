@@ -351,12 +351,13 @@ components:
         locationConstraint: { type: string }
     ReplicationInventoryItem:
       type: object
-      required: [bucket, key, versionId, etag, size, lastModified, deleteMarker]
+      required: [bucket, key, versionId, etag, sha256, size, lastModified, deleteMarker]
       properties:
         bucket: { type: string }
         key: { type: string }
         versionId: { type: string }
         etag: { type: string }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
         sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
         size: { type: integer, format: int64 }
         lastModified: { type: string, format: date-time }

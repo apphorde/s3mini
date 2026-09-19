@@ -71,7 +71,7 @@ export class ReplicationWorker {
         const inventory = await response.json() as ReplicationInventoryItem[];
         const missing = events.filter(event => !inventory.some(item =>
           item.bucket === event.bucket && item.key === event.key && item.versionId === event.versionId &&
-          item.deleteMarker === event.deleteMarker && (event.operation === 'DeleteObject' || item.etag === event.etag)
+           item.deleteMarker === event.deleteMarker && (event.operation === 'DeleteObject' || (event.sha256 ? item.sha256 === event.sha256 : item.etag === event.etag))
         ));
         for (const event of missing) await this.deliver(event, [peer], false);
       } catch {

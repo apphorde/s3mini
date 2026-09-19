@@ -29,7 +29,7 @@ container, or reverse-proxied deployment.
 - Configured peer health is persisted in SQLite and exposed through the authenticated control plane; replicated PUTs validate their MD5 ETag and inventory repair compares ETags.
 - Replication workers claim pending events with expiring SQLite leases, preventing duplicate concurrent delivery while allowing crash recovery.
 - Replication events that exhaust eight delivery attempts are persisted as dead letters, listed through the admin API, and can be explicitly requeued.
-- New replication events persist a SHA-256 body digest, include it in delivery headers, and validate it at the receiving node.
+- New replication events persist a SHA-256 body digest, include it in delivery headers, validate it at the receiving node, and compare it during inventory repair; legacy events retain ETag fallback behavior.
 - The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.
 - The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
 - Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is checked against `/userinfo`, with optional email allowlisting via `S3MINI_OIDC_ADMIN_EMAILS`.
@@ -58,9 +58,8 @@ database locking during test execution.
 
 ## Next Steps
 
-1. Extend SHA-256 metadata validation to inventory comparisons and older event migration paths.
-2. Extend OIDC operational configuration/documentation and the Li3 component treatment across dashboard tables.
-3. Continue adding compatibility coverage for unsupported MinIO and Backblaze B2 edge cases.
+1. Extend OIDC operational configuration/documentation and the Li3 component treatment across dashboard tables.
+2. Continue adding compatibility coverage for unsupported MinIO and Backblaze B2 edge cases.
 
 ## Next Session Handoff
 
