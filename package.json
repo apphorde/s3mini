@@ -2,8 +2,33 @@
   "name": "@cloud-cli/s3mini",
   "version": "0.1.0",
   "description": "A minimal S3-compatible object storage server in TypeScript",
+  "keywords": [
+    "s3",
+    "object-storage",
+    "minio",
+    "backblaze",
+    "storage-server"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/apphorde/s3mini.git"
+  },
+  "bugs": {
+    "url": "https://github.com/apphorde/s3mini/issues"
+  },
+  "homepage": "https://github.com/apphorde/s3mini#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "engines": {
     "node": ">=22.5.0"
   },
