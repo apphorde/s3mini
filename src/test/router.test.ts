@@ -325,6 +325,13 @@ describe('S3 HTTP routes', () => {
     expect(replicated.statusCode).toBe(204);
     expect((await s3.getObject(bucket, 'replica.txt', 'replica-version+')).data.toString()).toBe('replicated body');
     expect((await s3.listReplicationEvents()).some(event => event.key === 'replica.txt')).toBe(false);
+    const inventory = await app.inject({
+      method: 'GET',
+      url: '/internal/replication/inventory',
+      headers: { 'x-s3mini-replication-token': 'replication-token' },
+    });
+    expect(inventory.statusCode).toBe(200);
+    expect(JSON.parse(inventory.body)).toEqual(expect.arrayContaining([expect.objectContaining({ key: 'replica.txt', versionId: 'replica-version+', deleteMarker: false })]));
     const deleted = await app.inject({
       method: 'PUT',
       url: '/internal/replication',

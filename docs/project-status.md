@@ -25,6 +25,7 @@ container, or reverse-proxied deployment.
 - Persistent access-key storage, a bearer-token-protected HTTP control plane, and a dependency-free `/admin` dashboard are implemented for listing, issuing, and disabling keys.
 - Local durability foundation is implemented: WAL/full-sync SQLite, atomic synced object writes, and a transactional pending replication journal.
 - Asynchronous peer delivery is implemented for object writes, deletes, and delete markers using `S3MINI_REPLICATION_PEERS`, `S3MINI_REPLICATION_TOKEN`, and `S3MINI_NODE_ID`; initial geolocated testing can use private VPN endpoints.
+- An authenticated replication inventory endpoint exposes version fingerprints and tombstones as the first anti-entropy foundation.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.

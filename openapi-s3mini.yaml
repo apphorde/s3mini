@@ -81,6 +81,19 @@ paths:
           application/octet-stream: { schema: { type: string, format: binary } }
       responses:
          '204': { description: Replication event accepted. }
+         '403': { $ref: '#/components/responses/S3Error' }
+  /internal/replication/inventory:
+    get:
+      operationId: GetReplicationInventory
+      tags: [Internal]
+      description: Internal authenticated inventory of object versions and tombstones for anti-entropy comparison.
+      parameters:
+        - { name: x-s3mini-replication-token, in: header, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Object/version inventory.
+          content:
+            application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ReplicationInventoryItem' } } }
         '403': { $ref: '#/components/responses/S3Error' }
   /:
     get:
@@ -221,8 +234,19 @@ components:
         - $ref: '#/components/schemas/AccessKey'
         - type: object
           required: [secretAccessKey]
-          properties:
-            secretAccessKey: { type: string }
+           properties:
+             secretAccessKey: { type: string }
+    ReplicationInventoryItem:
+      type: object
+      required: [bucket, key, versionId, etag, size, lastModified, deleteMarker]
+      properties:
+        bucket: { type: string }
+        key: { type: string }
+        versionId: { type: string }
+        etag: { type: string }
+        size: { type: integer, format: int64 }
+        lastModified: { type: string, format: date-time }
+        deleteMarker: { type: boolean }
   parameters:
     Bucket:
       name: bucket

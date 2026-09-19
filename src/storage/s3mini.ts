@@ -50,6 +50,16 @@ export interface ReplicationEvent {
   createdAt: Date;
 }
 
+export interface ReplicationInventoryItem {
+  bucket: string;
+  key: string;
+  versionId: string;
+  etag: string;
+  size: number;
+  lastModified: Date;
+  deleteMarker: boolean;
+}
+
 export interface ReplicatedObject {
   bucket: string;
   key: string;
@@ -357,6 +367,19 @@ export class S3Mini {
       attempts: row.attempts,
       nextAttemptAt: row.nextAttemptAt ? new Date(row.nextAttemptAt) : undefined,
       createdAt: new Date(row.createdAt),
+    }));
+  }
+
+  async listReplicationInventory(limit = 1000): Promise<ReplicationInventoryItem[]> {
+    const rows = await this.all('SELECT bucket, key, versionId, etag, size, lastModified, deleteMarker FROM objs ORDER BY bucket, key, lastModified, id LIMIT ?', [Math.max(1, Math.min(limit, 10000))]);
+    return rows.map(row => ({
+      bucket: row.bucket,
+      key: row.key,
+      versionId: row.versionId,
+      etag: row.etag || '',
+      size: row.size,
+      lastModified: new Date(row.lastModified),
+      deleteMarker: Boolean(row.deleteMarker),
     }));
   }
 

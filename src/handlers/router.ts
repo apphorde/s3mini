@@ -68,6 +68,12 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini) {
     }
     return reply.code(204).send();
   });
+  fastify.get('/internal/replication/inventory', async (request, reply) => {
+    const expectedToken = process.env.S3MINI_REPLICATION_TOKEN;
+    const suppliedToken = request.headers['x-s3mini-replication-token'];
+    if (!expectedToken || !suppliedToken || !timingSafeTokenEqual(String(suppliedToken), expectedToken)) throw new S3Error('AccessDenied', 'The replication token is invalid.', 403);
+    return reply.send(await s3.listReplicationInventory());
+  });
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
     if (error instanceof S3Error) {
       reply.type('application/xml').code(error.httpCode).send(error.toResponseXml(request.id));
