@@ -52,6 +52,7 @@ const client = new S3Client({
 | Access-key control plane | Bearer-protected list, issue, and disable endpoints | Implemented |
 | Admin dashboard | Dependency-free `/admin` key and replication-health view | Implemented |
 | XML error safety | Escaped error and response values for AWS-compatible XML clients | Implemented |
+| AWS request identifiers | `x-amz-request-id` and `x-amz-id-2` response headers | Implemented |
 | Replication durability | Atomic local writes and transactional replication intent journal | Partial |
 | Peer object delivery | Authenticated asynchronous object-write delivery | Partial |
 

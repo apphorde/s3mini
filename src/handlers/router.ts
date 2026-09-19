@@ -9,6 +9,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   fastify.addContentTypeParser(['application/octet-stream', 'application/xml', 'text/xml', 'text/csv'], { parseAs: 'buffer' }, (_request, body, done) => {
     done(null, body);
   });
+  fastify.addHook('onSend', async (request, reply, payload) => {
+    reply.header('x-amz-request-id', request.id);
+    reply.header('x-amz-id-2', request.id);
+    return payload;
+  });
   fastify.addHook('preValidation', async (request) => {
     if (request.url === '/admin' || request.url.startsWith('/admin/')) return;
     const authorization = request.headers.authorization;

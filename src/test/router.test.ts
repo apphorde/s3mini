@@ -28,6 +28,8 @@ describe('S3 HTTP routes', () => {
     const put = await app.inject({ method: 'PUT', url: `/${bucket}/hello.txt`, headers: { 'content-type': 'text/plain' }, payload: 'hello' });
     expect(put.statusCode).toBe(200);
     expect(put.body).toContain('PutObjectResult');
+    expect(put.headers['x-amz-request-id']).toBeTruthy();
+    expect(put.headers['x-amz-id-2']).toBeTruthy();
 
     const get = await app.inject({ method: 'GET', url: `/${bucket}/hello.txt` });
     expect(get.statusCode).toBe(200);
