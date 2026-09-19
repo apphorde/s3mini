@@ -68,7 +68,7 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [x] Bucket policy Allow/Deny enforcement with wildcard principals, actions, resources, and basic string conditions (partial)
 - [ ] Website configuration
 - [ ] Default encryption configuration
-- [ ] Requester pays, logging, notifications, replication, analytics, metrics, and inventory
+- [ ] Requester pays, logging, notifications, analytics, and metrics
 
 ### Object Features
 

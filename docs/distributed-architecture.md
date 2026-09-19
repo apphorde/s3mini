@@ -11,7 +11,7 @@ comes before quorum or failover claims.
 - Object and version files are written to a temporary sibling file, synced, and atomically renamed.
 - Each successful `PutObject` creates a durable `replication_events` row in the same SQLite transaction as its object metadata.
 - Events contain the bucket, key, immutable version ID, ETag, size, source node ID, and payload path.
-- Events are initially `Pending` and expose explicit delivery status, attempt count, and retry time for a future worker.
+- Events are initially `Pending` and expose explicit delivery status, attempt count, and retry time for the background worker.
 - When `S3MINI_REPLICATION_PEERS` and `S3MINI_REPLICATION_TOKEN` are configured, a background worker sends pending object writes to each peer with exponential retry backoff.
 - Peers accept writes only through the authenticated internal replication endpoint and do not create another outbound event.
 
@@ -27,7 +27,7 @@ Peer communication currently uses the configured internal URL and shared token; 
 
 - Replicate deletes and delete markers as durable tombstone events. Delete delivery is now implemented, including idempotent version removal and delete-marker preservation.
 - The authenticated `/internal/replication/inventory` endpoint exposes object-version fingerprints and tombstones; the worker compares this inventory and replays missing local journal events as best-effort anti-entropy repair.
-- Add peer registration, health, retry leasing, and dead-letter handling.
+- Add peer registration, persisted health, retry leasing, and dead-letter handling.
 - Peer health is tracked in memory and exposed through the admin control plane; PUT delivery validates MD5 ETags and inventory repair compares ETags. Persisted health history and stronger content hashes remain future work.
 - Define conflict handling for concurrent writes from different nodes.
 - Add read-repair and an explicit consistency policy.

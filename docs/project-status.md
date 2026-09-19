@@ -59,7 +59,7 @@ database locking during test execution.
 ## Next Session Handoff
 
 Start by checking `git status`, recent history, and the todo list. The next
-implementation slice should be peer health state and checksum verification. Preserve the AWS SDK
+implementation slice should be persisted peer health, retry leasing/dead-letter handling, and stronger checksum verification. Preserve the AWS SDK
 v3 test harness in `src/test/aws-sdk.test.ts` and keep the compatibility suite
 green.
 
