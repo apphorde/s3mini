@@ -27,7 +27,7 @@ container, or reverse-proxied deployment.
 - Asynchronous peer delivery is implemented for object writes, deletes, and delete markers using `S3MINI_REPLICATION_PEERS`, `S3MINI_REPLICATION_TOKEN`, and `S3MINI_NODE_ID`; initial geolocated testing can use private VPN endpoints.
 - The replication worker compares authenticated peer inventories and replays missing local journal events.
 - Configured peer health is persisted in SQLite and exposed through the authenticated control plane; replicated PUTs validate their MD5 ETag and inventory repair compares ETags.
-- Replication workers claim pending events with expiring SQLite leases, preventing duplicate concurrent delivery while allowing crash recovery.
+- Replication workers claim per-peer pending events with expiring SQLite leases, preventing duplicate concurrent delivery while allowing crash recovery and independent retry of only failed peers.
 - Replication events that exhaust eight delivery attempts are persisted as dead letters, listed through the admin API, and can be explicitly requeued.
 - New replication events persist a SHA-256 body digest, include it in delivery headers, validate it at the receiving node, and compare it during inventory repair; legacy events retain ETag fallback behavior.
 - The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.

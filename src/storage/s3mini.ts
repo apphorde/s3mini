@@ -52,6 +52,14 @@ export interface ReplicationEvent {
   createdAt: Date;
 }
 
+export interface ReplicationPeerEvent {
+  event: ReplicationEvent;
+  peer: string;
+  status: 'Pending' | 'Delivered' | 'Failed' | 'DeadLetter';
+  attempts: number;
+  nextAttemptAt?: Date;
+}
+
 export interface ReplicationInventoryItem {
   bucket: string;
   key: string;
@@ -226,6 +234,18 @@ export class S3Mini {
       consecutiveFailures INTEGER NOT NULL DEFAULT 0,
       lastSuccessAt INTEGER,
       lastFailureAt INTEGER
+    )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS replication_event_peers (
+      eventId INTEGER NOT NULL,
+      peer TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      nextAttemptAt INTEGER,
+      leaseOwner TEXT,
+      leaseUntil INTEGER,
+      updatedAt INTEGER NOT NULL,
+      PRIMARY KEY(eventId, peer),
+      FOREIGN KEY(eventId) REFERENCES replication_events(id) ON DELETE CASCADE
     )`);
     this.initialized = true;
   }
@@ -459,6 +479,49 @@ export class S3Mini {
       this.db?.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  async ensureReplicationPeerEvents(peers: string[]): Promise<void> {
+    for (const peer of peers) {
+      await this.run(`INSERT OR IGNORE INTO replication_event_peers (eventId, peer, updatedAt)
+        SELECT id, ?, ? FROM replication_events`, [peer, Date.now()]);
+    }
+  }
+
+  async claimReplicationPeerEvents(owner: string, peers: string[], limit = 100, leaseMs = 60_000): Promise<ReplicationPeerEvent[]> {
+    if (!peers.length) return [];
+    const now = Date.now();
+    const placeholders = peers.map(() => '?').join(',');
+    this.db?.exec('BEGIN IMMEDIATE');
+    try {
+      await this.run(`UPDATE replication_event_peers SET leaseOwner = ?, leaseUntil = ?
+        WHERE rowid IN (SELECT rowid FROM replication_event_peers
+          WHERE peer IN (${placeholders}) AND status NOT IN ('Delivered', 'DeadLetter')
+            AND (nextAttemptAt IS NULL OR nextAttemptAt <= ?)
+            AND (leaseUntil IS NULL OR leaseUntil <= ?)
+          ORDER BY eventId ASC LIMIT ?)`, [owner, now + leaseMs, ...peers, now, now, Math.max(1, Math.min(limit, 1000))]);
+      const rows = await this.all(`SELECT p.peer AS peerName, p.status AS peerStatus, p.attempts AS peerAttempts, p.nextAttemptAt AS peerNextAttemptAt, e.* FROM replication_event_peers p JOIN replication_events e ON e.id = p.eventId
+        WHERE p.leaseOwner = ? AND p.leaseUntil = ? ORDER BY p.eventId ASC, p.peer ASC`, [owner, now + leaseMs]);
+      this.db?.exec('COMMIT');
+      return rows.map(row => ({
+        event: this.replicationEventFromRow(row),
+        peer: row.peerName,
+        status: row.peerStatus,
+        attempts: row.peerAttempts,
+        nextAttemptAt: row.peerNextAttemptAt ? new Date(row.peerNextAttemptAt) : undefined,
+      }));
+    } catch (error) {
+      this.db?.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  async updateReplicationPeerEvent(eventId: number, peer: string, status: ReplicationPeerEvent['status'], attempts: number, nextAttemptAt?: Date): Promise<void> {
+    await this.run(`UPDATE replication_event_peers SET status = ?, attempts = ?, nextAttemptAt = ?, leaseOwner = NULL, leaseUntil = NULL, updatedAt = ? WHERE eventId = ? AND peer = ?`, [status, attempts, nextAttemptAt?.getTime() || null, Date.now(), eventId, peer]);
+    const pending = await this.get("SELECT COUNT(*) AS count FROM replication_event_peers WHERE eventId = ? AND status IN ('Pending', 'Failed')", [eventId]);
+    const dead = await this.get("SELECT COUNT(*) AS count FROM replication_event_peers WHERE eventId = ? AND status = 'DeadLetter'", [eventId]);
+    const globalStatus = pending?.count > 0 ? (status === 'Pending' ? 'Pending' : 'Failed') : dead?.count > 0 ? 'DeadLetter' : 'Delivered';
+    await this.run('UPDATE replication_events SET status = ?, attempts = MAX(attempts, ?), nextAttemptAt = ? WHERE id = ?', [globalStatus, attempts, nextAttemptAt?.getTime() || null, eventId]);
   }
 
   private async queueReplicationEvent(event: Omit<ReplicationEvent, 'id' | 'status' | 'attempts' | 'nextAttemptAt'>): Promise<void> {

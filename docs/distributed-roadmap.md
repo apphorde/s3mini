@@ -25,7 +25,9 @@ The target model is asynchronous replication with configurable durability
 policy. A deployment may choose local-only acknowledgement, one remote copy,
 or a quorum policy. Each peer has independent delivery state, retry schedule,
 lease, checksum result, and dead-letter state. A global event status is only a
-derived summary and is never the source of truth for repair.
+derived summary and is never the source of truth for repair. The SQLite
+per-peer delivery journal and leases are now in place; quorum acknowledgement
+and degraded-state reporting remain the next layer.
 
 ## Convergence Model
 

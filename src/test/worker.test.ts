@@ -59,6 +59,8 @@ describe('ReplicationWorker', () => {
     await s3.createBucket(bucket);
     const object = await s3.putObject(bucket, 'repair.txt', Buffer.from('repair'), {});
     const event = (await s3.listReplicationEvents()).find(item => item.key === 'repair.txt');
+    await s3.ensureReplicationPeerEvents(['http://peer.test']);
+    await s3.updateReplicationPeerEvent(event!.id, 'http://peer.test', 'Delivered', 1);
     await s3.updateReplicationEvent(event!.id, 'Delivered', 1);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200, headers: { 'content-type': 'application/json' } }))

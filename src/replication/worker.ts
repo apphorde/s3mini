@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
 import { REPLICATION_MAX_ATTEMPTS } from '../storage/s3mini.js';
-import type { PeerHealthState, ReplicationEvent, ReplicationInventoryItem, S3Mini } from '../storage/s3mini.js';
+import type { PeerHealthState, ReplicationEvent, ReplicationInventoryItem, ReplicationPeerEvent, S3Mini } from '../storage/s3mini.js';
 
 export interface PeerHealth {
   peer: string;
@@ -51,8 +51,9 @@ export class ReplicationWorker {
     if (this.running || !this.peers.length || !this.token) return;
     this.running = true;
     try {
-      const events = await this.s3.claimReplicationEvents(this.leaseOwner, 100);
-      for (const event of events) await this.deliver(event);
+      await this.s3.ensureReplicationPeerEvents(this.peers);
+      const deliveries = await this.s3.claimReplicationPeerEvents(this.leaseOwner, this.peers, 100);
+      for (const delivery of deliveries) await this.deliverToPeer(delivery);
       await this.repairMissingEvents(await this.s3.listReplicationEvents(1000));
     } finally {
       this.running = false;
@@ -73,7 +74,7 @@ export class ReplicationWorker {
           item.bucket === event.bucket && item.key === event.key && item.versionId === event.versionId &&
            item.deleteMarker === event.deleteMarker && (event.operation === 'DeleteObject' || (event.sha256 ? item.sha256 === event.sha256 : item.etag === event.etag))
         ));
-        for (const event of missing) await this.deliver(event, [peer], false);
+        for (const event of missing) await this.deliverToPeer({ event, peer, status: 'Pending', attempts: event.attempts }, false);
       } catch {
         // The regular delivery retry path records failures; inventory is best effort.
         this.markPeerFailure(peer);
@@ -81,35 +82,34 @@ export class ReplicationWorker {
     }
   }
 
-  private async deliver(event: ReplicationEvent, peers = this.peers, updateStatus = true): Promise<void> {
-    const attempts = event.attempts + 1;
+  private async deliverToPeer(delivery: ReplicationPeerEvent, updateStatus = true): Promise<void> {
+    const { event, peer } = delivery;
+    const attempts = delivery.attempts + 1;
     try {
       const body = event.operation === 'PutObject' ? await fs.readFile(event.payloadPath) : undefined;
-      for (const peer of peers) {
-        const response = await fetch(`${peer.replace(/\/$/, '')}/internal/replication`, {
-          method: 'PUT',
-          headers: {
-            'content-type': 'application/octet-stream',
-            'x-s3mini-replication-token': this.token!,
-            'x-s3mini-source-node': event.sourceNodeId,
-            'x-s3mini-bucket': event.bucket,
-            'x-s3mini-key': event.key,
-            'x-s3mini-version-id': event.versionId,
-            'x-s3mini-operation': event.operation,
-            'x-s3mini-delete-marker': String(event.deleteMarker),
-            'x-s3mini-etag': event.etag,
-            ...(event.operation === 'PutObject' ? { 'x-s3mini-sha256': event.sha256 || crypto.createHash('sha256').update(body!).digest('hex') } : {}),
-            'x-s3mini-last-modified': String(event.createdAt.getTime()),
-          },
-          body,
-        });
-        if (!response.ok) throw new Error(`Replication peer ${peer} returned HTTP ${response.status}.`);
-        this.markPeerSuccess(peer);
-      }
-      if (updateStatus) await this.s3.updateReplicationEvent(event.id, 'Delivered', attempts);
+      const response = await fetch(`${peer.replace(/\/$/, '')}/internal/replication`, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/octet-stream',
+          'x-s3mini-replication-token': this.token!,
+          'x-s3mini-source-node': event.sourceNodeId,
+          'x-s3mini-bucket': event.bucket,
+          'x-s3mini-key': event.key,
+          'x-s3mini-version-id': event.versionId,
+          'x-s3mini-operation': event.operation,
+          'x-s3mini-delete-marker': String(event.deleteMarker),
+          'x-s3mini-etag': event.etag,
+          ...(event.operation === 'PutObject' ? { 'x-s3mini-sha256': event.sha256 || crypto.createHash('sha256').update(body!).digest('hex') } : {}),
+          'x-s3mini-last-modified': String(event.createdAt.getTime()),
+        },
+        body,
+      });
+      if (!response.ok) throw new Error(`Replication peer ${peer} returned HTTP ${response.status}.`);
+      this.markPeerSuccess(peer);
+      if (updateStatus) await this.s3.updateReplicationPeerEvent(event.id, peer, 'Delivered', attempts);
     } catch {
       const delay = Math.min(300_000, 1_000 * 2 ** Math.min(attempts, 8));
-      if (updateStatus) await this.s3.updateReplicationEvent(event.id, attempts >= REPLICATION_MAX_ATTEMPTS ? 'DeadLetter' : 'Failed', attempts, attempts >= REPLICATION_MAX_ATTEMPTS ? undefined : new Date(Date.now() + delay));
+      if (updateStatus) await this.s3.updateReplicationPeerEvent(event.id, peer, attempts >= REPLICATION_MAX_ATTEMPTS ? 'DeadLetter' : 'Failed', attempts, attempts >= REPLICATION_MAX_ATTEMPTS ? undefined : new Date(Date.now() + delay));
     }
   }
 
