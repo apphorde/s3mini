@@ -105,7 +105,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
 
   function oidcBaseUrl(): string {
     const provider = process.env.AUTH_PROVIDER || process.env.S3MINI_OIDC_AUTH_URL || 'https://auth.api.apphor.de';
-    return `${provider.startsWith('http://') || provider.startsWith('https://') ? provider : `https://${provider}`}`.replace(/\/$/, '');
+    return `${provider.startsWith('http://') || provider.startsWith('https://') ? provider : `https://${provider}`}`.replace(/\/api\/?$/, '').replace(/\/$/, '');
   }
 
   function oidcClientId(): string | undefined {
@@ -147,11 +147,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const verifier = crypto.randomBytes(32).toString('base64url');
     const state = crypto.randomBytes(24).toString('base64url');
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
-    const redirectUri = process.env.S3MINI_OIDC_REDIRECT_URI || `${requestBaseUrl(request)}/admin/callback`;
+    const redirectUri = process.env.OIDC_REDIRECT_URI || process.env.S3MINI_OIDC_REDIRECT_URI || `${requestBaseUrl(request)}/admin/callback`;
     const stateCookie = Buffer.from(JSON.stringify({ state, verifier }), 'utf8').toString('base64url');
     reply.header('Set-Cookie', `s3mini_oidc_state=${stateCookie}; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=600`);
     const url = new URL(`${oidcBaseUrl()}/authorize`);
-    url.search = new URLSearchParams({ response_type: 'code', client_id: oidcClientId()!, redirect_uri: redirectUri, state, code_challenge: challenge, code_challenge_method: 'S256' }).toString();
+    url.search = new URLSearchParams({ response_type: 'code', client_id: oidcClientId()!, redirect_uri: redirectUri, state, scope: 'openid profile email', code_challenge: challenge, code_challenge_method: 'S256' }).toString();
     return reply.redirect(url.toString());
   });
   fastify.get('/admin/callback', async (request, reply) => {
@@ -162,7 +162,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     let state: { state: string; verifier: string };
     try { state = JSON.parse(Buffer.from(saved, 'base64url').toString('utf8')); } catch { throw new S3Error('AccessDenied', 'The OIDC state is invalid.', 403); }
     if (state.state !== query.state) throw new S3Error('AccessDenied', 'The OIDC state does not match.', 403);
-    const redirectUri = process.env.S3MINI_OIDC_REDIRECT_URI || `${requestBaseUrl(request)}/admin/callback`;
+    const redirectUri = process.env.OIDC_REDIRECT_URI || process.env.S3MINI_OIDC_REDIRECT_URI || `${requestBaseUrl(request)}/admin/callback`;
     const tokenResponse = await fetch(`${oidcBaseUrl()}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code: query.code, client_id: oidcClientId()!, client_secret: oidcClientSecret()!, redirect_uri: redirectUri, code_verifier: state.verifier }) });
     if (!tokenResponse.ok) throw new S3Error('AccessDenied', 'The OIDC token exchange failed.', 403);
     const token = (await tokenResponse.json() as { access_token?: string }).access_token;

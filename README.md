@@ -30,8 +30,10 @@ S3MINI_OIDC_ADMIN_EMAILS=admin@example.com
 ```
 
 The deployment may use the live provider names `AUTH_PROVIDER`,
-`OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`; the `S3MINI_OIDC_*` names remain
-supported as aliases.
+`OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI`; the
+`S3MINI_OIDC_*` names remain supported as aliases. `AUTH_PROVIDER` may be the
+provider origin or the `/api` documentation URL; both are normalized to the
+OIDC endpoint origin.
 
 Register the exact redirect URI with the OIDC client. `S3MINI_OIDC_AUTH_URL`
 can override the provider base URL. The admin email allowlist is optional; when
