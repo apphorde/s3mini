@@ -295,6 +295,20 @@ describe('S3 HTTP routes', () => {
     delete process.env.S3MINI_ADMIN_TOKEN;
   });
 
+  it('exposes dead-letter replication events and supports operator retry', async () => {
+    process.env.S3MINI_ADMIN_TOKEN = 'test-admin-token';
+    await s3.createBucket(bucket);
+    await s3.putObject(bucket, 'dead-letter.txt', Buffer.from('event'), {});
+    const event = (await s3.listReplicationEvents()).find(item => item.key === 'dead-letter.txt');
+    await s3.updateReplicationEvent(event!.id, 'DeadLetter', 8);
+    const listed = await app.inject({ method: 'GET', url: '/admin/replication/events?status=DeadLetter', headers: { authorization: 'Bearer test-admin-token' } });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: event!.id, status: 'DeadLetter' })]));
+    expect((await app.inject({ method: 'POST', url: `/admin/replication/events/${event!.id}/retry`, headers: { authorization: 'Bearer test-admin-token' } })).statusCode).toBe(204);
+    expect((await s3.listReplicationEvents()).find(item => item.id === event!.id)?.status).toBe('Pending');
+    delete process.env.S3MINI_ADMIN_TOKEN;
+  });
+
   it('serves the dependency-free control-plane dashboard', async () => {
     const dashboard = await app.inject({ method: 'GET', url: '/admin' });
     expect(dashboard.statusCode).toBe(200);

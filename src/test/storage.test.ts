@@ -79,6 +79,17 @@ describe('S3Mini', () => {
     expect(await s3.listPeerHealth()).toEqual([expect.objectContaining({ peer: 'http://vpn-peer:9000', status: 'Unhealthy', consecutiveFailures: 3, lastFailureAt: new Date(1700000000000) })]);
   });
 
+  it('moves exhausted replication events to a dead-letter state and allows retry', async () => {
+    await s3.createBucket(bucket);
+    const object = await s3.putObject(bucket, 'dead-letter.txt', Buffer.from('retry me'), {});
+    const event = (await s3.listReplicationEvents()).find(item => item.key === 'dead-letter.txt');
+    await s3.updateReplicationEvent(event!.id, 'DeadLetter', 8);
+    expect((await s3.listReplicationEvents(100, 'DeadLetter')).find(item => item.id === event!.id)?.status).toBe('DeadLetter');
+    await s3.retryReplicationEvent(event!.id);
+    expect((await s3.listReplicationEvents()).find(item => item.id === event!.id)).toMatchObject({ status: 'Pending', attempts: 0 });
+    expect(object.versionId).toBeTruthy();
+  });
+
   it('does not delete a non-empty bucket', async () => {
     await s3.createBucket(bucket);
     await s3.putObject(bucket, 'item', Buffer.from('data'), {});

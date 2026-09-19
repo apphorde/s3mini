@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { REPLICATION_MAX_ATTEMPTS } from '../storage/s3mini.js';
 import type { PeerHealthState, ReplicationEvent, ReplicationInventoryItem, S3Mini } from '../storage/s3mini.js';
 
 export interface PeerHealth {
@@ -106,7 +107,7 @@ export class ReplicationWorker {
       if (updateStatus) await this.s3.updateReplicationEvent(event.id, 'Delivered', attempts);
     } catch {
       const delay = Math.min(300_000, 1_000 * 2 ** Math.min(attempts, 8));
-      if (updateStatus) await this.s3.updateReplicationEvent(event.id, 'Failed', attempts, new Date(Date.now() + delay));
+      if (updateStatus) await this.s3.updateReplicationEvent(event.id, attempts >= REPLICATION_MAX_ATTEMPTS ? 'DeadLetter' : 'Failed', attempts, attempts >= REPLICATION_MAX_ATTEMPTS ? undefined : new Date(Date.now() + delay));
     }
   }
 

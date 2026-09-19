@@ -94,6 +94,16 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
 
   fastify.get('/admin', async (_request, reply) => reply.type('text/html').send(ADMIN_HTML));
   fastify.get('/admin/replication/health', { preHandler: requireAdmin }, async (_request, reply) => reply.send(replication?.getPeerHealth() || []));
+  fastify.get('/admin/replication/events', { preHandler: requireAdmin }, async (request, reply) => {
+    const query = request.query as { status?: string; limit?: string };
+    const statuses = ['Pending', 'Delivered', 'Failed', 'DeadLetter'] as const;
+    const status = statuses.includes(query.status as typeof statuses[number]) ? query.status as typeof statuses[number] : undefined;
+    return reply.send(await s3.listReplicationEvents(Number(query.limit) || 100, status));
+  });
+  fastify.post('/admin/replication/events/:id/retry', { preHandler: requireAdmin }, async (request, reply) => {
+    await s3.retryReplicationEvent(Number((request.params as { id: string }).id));
+    return reply.code(204).send();
+  });
   fastify.get('/admin/access-keys', { preHandler: requireAdmin }, async (_request, reply) => {
     return reply.send(await s3.listAccessKeys());
   });

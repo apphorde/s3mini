@@ -24,6 +24,7 @@ import type {
 export const STORAGE_BASE = '/data/objects';
 export const DATABASE_PATH = '/data/s3mini.sqlite';
 export const NODE_ID = process.env.S3MINI_NODE_ID || 'node-local';
+export const REPLICATION_MAX_ATTEMPTS = 8;
 
 export interface AccessKeyRecord {
   accessKeyId: string;
@@ -44,7 +45,7 @@ export interface ReplicationEvent {
   etag: string;
   size: number;
   deleteMarker: boolean;
-  status: 'Pending' | 'Delivered' | 'Failed';
+  status: 'Pending' | 'Delivered' | 'Failed' | 'DeadLetter';
   attempts: number;
   nextAttemptAt?: Date;
   createdAt: Date;
@@ -369,8 +370,10 @@ export class S3Mini {
     return Boolean(await this.get("SELECT 1 FROM access_keys WHERE status = 'Active' LIMIT 1"));
   }
 
-  async listReplicationEvents(limit = 100): Promise<ReplicationEvent[]> {
-    const rows = await this.all('SELECT * FROM replication_events ORDER BY id ASC LIMIT ?', [Math.max(1, Math.min(limit, 1000))]);
+  async listReplicationEvents(limit = 100, status?: ReplicationEvent['status']): Promise<ReplicationEvent[]> {
+    const rows = status
+      ? await this.all('SELECT * FROM replication_events WHERE status = ? ORDER BY id ASC LIMIT ?', [status, Math.max(1, Math.min(limit, 1000))])
+      : await this.all('SELECT * FROM replication_events ORDER BY id ASC LIMIT ?', [Math.max(1, Math.min(limit, 1000))]);
     return rows.map(row => this.replicationEventFromRow(row));
   }
 
@@ -425,8 +428,12 @@ export class S3Mini {
     ]);
   }
 
-  async updateReplicationEvent(id: number, status: 'Pending' | 'Delivered' | 'Failed', attempts: number, nextAttemptAt?: Date): Promise<void> {
+  async updateReplicationEvent(id: number, status: ReplicationEvent['status'], attempts: number, nextAttemptAt?: Date): Promise<void> {
     await this.run('UPDATE replication_events SET status = ?, attempts = ?, nextAttemptAt = ?, leaseOwner = NULL, leaseUntil = NULL WHERE id = ?', [status, attempts, nextAttemptAt?.getTime() || null, id]);
+  }
+
+  async retryReplicationEvent(id: number): Promise<void> {
+    await this.run("UPDATE replication_events SET status = 'Pending', attempts = 0, nextAttemptAt = NULL, leaseOwner = NULL, leaseUntil = NULL WHERE id = ? AND status = 'DeadLetter'", [id]);
   }
 
   async claimReplicationEvents(owner: string, limit = 100, leaseMs = 60_000): Promise<ReplicationEvent[]> {
@@ -435,7 +442,7 @@ export class S3Mini {
     try {
       await this.run(`UPDATE replication_events SET leaseOwner = ?, leaseUntil = ?
         WHERE id IN (SELECT id FROM replication_events
-          WHERE status != 'Delivered' AND (nextAttemptAt IS NULL OR nextAttemptAt <= ?)
+          WHERE status NOT IN ('Delivered', 'DeadLetter') AND (nextAttemptAt IS NULL OR nextAttemptAt <= ?)
             AND (leaseUntil IS NULL OR leaseUntil <= ?)
           ORDER BY id ASC LIMIT ?)`, [owner, now + leaseMs, now, now, Math.max(1, Math.min(limit, 1000))]);
       const rows = await this.all('SELECT * FROM replication_events WHERE leaseOwner = ? AND leaseUntil = ? ORDER BY id ASC', [owner, now + leaseMs]);

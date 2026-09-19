@@ -107,6 +107,29 @@ paths:
           content:
             application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PeerHealth' } } }
         '403': { $ref: '#/components/responses/S3Error' }
+  /admin/replication/events:
+    get:
+      operationId: ListReplicationEvents
+      tags: [Admin]
+      description: Authenticated list of durable replication events, including dead-letter events.
+      security: [{ AdminBearer: [] }]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [Pending, Delivered, Failed, DeadLetter] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 1000, default: 100 } }
+      responses:
+        '200': { description: Replication events, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ReplicationEvent' } } } } }
+        '403': { $ref: '#/components/responses/S3Error' }
+  /admin/replication/events/{id}/retry:
+    post:
+      operationId: RetryDeadLetterEvent
+      tags: [Admin]
+      description: Requeues a dead-letter replication event for delivery.
+      security: [{ AdminBearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Event requeued. }
+        '403': { $ref: '#/components/responses/S3Error' }
   /:
     get:
       operationId: ListBuckets
@@ -258,7 +281,25 @@ components:
         etag: { type: string }
         size: { type: integer, format: int64 }
         lastModified: { type: string, format: date-time }
+         deleteMarker: { type: boolean }
+    ReplicationEvent:
+      type: object
+      required: [id, bucket, key, versionId, operation, sourceNodeId, status, attempts, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        bucket: { type: string }
+        key: { type: string }
+        versionId: { type: string }
+        operation: { type: string, enum: [PutObject, DeleteObject] }
+        sourceNodeId: { type: string }
+        payloadPath: { type: string }
+        etag: { type: string }
+        size: { type: integer, format: int64 }
         deleteMarker: { type: boolean }
+        status: { type: string, enum: [Pending, Delivered, Failed, DeadLetter] }
+        attempts: { type: integer }
+        nextAttemptAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
     PeerHealth:
       type: object
       required: [peer, status, consecutiveFailures]

@@ -28,6 +28,7 @@ container, or reverse-proxied deployment.
 - The replication worker compares authenticated peer inventories and replays missing local journal events.
 - Configured peer health is persisted in SQLite and exposed through the authenticated control plane; replicated PUTs validate their MD5 ETag and inventory repair compares ETags.
 - Replication workers claim pending events with expiring SQLite leases, preventing duplicate concurrent delivery while allowing crash recovery.
+- Replication events that exhaust eight delivery attempts are persisted as dead letters, listed through the admin API, and can be explicitly requeued.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
@@ -52,7 +53,7 @@ database locking during test execution.
 
 ## Next Steps
 
-1. Add dead-letter handling and stronger content-hash verification to complement journal and anti-entropy delivery.
+1. Add stronger content-hash verification to complement journal and anti-entropy delivery.
 2. Add bucket/policy management to the authenticated control plane and dashboard.
 3. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
 4. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
@@ -60,7 +61,7 @@ database locking during test execution.
 ## Next Session Handoff
 
 Start by checking `git status`, recent history, and the todo list. The next
-implementation slice should be dead-letter handling and stronger checksum verification. Preserve the AWS SDK
+implementation slice should be stronger checksum verification. Preserve the AWS SDK
 v3 test harness in `src/test/aws-sdk.test.ts` and keep the compatibility suite
 green.
 
