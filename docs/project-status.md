@@ -36,6 +36,7 @@ container, or reverse-proxied deployment.
 - OIDC setup is documented in `README.md`: register `/admin/callback`, configure client credentials and audience, and use `S3MINI_OIDC_ADMIN_EMAILS` to restrict administrators.
 - The dashboard clears its HttpOnly OIDC token on logout and redirects expired or unauthorized API sessions back to the login flow.
 - The dashboard uses a Li3 custom component for reactive status messaging, loaded from the documented CDN import map.
+- The distributed-storage replacement roadmap and reliability invariants are documented in `docs/distributed-roadmap.md`.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
