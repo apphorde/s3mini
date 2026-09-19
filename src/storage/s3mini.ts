@@ -524,6 +524,21 @@ export class S3Mini {
     await this.run('UPDATE replication_events SET status = ?, attempts = MAX(attempts, ?), nextAttemptAt = ? WHERE id = ?', [globalStatus, attempts, nextAttemptAt?.getTime() || null, eventId]);
   }
 
+  async getReplicationSummary(peers: string[], quorum: number): Promise<{ configuredPeers: number; quorum: number; healthyPeers: number; unhealthyPeers: number; unknownPeers: number; degraded: boolean; events: Record<string, number> }> {
+    const health = await this.all('SELECT status, COUNT(*) AS count FROM replication_peer_health WHERE peer IN (' + (peers.length ? peers.map(() => '?').join(',') : "''") + ') GROUP BY status', peers);
+    const statuses = Object.fromEntries(health.map(row => [row.status, Number(row.count)]));
+    const events = await this.all('SELECT status, COUNT(*) AS count FROM replication_events GROUP BY status');
+    return {
+      configuredPeers: peers.length,
+      quorum,
+      healthyPeers: statuses.Healthy || 0,
+      unhealthyPeers: statuses.Unhealthy || 0,
+      unknownPeers: Math.max(0, peers.length - (statuses.Healthy || 0) - (statuses.Unhealthy || 0)),
+      degraded: quorum > 0 && (statuses.Healthy || 0) < quorum,
+      events: Object.fromEntries(events.map(row => [row.status, Number(row.count)])),
+    };
+  }
+
   private async queueReplicationEvent(event: Omit<ReplicationEvent, 'id' | 'status' | 'attempts' | 'nextAttemptAt'>): Promise<void> {
     await this.run('INSERT OR IGNORE INTO replication_events (bucket, key, versionId, operation, sourceNodeId, payloadPath, etag, size, deleteMarker, sha256, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [event.bucket, event.key, event.versionId, event.operation, event.sourceNodeId, event.payloadPath, event.etag, event.size, event.deleteMarker ? 1 : 0, event.sha256 || null, event.createdAt.getTime()]);
   }

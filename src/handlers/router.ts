@@ -166,6 +166,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     return reply.code(204).send();
   });
   fastify.get('/admin/replication/health', { preHandler: requireAdmin }, async (_request, reply) => reply.send(replication?.getPeerHealth() || []));
+  fastify.get('/admin/replication/summary', { preHandler: requireAdmin }, async (_request, reply) => {
+    const peers = (process.env.S3MINI_REPLICATION_PEERS || '').split(',').map(peer => peer.trim()).filter(Boolean);
+    const quorum = Math.max(0, Math.min(peers.length, Number(process.env.S3MINI_REPLICATION_QUORUM) || 0));
+    return reply.send(await s3.getReplicationSummary(peers, quorum));
+  });
   fastify.get('/admin/replication/events', { preHandler: requireAdmin }, async (request, reply) => {
     const query = request.query as { status?: string; limit?: string };
     const statuses = ['Pending', 'Delivered', 'Failed', 'DeadLetter'] as const;

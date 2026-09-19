@@ -28,6 +28,7 @@ container, or reverse-proxied deployment.
 - The replication worker compares authenticated peer inventories and replays missing local journal events.
 - Configured peer health is persisted in SQLite and exposed through the authenticated control plane; replicated PUTs validate their MD5 ETag and inventory repair compares ETags.
 - Replication workers claim per-peer pending events with expiring SQLite leases, preventing duplicate concurrent delivery while allowing crash recovery and independent retry of only failed peers.
+- Replication quorum configuration and degraded-state reporting are available through `S3MINI_REPLICATION_QUORUM` and the authenticated `/admin/replication/summary` endpoint; writes remain asynchronous until quorum acknowledgement is implemented.
 - Replication events that exhaust eight delivery attempts are persisted as dead letters, listed through the admin API, and can be explicitly requeued.
 - New replication events persist a SHA-256 body digest, include it in delivery headers, validate it at the receiving node, and compare it during inventory repair; legacy events retain ETag fallback behavior.
 - The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.

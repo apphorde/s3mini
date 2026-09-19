@@ -30,3 +30,7 @@ Register the exact redirect URI with the OIDC client. `S3MINI_OIDC_AUTH_URL`
 can override the provider base URL. The admin email allowlist is optional; when
 omitted, any authenticated provider user is accepted. Client secrets and
 allowlists must remain in environment variables or local untracked config.
+
+Set `S3MINI_REPLICATION_QUORUM` to a positive number to expose a degraded
+state when fewer than that many configured peers are healthy. Current writes
+remain asynchronous; quorum acknowledgement enforcement is planned.

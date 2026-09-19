@@ -108,6 +108,15 @@ paths:
           content:
             application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PeerHealth' } } }
         '403': { $ref: '#/components/responses/S3Error' }
+  /admin/replication/summary:
+    get:
+      operationId: GetReplicationSummary
+      tags: [Admin]
+      description: Authenticated replication quorum and degraded-state summary.
+      security: [{ AdminBearer: [] }]
+      responses:
+        '200': { description: Replication summary, content: { application/json: { schema: { $ref: '#/components/schemas/ReplicationSummary' } } } }
+        '403': { $ref: '#/components/responses/S3Error' }
   /admin/replication/events:
     get:
       operationId: ListReplicationEvents
@@ -395,6 +404,17 @@ components:
         consecutiveFailures: { type: integer }
         lastSuccessAt: { type: string, format: date-time }
         lastFailureAt: { type: string, format: date-time }
+    ReplicationSummary:
+      type: object
+      required: [configuredPeers, quorum, healthyPeers, unhealthyPeers, unknownPeers, degraded, events]
+      properties:
+        configuredPeers: { type: integer }
+        quorum: { type: integer }
+        healthyPeers: { type: integer }
+        unhealthyPeers: { type: integer }
+        unknownPeers: { type: integer }
+        degraded: { type: boolean }
+        events: { type: object, additionalProperties: { type: integer } }
   parameters:
     Bucket:
       name: bucket

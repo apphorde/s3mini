@@ -27,7 +27,8 @@ or a quorum policy. Each peer has independent delivery state, retry schedule,
 lease, checksum result, and dead-letter state. A global event status is only a
 derived summary and is never the source of truth for repair. The SQLite
 per-peer delivery journal and leases are now in place; quorum acknowledgement
-and degraded-state reporting remain the next layer.
+and degraded-state reporting are now exposed through the authenticated summary
+endpoint; acknowledgement enforcement remains the next layer.
 
 ## Convergence Model
 

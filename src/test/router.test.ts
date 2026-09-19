@@ -332,6 +332,18 @@ describe('S3 HTTP routes', () => {
     delete process.env.S3MINI_ADMIN_TOKEN;
   });
 
+  it('exposes replication quorum and degraded-state summary', async () => {
+    process.env.S3MINI_ADMIN_TOKEN = 'test-admin-token';
+    process.env.S3MINI_REPLICATION_PEERS = 'http://one.test,http://two.test';
+    process.env.S3MINI_REPLICATION_QUORUM = '2';
+    const summary = await app.inject({ method: 'GET', url: '/admin/replication/summary', headers: { authorization: 'Bearer test-admin-token' } });
+    expect(summary.statusCode).toBe(200);
+    expect(summary.json()).toMatchObject({ configuredPeers: 2, quorum: 2, degraded: true, healthyPeers: 0 });
+    delete process.env.S3MINI_ADMIN_TOKEN;
+    delete process.env.S3MINI_REPLICATION_PEERS;
+    delete process.env.S3MINI_REPLICATION_QUORUM;
+  });
+
   it('serves the dependency-free control-plane dashboard', async () => {
     const dashboard = await app.inject({ method: 'GET', url: '/admin' });
     expect(dashboard.statusCode).toBe(200);
