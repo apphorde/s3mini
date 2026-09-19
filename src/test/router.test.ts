@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import crypto from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerRoutes } from '../handlers/router.js';
 import { S3Mini } from '../storage/s3mini.js';
 
@@ -329,6 +329,31 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.body).toContain('S3MINI Control Plane');
     expect(dashboard.body).toContain('Replication');
     expect(dashboard.body).toContain('/admin/replication/events');
+  });
+
+  it('redirects dashboard access to OIDC when configured', async () => {
+    process.env.S3MINI_OIDC_CLIENT_ID = 's3mini-dashboard';
+    process.env.S3MINI_OIDC_CLIENT_SECRET = 'secret';
+    const response = await app.inject({ method: 'GET', url: '/admin' });
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe('/admin/login');
+    const login = await app.inject({ method: 'GET', url: '/admin/login' });
+    expect(login.statusCode).toBe(302);
+    expect(login.headers.location).toContain('https://auth.api.apphor.de/authorize');
+    expect(login.headers['set-cookie']).toContain('s3mini_oidc_state=');
+    delete process.env.S3MINI_OIDC_CLIENT_ID;
+    delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+  });
+
+  it('authorizes OIDC dashboard API requests with the authenticated user', async () => {
+    process.env.S3MINI_OIDC_CLIENT_ID = 's3mini-dashboard';
+    process.env.S3MINI_OIDC_CLIENT_SECRET = 'secret';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ email: 'admin@example.com' }), { status: 200 })));
+    const response = await app.inject({ method: 'GET', url: '/admin/replication/events', headers: { cookie: 's3mini_oidc_token=access-token' } });
+    expect(response.statusCode).toBe(200);
+    vi.unstubAllGlobals();
+    delete process.env.S3MINI_OIDC_CLIENT_ID;
+    delete process.env.S3MINI_OIDC_CLIENT_SECRET;
   });
 
   it('accepts authenticated replicated object writes without creating a replication loop', async () => {

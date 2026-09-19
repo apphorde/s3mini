@@ -178,6 +178,23 @@ paths:
       parameters: [{ $ref: '#/components/parameters/Bucket' }]
       responses:
         '204': { description: Policy deleted. }
+  /admin/login:
+    get:
+      operationId: StartAdminOidcLogin
+      tags: [Admin]
+      description: Starts the configured PKCE OIDC login flow for the dashboard.
+      responses:
+        '302': { description: Redirect to the OIDC authorization endpoint. }
+  /admin/callback:
+    get:
+      operationId: CompleteAdminOidcLogin
+      tags: [Admin]
+      description: Exchanges the OIDC authorization code and establishes the dashboard session cookie.
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '302': { description: Redirect to the dashboard. }
   /:
     get:
       operationId: ListBuckets
