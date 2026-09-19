@@ -23,6 +23,7 @@ import type {
 
 export const STORAGE_BASE = '/data/objects';
 export const DATABASE_PATH = '/data/s3mini.sqlite';
+export const NODE_ID = process.env.S3MINI_NODE_ID || 'node-local';
 
 export interface AccessKeyRecord {
   accessKeyId: string;
@@ -30,6 +31,22 @@ export interface AccessKeyRecord {
   status: 'Active' | 'Disabled';
   createdAt: Date;
   lastUsedAt?: Date;
+}
+
+export interface ReplicationEvent {
+  id: number;
+  bucket: string;
+  key: string;
+  versionId: string;
+  operation: 'PutObject';
+  sourceNodeId: string;
+  payloadPath: string;
+  etag: string;
+  size: number;
+  status: 'Pending' | 'Delivered' | 'Failed';
+  attempts: number;
+  nextAttemptAt?: Date;
+  createdAt: Date;
 }
 
 export class S3Mini {
@@ -57,7 +74,7 @@ export class S3Mini {
       try { await fs.copyFile(path.join(STORAGE_BASE, 'meta.db'), DATABASE_PATH); } catch { /* Start with a new database. */ }
     }
     this.db = new DatabaseSync(DATABASE_PATH);
-    this.db.exec('PRAGMA journal_mode = WAL');
+    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL');
 
     await this.run(`CREATE TABLE IF NOT EXISTS buckets (
       name TEXT PRIMARY KEY,
@@ -146,6 +163,22 @@ export class S3Mini {
       status TEXT NOT NULL DEFAULT 'Active',
       createdAt INTEGER NOT NULL,
       lastUsedAt INTEGER
+    )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS replication_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bucket TEXT NOT NULL,
+      key TEXT NOT NULL,
+      versionId TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      sourceNodeId TEXT NOT NULL,
+      payloadPath TEXT NOT NULL,
+      etag TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      nextAttemptAt INTEGER,
+      createdAt INTEGER NOT NULL,
+      UNIQUE(bucket, key, versionId, operation, sourceNodeId)
     )`);
     this.initialized = true;
   }
@@ -247,6 +280,7 @@ export class S3Mini {
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
     await this.run('DELETE FROM object_tags WHERE bucket = ?', [name]);
     await this.run('DELETE FROM object_acl WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM replication_events WHERE bucket = ?', [name]);
     await this.run('DELETE FROM bucket_settings WHERE bucket = ?', [name]);
     await this.run('DELETE FROM buckets WHERE name = ?', [name]);
     await fs.rm(path.join(STORAGE_BASE, name), { recursive: true, force: true });
@@ -294,11 +328,35 @@ export class S3Mini {
     return Boolean(await this.get("SELECT 1 FROM access_keys WHERE status = 'Active' LIMIT 1"));
   }
 
+  async listReplicationEvents(limit = 100): Promise<ReplicationEvent[]> {
+    const rows = await this.all('SELECT * FROM replication_events ORDER BY id ASC LIMIT ?', [Math.max(1, Math.min(limit, 1000))]);
+    return rows.map(row => ({
+      id: row.id,
+      bucket: row.bucket,
+      key: row.key,
+      versionId: row.versionId,
+      operation: row.operation,
+      sourceNodeId: row.sourceNodeId,
+      payloadPath: row.payloadPath,
+      etag: row.etag,
+      size: row.size,
+      status: row.status,
+      attempts: row.attempts,
+      nextAttemptAt: row.nextAttemptAt ? new Date(row.nextAttemptAt) : undefined,
+      createdAt: new Date(row.createdAt),
+    }));
+  }
+
+  async updateReplicationEvent(id: number, status: 'Pending' | 'Delivered' | 'Failed', attempts: number, nextAttemptAt?: Date): Promise<void> {
+    await this.run('UPDATE replication_events SET status = ?, attempts = ?, nextAttemptAt = ? WHERE id = ?', [status, attempts, nextAttemptAt?.getTime() || null, id]);
+  }
+
   async clearBucket(name: string): Promise<void> {
     await this.run('DELETE FROM objs WHERE bucket = ?', [name]);
     await this.run('DELETE FROM tags WHERE bucket = ?', [name]);
     await this.run('DELETE FROM object_tags WHERE bucket = ?', [name]);
     await this.run('DELETE FROM object_acl WHERE bucket = ?', [name]);
+    await this.run('DELETE FROM replication_events WHERE bucket = ?', [name]);
     await this.run('DELETE FROM bucket_settings WHERE bucket = ?', [name]);
     await this.run('DELETE FROM buckets WHERE name = ?', [name]);
     await fs.rm(path.join(STORAGE_BASE, name), { recursive: true, force: true });
@@ -316,19 +374,29 @@ export class S3Mini {
     const versionFilePath = this.versionPath(bucketName, key, versionId);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.mkdir(path.dirname(versionFilePath), { recursive: true });
-    await fs.writeFile(filePath, body);
-    await fs.writeFile(versionFilePath, body);
+    await writeDurableFile(filePath, body);
+    await writeDurableFile(versionFilePath, body);
 
-    await this.run(`
+    this.db?.exec('BEGIN IMMEDIATE');
+    try {
+      await this.run(`
        INSERT INTO objs (bucket, key, etag, contentType, contentLanguage, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold, deleteMarker, userMetadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
+        [
          bucketName, key, etag, meta.contentType || null, meta.contentLanguage || null, meta.contentDisposition || null,
-        meta.contentEncoding || null, meta.cacheControl || null, 
-        meta.expires ? new Date(meta.expires).getTime() : null,
-        lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null, meta.objectLockMode || null, meta.retainUntil ? new Date(meta.retainUntil).getTime() : null, meta.legalHold || null, 0, JSON.stringify(meta.userMetadata || {})
-      ]
-    );
+         meta.contentEncoding || null, meta.cacheControl || null,
+         meta.expires ? new Date(meta.expires).getTime() : null,
+         lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null, meta.objectLockMode || null, meta.retainUntil ? new Date(meta.retainUntil).getTime() : null, meta.legalHold || null, 0, JSON.stringify(meta.userMetadata || {})
+        ]
+      );
+      await this.run('INSERT INTO replication_events (bucket, key, versionId, operation, sourceNodeId, payloadPath, etag, size, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [bucketName, key, versionId, 'PutObject', NODE_ID, versionFilePath, etag, body.length, lastModified]);
+      this.db?.exec('COMMIT');
+    } catch (error) {
+      this.db?.exec('ROLLBACK');
+      await fs.rm(filePath, { force: true });
+      await fs.rm(versionFilePath, { force: true });
+      throw error;
+    }
 
     return {
        key, bucket: bucketName, versionId, etag, contentType: meta.contentType || 'application/octet-stream', contentLanguage: meta.contentLanguage,
@@ -726,6 +794,23 @@ export class S3Mini {
       commonPrefixes: [],
       isTruncated: filtered.length > (request.maxUploads ?? 1000),
     };
+  }
+}
+
+async function writeDurableFile(filePath: string, body: Buffer): Promise<void> {
+  const temporaryPath = `${filePath}.${crypto.randomUUID()}.tmp`;
+  try {
+    const handle = await fs.open(temporaryPath, 'w');
+    try {
+      await handle.writeFile(body);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(temporaryPath, filePath);
+  } catch (error) {
+    await fs.rm(temporaryPath, { force: true });
+    throw error;
   }
 }
 

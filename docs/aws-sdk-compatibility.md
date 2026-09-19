@@ -51,6 +51,7 @@ const client = new S3Client({
 | Persistence | Node `node:sqlite` metadata database and access-key primitives | Implemented |
 | Access-key control plane | Bearer-protected list, issue, and disable endpoints | Implemented |
 | Admin dashboard | Dependency-free `/admin` key-management view | Implemented |
+| Replication durability | Atomic local writes and transactional replication intent journal | Partial |
 
 Authentication, XML error codes, HTTP status codes, ETags, metadata headers,
 path-style addressing, pagination, and conditional requests are part of each

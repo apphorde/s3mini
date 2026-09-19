@@ -60,6 +60,15 @@ describe('S3Mini', () => {
     await expect(s3.getObject(bucket, 'folder/item.txt')).rejects.toMatchObject({ code: 'NoSuchKey' });
   });
 
+  it('records durable replication intent for object writes', async () => {
+    await s3.createBucket(bucket);
+    const object = await s3.putObject(bucket, 'replicated.txt', Buffer.from('replicate me'), {});
+    const event = (await s3.listReplicationEvents()).find(item => item.bucket === bucket && item.key === 'replicated.txt' && item.versionId === object.versionId);
+    expect(event).toMatchObject({ operation: 'PutObject', status: 'Pending', etag: object.etag, size: 12 });
+    await s3.updateReplicationEvent(event!.id, 'Delivered', 1);
+    expect((await s3.listReplicationEvents()).find(item => item.id === event!.id)?.status).toBe('Delivered');
+  });
+
   it('does not delete a non-empty bucket', async () => {
     await s3.createBucket(bucket);
     await s3.putObject(bucket, 'item', Buffer.from('data'), {});

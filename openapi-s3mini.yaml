@@ -5,7 +5,8 @@ info:
   description: |
     API contract for the currently implemented S3MINI subset. Metadata is stored in
     /data/s3mini.sqlite. Access-key control-plane endpoints require the S3MINI_ADMIN_TOKEN bearer
-    token. The complete AWS feature matrix and implementation status are documented in
+    token. Local replication intent is journaled, but peer transport is not exposed in this S3
+    API yet. The complete AWS feature matrix and implementation status are documented in
     docs/feature-catalog.md.
 servers:
   - url: http://localhost:9000
