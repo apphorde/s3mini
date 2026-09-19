@@ -51,6 +51,7 @@ const client = new S3Client({
 | Persistence | Node `node:sqlite` metadata database and access-key primitives | Implemented |
 | Access-key control plane | Bearer-protected list, issue, and disable endpoints | Implemented |
 | Admin dashboard | Dependency-free `/admin` key and replication-health view | Implemented |
+| XML error safety | Escaped error and response values for AWS-compatible XML clients | Implemented |
 | Replication durability | Atomic local writes and transactional replication intent journal | Partial |
 | Peer object delivery | Authenticated asynchronous object-write delivery | Partial |
 

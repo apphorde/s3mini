@@ -132,6 +132,14 @@ describe('S3 HTTP routes', () => {
     expect(bad.body).toContain('<Code>BadDigest</Code>');
   });
 
+  it('escapes XML values in S3 error responses', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const response = await app.inject({ method: 'GET', url: `/${bucket}/missing<key>` });
+    expect(response.statusCode).toBe(404);
+    expect(response.body).not.toContain('<key>');
+    expect(response.body).toContain('&lt;key&gt;');
+  });
+
   it('validates AWS and Backblaze payload digest headers', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     const body = 'payload digests';

@@ -81,7 +81,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       reply.type('application/xml').code(error.httpCode).send(error.toResponseXml(request.id));
     } else {
       fastify.log.error(error);
-      reply.type('application/xml').code(500).send(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>${error.message}</Message><RequestId>${request.id}</RequestId></Error>`);
+      reply.type('application/xml').code(500).send(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>${escapeXml(error.message)}</Message><RequestId>${escapeXml(request.id)}</RequestId></Error>`);
     }
   });
 
@@ -646,7 +646,7 @@ function toXml(obj: any): string {
         if (typeof val === 'object') {
             return `<${key}>${toXml(val)}</${key}>`;
         }
-        return '<' + key + '>' + String(val) + '</' + key + '>';
+        return '<' + key + '>' + escapeXml(String(val)) + '</' + key + '>';
     }).join('\n');
 }
 
