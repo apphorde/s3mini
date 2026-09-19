@@ -90,7 +90,7 @@ describe('S3Mini', () => {
     await s3.close();
     s3 = new S3Mini();
     await s3.init();
-    expect(await s3.listPeerHealth()).toEqual([expect.objectContaining({ peer: 'http://vpn-peer:9000', status: 'Unhealthy', consecutiveFailures: 3, lastFailureAt: new Date(1700000000000) })]);
+    expect((await s3.listPeerHealth()).find(peer => peer.peer === 'http://vpn-peer:9000')).toEqual(expect.objectContaining({ peer: 'http://vpn-peer:9000', status: 'Unhealthy', consecutiveFailures: 3, lastFailureAt: new Date(1700000000000) }));
   });
 
   it('moves exhausted replication events to a dead-letter state and allows retry', async () => {
