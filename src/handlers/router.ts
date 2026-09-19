@@ -100,11 +100,20 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   }
 
   function oidcConfigured(): boolean {
-    return Boolean(process.env.S3MINI_OIDC_CLIENT_ID && process.env.S3MINI_OIDC_CLIENT_SECRET);
+    return Boolean(oidcClientId() && oidcClientSecret());
   }
 
   function oidcBaseUrl(): string {
-    return (process.env.S3MINI_OIDC_AUTH_URL || 'https://auth.api.apphor.de').replace(/\/$/, '');
+    const provider = process.env.AUTH_PROVIDER || process.env.S3MINI_OIDC_AUTH_URL || 'https://auth.api.apphor.de';
+    return `${provider.startsWith('http://') || provider.startsWith('https://') ? provider : `https://${provider}`}`.replace(/\/$/, '');
+  }
+
+  function oidcClientId(): string | undefined {
+    return process.env.OIDC_CLIENT_ID || process.env.S3MINI_OIDC_CLIENT_ID;
+  }
+
+  function oidcClientSecret(): string | undefined {
+    return process.env.OIDC_CLIENT_SECRET || process.env.S3MINI_OIDC_CLIENT_SECRET;
   }
 
   function requestBaseUrl(request: FastifyRequest): string {
@@ -119,7 +128,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
 
   async function isOidcAdmin(token: string): Promise<boolean> {
     try {
-      const response = await fetch(`${oidcBaseUrl()}/userinfo`, { headers: { authorization: `Bearer ${token}`, 'x-auth-audience': process.env.S3MINI_OIDC_AUDIENCE || process.env.S3MINI_OIDC_CLIENT_ID! } });
+      const response = await fetch(`${oidcBaseUrl()}/userinfo`, { headers: { authorization: `Bearer ${token}`, 'x-auth-audience': process.env.S3MINI_OIDC_AUDIENCE || oidcClientId()! } });
       if (!response.ok) return false;
       const user = await response.json() as { email?: string };
       const allowed = (process.env.S3MINI_OIDC_ADMIN_EMAILS || '').split(',').map(email => email.trim()).filter(Boolean);
@@ -142,7 +151,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const stateCookie = Buffer.from(JSON.stringify({ state, verifier }), 'utf8').toString('base64url');
     reply.header('Set-Cookie', `s3mini_oidc_state=${stateCookie}; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=600`);
     const url = new URL(`${oidcBaseUrl()}/authorize`);
-    url.search = new URLSearchParams({ response_type: 'code', client_id: process.env.S3MINI_OIDC_CLIENT_ID!, redirect_uri: redirectUri, state, code_challenge: challenge, code_challenge_method: 'S256' }).toString();
+    url.search = new URLSearchParams({ response_type: 'code', client_id: oidcClientId()!, redirect_uri: redirectUri, state, code_challenge: challenge, code_challenge_method: 'S256' }).toString();
     return reply.redirect(url.toString());
   });
   fastify.get('/admin/callback', async (request, reply) => {
@@ -154,7 +163,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     try { state = JSON.parse(Buffer.from(saved, 'base64url').toString('utf8')); } catch { throw new S3Error('AccessDenied', 'The OIDC state is invalid.', 403); }
     if (state.state !== query.state) throw new S3Error('AccessDenied', 'The OIDC state does not match.', 403);
     const redirectUri = process.env.S3MINI_OIDC_REDIRECT_URI || `${requestBaseUrl(request)}/admin/callback`;
-    const tokenResponse = await fetch(`${oidcBaseUrl()}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code: query.code, client_id: process.env.S3MINI_OIDC_CLIENT_ID!, client_secret: process.env.S3MINI_OIDC_CLIENT_SECRET!, redirect_uri: redirectUri, code_verifier: state.verifier }) });
+    const tokenResponse = await fetch(`${oidcBaseUrl()}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code: query.code, client_id: oidcClientId()!, client_secret: oidcClientSecret()!, redirect_uri: redirectUri, code_verifier: state.verifier }) });
     if (!tokenResponse.ok) throw new S3Error('AccessDenied', 'The OIDC token exchange failed.', 403);
     const token = (await tokenResponse.json() as { access_token?: string }).access_token;
     if (!token) throw new S3Error('AccessDenied', 'The OIDC token response was incomplete.', 403);

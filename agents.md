@@ -35,7 +35,7 @@ self-hosted clients such as MinIO clients and compatible tooling.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
 - Next implementation slice: improve OIDC operational configuration and Li3 dashboard components, then add compatibility coverage for remaining MinIO and Backblaze B2 edge cases. OIDC dashboard login uses `auth.api.apphor.de`; keep its client credentials and allowlist in environment variables. Initial geolocated test nodes may connect over private VPN endpoints; keep secrets in environment variables.
-- OIDC configuration reference: `S3MINI_OIDC_CLIENT_ID`, `S3MINI_OIDC_CLIENT_SECRET`, `S3MINI_OIDC_REDIRECT_URI`, `S3MINI_OIDC_AUTH_URL`, `S3MINI_OIDC_AUDIENCE`, and optional `S3MINI_OIDC_ADMIN_EMAILS`.
+- OIDC configuration reference: live names `AUTH_PROVIDER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`; optional `S3MINI_OIDC_REDIRECT_URI`, `S3MINI_OIDC_AUDIENCE`, and `S3MINI_OIDC_ADMIN_EMAILS`. The `S3MINI_OIDC_*` client/provider names remain aliases.
 - Distributed-storage design constraints and implementation phases are tracked in `docs/distributed-roadmap.md`; do not weaken its durability, convergence, or rolling-upgrade invariants.
 - Replication delivery now has a per-peer SQLite journal; the next distributed-storage slice is quorum policy and degraded-state reporting, not another global event-status abstraction.
 - Update this handoff and `docs/project-status.md` when the next checkpoint changes.

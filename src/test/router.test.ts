@@ -368,6 +368,19 @@ describe('S3 HTTP routes', () => {
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
   });
 
+  it('accepts the live OIDC environment variable names', async () => {
+    process.env.AUTH_PROVIDER = 'auth.api.apphor.de';
+    process.env.OIDC_CLIENT_ID = 'live-client';
+    process.env.OIDC_CLIENT_SECRET = 'live-secret';
+    const login = await app.inject({ method: 'GET', url: '/admin/login' });
+    expect(login.statusCode).toBe(302);
+    expect(login.headers.location).toContain('https://auth.api.apphor.de/authorize');
+    expect(login.headers.location).toContain('client_id=live-client');
+    delete process.env.AUTH_PROVIDER;
+    delete process.env.OIDC_CLIENT_ID;
+    delete process.env.OIDC_CLIENT_SECRET;
+  });
+
   it('authorizes OIDC dashboard API requests with the authenticated user', async () => {
     process.env.S3MINI_OIDC_CLIENT_ID = 's3mini-dashboard';
     process.env.S3MINI_OIDC_CLIENT_SECRET = 'secret';
