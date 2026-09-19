@@ -40,7 +40,7 @@ container, or reverse-proxied deployment.
 - Optional SigV4 header and presigned URL verification are implemented.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
-- The current compatibility checkpoint is tracked in git history with 50 passing tests.
+- The current compatibility checkpoint is tracked in git history with 61 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
@@ -59,22 +59,21 @@ database locking during test execution.
 ## Next Steps
 
 1. Extend SHA-256 metadata validation to inventory comparisons and older event migration paths.
-2. Extend the Li3 component treatment across dashboard tables and extend OIDC operational configuration/documentation.
-3. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
-4. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
+2. Extend OIDC operational configuration/documentation and the Li3 component treatment across dashboard tables.
+3. Continue adding compatibility coverage for unsupported MinIO and Backblaze B2 edge cases.
 
 ## Next Session Handoff
 
-Start by checking `git status`, recent history, and the todo list. The next
-implementation slice should be stronger checksum verification. Preserve the AWS SDK
-v3 test harness in `src/test/aws-sdk.test.ts` and keep the compatibility suite
-green.
+Start by checking `git status`, recent history, and the todo list. Preserve the
+AWS SDK v3 test harness in `src/test/aws-sdk.test.ts` and keep the compatibility
+suite green.
 
 ## Known Scope
 
 S3 Access Points, Object Lambda, Multi-Region Access Points, Batch Operations,
-Storage Lens, S3 Express directory buckets, external replication, and a web UI
-are not part of the current implementation target.
+Storage Lens, S3 Express directory buckets, external replication, and a standalone
+web UI are not part of the current implementation target; the embedded admin
+dashboard is intentionally limited to control-plane operations.
 
 No credentials, signing secrets, private deployment configuration, or production
 environment values belong in this repository.
