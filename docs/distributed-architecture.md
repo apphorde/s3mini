@@ -26,9 +26,9 @@ Peer communication currently uses the configured internal URL and shared token; 
 ## Required Before HA Claims
 
 - Replicate deletes and delete markers as durable tombstone events. Delete delivery is now implemented, including idempotent version removal and delete-marker preservation.
-- The authenticated `/internal/replication/inventory` endpoint exposes object-version fingerprints and tombstones for future anti-entropy comparison.
+- The authenticated `/internal/replication/inventory` endpoint exposes object-version fingerprints and tombstones; the worker compares this inventory and replays missing local journal events as best-effort anti-entropy repair.
 - Add peer registration, health, retry leasing, and dead-letter handling.
-- Add anti-entropy scans to repair missed events and verify checksums.
+- Add peer health state and checksum verification to strengthen anti-entropy repair.
 - Define conflict handling for concurrent writes from different nodes.
 - Add read-repair and an explicit consistency policy.
 - Test disk-full, process crash, peer loss, clock skew, and partial network failure.
