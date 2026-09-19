@@ -774,6 +774,15 @@ const ADMIN_HTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>S3MINI Control Plane</title>
+  <script type="importmap">{"imports":{"@li3/":"https://cdn.li3.dev/@li3/"}}</script>
+  <script type="module">import '@li3/web';</script>
+  <template component="dashboard-status">
+    <p id="message">{{ message }}</p>
+    <script setup>
+      import { defineProp } from '@li3/web';
+      export default function () { const message = defineProp('message', { default: '' }); return { message }; }
+    </script>
+  </template>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101418; color: #e6edf3; }
     body { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
@@ -799,7 +808,7 @@ const ADMIN_HTML = `<!doctype html>
   <section>
     <label>Admin token <input id="token" type="password" autocomplete="off"></label>
     <button id="load">Load keys</button>
-    <p id="message"></p>
+    <dashboard-status id="status" message=""></dashboard-status>
   </section>
   <section>
     <form id="create"><input id="name" placeholder="Display name" maxlength="120"><button>Issue access key</button></form>
@@ -818,7 +827,7 @@ const ADMIN_HTML = `<!doctype html>
   </section>
   <script>
     const token = () => document.querySelector('#token').value;
-    const message = text => document.querySelector('#message').textContent = text || '';
+     const message = text => { const status = document.querySelector('#status'); if (status) status.message = text || ''; };
     const html = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
     const request = (url, options = {}) => fetch(url, { ...options, headers: { ...(options.body ? {'Content-Type': 'application/json'} : {}), Authorization: 'Bearer ' + token(), ...(options.headers || {}) } });
     async function load() {

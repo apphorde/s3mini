@@ -329,6 +329,7 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.body).toContain('S3MINI Control Plane');
     expect(dashboard.body).toContain('Replication');
     expect(dashboard.body).toContain('/admin/replication/events');
+    expect(dashboard.body).toContain('@li3/web');
   });
 
   it('redirects dashboard access to OIDC when configured', async () => {

@@ -33,6 +33,7 @@ container, or reverse-proxied deployment.
 - The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.
 - The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
 - Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is checked against `/userinfo`, with optional email allowlisting via `S3MINI_OIDC_ADMIN_EMAILS`.
+- The dashboard uses a Li3 custom component for reactive status messaging, loaded from the documented CDN import map.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
@@ -58,7 +59,7 @@ database locking during test execution.
 ## Next Steps
 
 1. Extend SHA-256 metadata validation to inventory comparisons and older event migration paths.
-2. Complete the Li3 UI modernization task and extend OIDC operational configuration/documentation.
+2. Extend the Li3 component treatment across dashboard tables and extend OIDC operational configuration/documentation.
 3. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
 4. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
 
