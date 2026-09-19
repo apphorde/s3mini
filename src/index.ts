@@ -11,9 +11,9 @@ const fastify = Fastify({
 async function bootstrap() {
   const s3 = new S3Mini();
   await s3.init();
-
-  await registerRoutes(fastify, s3);
   const replication = new ReplicationWorker(s3);
+
+  await registerRoutes(fastify, s3, replication);
   replication.start();
   fastify.addHook('onClose', async () => {
     replication.stop();

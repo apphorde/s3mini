@@ -3,8 +3,9 @@ import crypto from 'node:crypto';
 import type { S3Mini } from '../storage/s3mini.js';
 import { S3Error, VALID_STORAGE_CLASSES } from '../types/models.js';
 import { verifyPresignedSigV4, verifySigV4 } from '../auth/sigv4.js';
+import type { ReplicationWorker } from '../replication/worker.js';
 
-export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini) {
+export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, replication?: ReplicationWorker) {
   fastify.addContentTypeParser(['application/octet-stream', 'application/xml', 'text/xml', 'text/csv'], { parseAs: 'buffer' }, (_request, body, done) => {
     done(null, body);
   });
@@ -92,6 +93,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini) {
   }
 
   fastify.get('/admin', async (_request, reply) => reply.type('text/html').send(ADMIN_HTML));
+  fastify.get('/admin/replication/health', { preHandler: requireAdmin }, async (_request, reply) => reply.send(replication?.getPeerHealth() || []));
   fastify.get('/admin/access-keys', { preHandler: requireAdmin }, async (_request, reply) => {
     return reply.send(await s3.listAccessKeys());
   });

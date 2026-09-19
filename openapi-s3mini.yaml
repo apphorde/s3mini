@@ -95,6 +95,18 @@ paths:
           content:
             application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ReplicationInventoryItem' } } }
         '403': { $ref: '#/components/responses/S3Error' }
+  /admin/replication/health:
+    get:
+      operationId: GetReplicationHealth
+      tags: [Admin]
+      description: Authenticated control-plane view of configured peer health.
+      security: [{ AdminBearer: [] }]
+      responses:
+        '200':
+          description: Peer health states.
+          content:
+            application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PeerHealth' } } }
+        '403': { $ref: '#/components/responses/S3Error' }
   /:
     get:
       operationId: ListBuckets
@@ -247,6 +259,15 @@ components:
         size: { type: integer, format: int64 }
         lastModified: { type: string, format: date-time }
         deleteMarker: { type: boolean }
+    PeerHealth:
+      type: object
+      required: [peer, status, consecutiveFailures]
+      properties:
+        peer: { type: string }
+        status: { type: string, enum: [Healthy, Unhealthy, Unknown] }
+        consecutiveFailures: { type: integer }
+        lastSuccessAt: { type: string, format: date-time }
+        lastFailureAt: { type: string, format: date-time }
   parameters:
     Bucket:
       name: bucket

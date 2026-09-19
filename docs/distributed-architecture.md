@@ -28,7 +28,7 @@ Peer communication currently uses the configured internal URL and shared token; 
 - Replicate deletes and delete markers as durable tombstone events. Delete delivery is now implemented, including idempotent version removal and delete-marker preservation.
 - The authenticated `/internal/replication/inventory` endpoint exposes object-version fingerprints and tombstones; the worker compares this inventory and replays missing local journal events as best-effort anti-entropy repair.
 - Add peer registration, health, retry leasing, and dead-letter handling.
-- Add peer health state and checksum verification to strengthen anti-entropy repair.
+- Peer health is tracked in memory and exposed through the admin control plane; PUT delivery validates MD5 ETags and inventory repair compares ETags. Persisted health history and stronger content hashes remain future work.
 - Define conflict handling for concurrent writes from different nodes.
 - Add read-repair and an explicit consistency policy.
 - Test disk-full, process crash, peer loss, clock skew, and partial network failure.
