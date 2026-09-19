@@ -700,6 +700,9 @@ const ADMIN_HTML = `<!doctype html>
     table { width: 100%; border-collapse: collapse; margin-top: 16px; }
     th, td { text-align: left; padding: 10px 6px; border-bottom: 1px solid #2b3540; }
     code { overflow-wrap: anywhere; }
+    .healthy { color: #8bd49c; }
+    .unhealthy, .dead { color: #f28b8b; }
+    .unknown { color: #f0c674; }
     #message { min-height: 1.5em; color: #f0c674; }
   </style>
 </head>
@@ -716,6 +719,11 @@ const ADMIN_HTML = `<!doctype html>
     <pre id="issued"></pre>
     <table><thead><tr><th>Access key</th><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="keys"></tbody></table>
   </section>
+  <section>
+    <h2>Replication</h2>
+    <table><thead><tr><th>Peer</th><th>Status</th><th>Failures</th><th>Last activity</th></tr></thead><tbody id="peers"></tbody></table>
+    <table><thead><tr><th>Object</th><th>Operation</th><th>Status</th><th>Attempts</th><th></th></tr></thead><tbody id="events"></tbody></table>
+  </section>
   <script>
     const token = () => document.querySelector('#token').value;
     const message = text => document.querySelector('#message').textContent = text || '';
@@ -727,6 +735,10 @@ const ADMIN_HTML = `<!doctype html>
       const keys = await response.json();
       document.querySelector('#keys').innerHTML = keys.map(key => '<tr><td><code>' + html(key.accessKeyId) + '</code></td><td>' + html(key.displayName) + '</td><td>' + html(key.status) + '</td><td>' + html(new Date(key.createdAt).toLocaleString()) + '</td><td>' + (key.status === 'Active' ? '<button class="danger" data-id="' + html(key.accessKeyId) + '">Disable</button>' : '') + '</td></tr>').join('');
       document.querySelectorAll('[data-id]').forEach(button => button.onclick = async () => { await request('/admin/access-keys/' + encodeURIComponent(button.dataset.id), { method: 'DELETE' }); load(); });
+      const healthResponse = await request('/admin/replication/health');
+      if (healthResponse.ok) { const peers = await healthResponse.json(); document.querySelector('#peers').innerHTML = peers.map(peer => '<tr><td><code>' + html(peer.peer) + '</code></td><td class="' + html(peer.status.toLowerCase()) + '">' + html(peer.status) + '</td><td>' + html(peer.consecutiveFailures) + '</td><td>' + html(new Date(peer.lastSuccessAt || peer.lastFailureAt || 0).toLocaleString()) + '</td></tr>').join('') || '<tr><td colspan="4">No configured peers.</td></tr>'; }
+      const eventsResponse = await request('/admin/replication/events?limit=100');
+      if (eventsResponse.ok) { const events = await eventsResponse.json(); document.querySelector('#events').innerHTML = events.map(event => '<tr><td><code>' + html(event.bucket + '/' + event.key) + '</code></td><td>' + html(event.operation) + '</td><td class="' + (event.status === 'DeadLetter' ? 'dead' : '') + '">' + html(event.status) + '</td><td>' + html(event.attempts) + '</td><td>' + (event.status === 'DeadLetter' ? '<button data-retry="' + html(event.id) + '">Retry</button>' : '') + '</td></tr>').join('') || '<tr><td colspan="5">No replication events.</td></tr>'; document.querySelectorAll('[data-retry]').forEach(button => button.onclick = async () => { await request('/admin/replication/events/' + button.dataset.retry + '/retry', { method: 'POST' }); load(); }); }
       message('');
     }
     document.querySelector('#load').onclick = load;

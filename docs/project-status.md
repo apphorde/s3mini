@@ -30,6 +30,7 @@ container, or reverse-proxied deployment.
 - Replication workers claim pending events with expiring SQLite leases, preventing duplicate concurrent delivery while allowing crash recovery.
 - Replication events that exhaust eight delivery attempts are persisted as dead letters, listed through the admin API, and can be explicitly requeued.
 - New replication events persist a SHA-256 body digest, include it in delivery headers, and validate it at the receiving node.
+- The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.

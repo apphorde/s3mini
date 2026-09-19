@@ -314,6 +314,8 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.statusCode).toBe(200);
     expect(dashboard.headers['content-type']).toContain('text/html');
     expect(dashboard.body).toContain('S3MINI Control Plane');
+    expect(dashboard.body).toContain('Replication');
+    expect(dashboard.body).toContain('/admin/replication/events');
   });
 
   it('accepts authenticated replicated object writes without creating a replication loop', async () => {

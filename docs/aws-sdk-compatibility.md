@@ -50,7 +50,7 @@ const client = new S3Client({
 | List encoding | ListObjectsV2 `encoding-type=url` response mode | Implemented |
 | Persistence | Node `node:sqlite` metadata database and access-key primitives | Implemented |
 | Access-key control plane | Bearer-protected list, issue, and disable endpoints | Implemented |
-| Admin dashboard | Dependency-free `/admin` key-management view | Implemented |
+| Admin dashboard | Dependency-free `/admin` key and replication-health view | Implemented |
 | Replication durability | Atomic local writes and transactional replication intent journal | Partial |
 | Peer object delivery | Authenticated asynchronous object-write delivery | Partial |
 
