@@ -24,7 +24,7 @@ container, or reverse-proxied deployment.
 - SQLite metadata now uses `/data/s3mini.sqlite` through Node's built-in `node:sqlite` driver, with legacy `/data/objects/meta.db` migration on first start.
 - Persistent access-key storage, a bearer-token-protected HTTP control plane, and a dependency-free `/admin` dashboard are implemented for listing, issuing, and disabling keys.
 - Local durability foundation is implemented: WAL/full-sync SQLite, atomic synced object writes, and a transactional pending replication journal.
-- Asynchronous peer delivery is implemented for object writes using `S3MINI_REPLICATION_PEERS`, `S3MINI_REPLICATION_TOKEN`, and `S3MINI_NODE_ID`.
+- Asynchronous peer delivery is implemented for object writes, deletes, and delete markers using `S3MINI_REPLICATION_PEERS`, `S3MINI_REPLICATION_TOKEN`, and `S3MINI_NODE_ID`; initial geolocated testing can use private VPN endpoints.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
@@ -49,7 +49,7 @@ database locking during test execution.
 
 ## Next Steps
 
-1. Add delete/tombstone replication, anti-entropy repair, and peer health state.
+1. Add anti-entropy repair and peer health state to complement journal delivery.
 2. Add bucket/policy management to the authenticated control plane and dashboard.
 3. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
 4. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
@@ -57,7 +57,7 @@ database locking during test execution.
 ## Next Session Handoff
 
 Start by checking `git status`, recent history, and the todo list. The next
-implementation slice should be delete/tombstone replication and anti-entropy repair. Preserve the AWS SDK
+implementation slice should be anti-entropy repair and peer health state. Preserve the AWS SDK
 v3 test harness in `src/test/aws-sdk.test.ts` and keep the compatibility suite
 green.
 

@@ -17,7 +17,7 @@ comes before quorum or failover claims.
 
 ## Replication Contract
 
-The first network mode will be asynchronous replication. A client write is acknowledged after the local durable copy and journal transaction succeed; peer delivery does not add remote latency to the S3 request.
+The first network mode is asynchronous replication. For the initial geolocated test deployment, nodes may connect directly over private VPN endpoints; the VPN and network policy are responsible for reachability while S3MINI authenticates replication with its shared token. A client write is acknowledged after the local durable copy and journal transaction succeed; peer delivery does not add remote latency to the S3 request.
 
 Replication identity is `(bucket, key, versionId, sourceNodeId)`. A peer must verify the payload size and ETag before acknowledging delivery. Retries must be idempotent and must never overwrite a different version ID.
 
@@ -25,7 +25,7 @@ Peer communication currently uses the configured internal URL and shared token; 
 
 ## Required Before HA Claims
 
-- Replicate deletes and delete markers as durable tombstone events.
+- Replicate deletes and delete markers as durable tombstone events. Delete delivery is now implemented, including idempotent version removal and delete-marker preservation.
 - Add peer registration, health, retry leasing, and dead-letter handling.
 - Add anti-entropy scans to repair missed events and verify checksums.
 - Define conflict handling for concurrent writes from different nodes.

@@ -38,11 +38,12 @@ export interface ReplicationEvent {
   bucket: string;
   key: string;
   versionId: string;
-  operation: 'PutObject';
+  operation: 'PutObject' | 'DeleteObject';
   sourceNodeId: string;
   payloadPath: string;
   etag: string;
   size: number;
+  deleteMarker: boolean;
   status: 'Pending' | 'Delivered' | 'Failed';
   attempts: number;
   nextAttemptAt?: Date;
@@ -186,9 +187,11 @@ export class S3Mini {
       status TEXT NOT NULL DEFAULT 'Pending',
       attempts INTEGER NOT NULL DEFAULT 0,
       nextAttemptAt INTEGER,
+      deleteMarker INTEGER NOT NULL DEFAULT 0,
       createdAt INTEGER NOT NULL,
       UNIQUE(bucket, key, versionId, operation, sourceNodeId)
     )`);
+    try { await this.run('ALTER TABLE replication_events ADD COLUMN deleteMarker INTEGER NOT NULL DEFAULT 0'); } catch { /* Existing databases already have the column. */ }
     this.initialized = true;
   }
 
@@ -349,6 +352,7 @@ export class S3Mini {
       payloadPath: row.payloadPath,
       etag: row.etag,
       size: row.size,
+      deleteMarker: Boolean(row.deleteMarker),
       status: row.status,
       attempts: row.attempts,
       nextAttemptAt: row.nextAttemptAt ? new Date(row.nextAttemptAt) : undefined,
@@ -358,6 +362,10 @@ export class S3Mini {
 
   async updateReplicationEvent(id: number, status: 'Pending' | 'Delivered' | 'Failed', attempts: number, nextAttemptAt?: Date): Promise<void> {
     await this.run('UPDATE replication_events SET status = ?, attempts = ?, nextAttemptAt = ? WHERE id = ?', [status, attempts, nextAttemptAt?.getTime() || null, id]);
+  }
+
+  private async queueReplicationEvent(event: Omit<ReplicationEvent, 'id' | 'status' | 'attempts' | 'nextAttemptAt'>): Promise<void> {
+    await this.run('INSERT OR IGNORE INTO replication_events (bucket, key, versionId, operation, sourceNodeId, payloadPath, etag, size, deleteMarker, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [event.bucket, event.key, event.versionId, event.operation, event.sourceNodeId, event.payloadPath, event.etag, event.size, event.deleteMarker ? 1 : 0, event.createdAt.getTime()]);
   }
 
   async readReplicationPayload(event: ReplicationEvent): Promise<Buffer> {
@@ -388,6 +396,30 @@ export class S3Mini {
       await fs.rm(versionFilePath, { force: true });
       throw error;
     }
+  }
+
+  async acceptReplicatedDelete(event: { bucket: string; key: string; versionId: string; lastModified: number; deleteMarker: boolean }): Promise<void> {
+    this.validateKey(event.key);
+    if (!(await this.get('SELECT name FROM buckets WHERE name = ?', [event.bucket]))) throw new S3Error('NoSuchBucket', 'Bucket not found', 404, event.bucket);
+    if (event.deleteMarker) {
+      if (await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [event.bucket, event.key, event.versionId])) return;
+      await this.run('INSERT INTO objs (bucket, key, etag, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker, userMetadata) VALUES (?, ?, NULL, ?, 0, ?, ?, ?, ?, 1, ?)', [event.bucket, event.key, event.lastModified, 'STANDARD', event.versionId, '000000000000000000000000', 's3mini', '{}']);
+      await fs.rm(path.join(STORAGE_BASE, event.bucket, event.key), { force: true });
+      return;
+    }
+    if (event.versionId) {
+      const row = await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [event.bucket, event.key, event.versionId]);
+      if (row) await this.deleteReplicatedVersion(event.bucket, event.key, event.versionId, row.id);
+      return;
+    }
+    await this.run('DELETE FROM objs WHERE bucket = ? AND key = ?', [event.bucket, event.key]);
+    await fs.rm(path.join(STORAGE_BASE, event.bucket, event.key), { force: true });
+  }
+
+  private async deleteReplicatedVersion(bucket: string, key: string, versionId: string, id: number): Promise<void> {
+    await this.run('DELETE FROM objs WHERE id = ?', [id]);
+    await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
+    await fs.rm(this.versionPath(bucket, key, versionId), { force: true });
   }
 
   async clearBucket(name: string): Promise<void> {
@@ -428,7 +460,7 @@ export class S3Mini {
          lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null, meta.objectLockMode || null, meta.retainUntil ? new Date(meta.retainUntil).getTime() : null, meta.legalHold || null, 0, JSON.stringify(meta.userMetadata || {})
         ]
       );
-      await this.run('INSERT INTO replication_events (bucket, key, versionId, operation, sourceNodeId, payloadPath, etag, size, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [bucketName, key, versionId, 'PutObject', NODE_ID, versionFilePath, etag, body.length, lastModified]);
+      await this.queueReplicationEvent({ bucket: bucketName, key, versionId, operation: 'PutObject', sourceNodeId: NODE_ID, payloadPath: versionFilePath, etag, size: body.length, deleteMarker: false, createdAt: new Date(lastModified) });
       this.db?.exec('COMMIT');
     } catch (error) {
       this.db?.exec('ROLLBACK');
@@ -526,7 +558,9 @@ export class S3Mini {
     const versioning = await this.getVersioning(bucketName);
     if (versioning.status === 'Enabled') {
       const markerId = crypto.randomBytes(8).toString('hex') + '+';
-      await this.run('INSERT INTO objs (bucket, key, etag, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker) VALUES (?, ?, NULL, ?, 0, ?, ?, ?, ?, 1)', [bucketName, key, Date.now(), 'STANDARD', markerId, '000000000000000000000000', 's3mini']);
+      const deletedAt = Date.now();
+      await this.run('INSERT INTO objs (bucket, key, etag, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker) VALUES (?, ?, NULL, ?, 0, ?, ?, ?, ?, 1)', [bucketName, key, deletedAt, 'STANDARD', markerId, '000000000000000000000000', 's3mini']);
+      await this.queueReplicationEvent({ bucket: bucketName, key, versionId: markerId, operation: 'DeleteObject', sourceNodeId: NODE_ID, payloadPath: '', etag: '', size: 0, deleteMarker: true, createdAt: new Date(deletedAt) });
       await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
       return;
     }
@@ -536,6 +570,7 @@ export class S3Mini {
     await this.run('DELETE FROM object_acl WHERE bucket = ? AND key = ?', [bucketName, key]);
     await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
     await fs.rm(path.join(STORAGE_BASE, bucketName, '.versions'), { recursive: true, force: true });
+    await this.queueReplicationEvent({ bucket: bucketName, key, versionId: '', operation: 'DeleteObject', sourceNodeId: NODE_ID, payloadPath: '', etag: '', size: 0, deleteMarker: false, createdAt: new Date() });
   }
 
   async deleteObjects(bucket: string, keys: string[]): Promise<{ deleted: string[]; errors: Array<{ key: string; code: string }> }> {
@@ -591,6 +626,7 @@ export class S3Mini {
     await this.run('DELETE FROM objs WHERE id = ?', [row.id]);
     await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?', [bucket, key, versionId]);
     await fs.rm(this.versionPath(bucket, key, versionId), { force: true });
+    await this.queueReplicationEvent({ bucket, key, versionId, operation: 'DeleteObject', sourceNodeId: NODE_ID, payloadPath: '', etag: '', size: 0, deleteMarker: false, createdAt: new Date() });
   }
 
   async putObjectTags(bucket: string, key: string, tags: Record<string, string>, versionId = ''): Promise<void> {

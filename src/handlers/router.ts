@@ -53,10 +53,19 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini) {
     const bucket = String(request.headers['x-s3mini-bucket'] || '');
     const key = String(request.headers['x-s3mini-key'] || '');
     const versionId = String(request.headers['x-s3mini-version-id'] || '');
+    const operation = String(request.headers['x-s3mini-operation'] || '');
+    const deleteMarker = request.headers['x-s3mini-delete-marker'] === 'true';
     const etag = String(request.headers['x-s3mini-etag'] || '');
     const lastModified = Number(request.headers['x-s3mini-last-modified']);
-    if (!bucket || !key || !versionId || !etag || !Number.isFinite(lastModified) || !Buffer.isBuffer(request.body)) throw new S3Error('InvalidRequest', 'Replication metadata is incomplete.', 400);
-    await s3.acceptReplicatedObject({ bucket, key, versionId, etag, lastModified, body: request.body });
+    if (!bucket || !key || !operation || (operation === 'PutObject' && !versionId) || !Number.isFinite(lastModified)) throw new S3Error('InvalidRequest', 'Replication metadata is incomplete.', 400);
+    if (operation === 'PutObject') {
+      if (!etag || !Buffer.isBuffer(request.body)) throw new S3Error('InvalidRequest', 'Replicated object data is missing.', 400);
+      await s3.acceptReplicatedObject({ bucket, key, versionId, etag, lastModified, body: request.body });
+    } else if (operation === 'DeleteObject') {
+      await s3.acceptReplicatedDelete({ bucket, key, versionId, lastModified, deleteMarker });
+    } else {
+      throw new S3Error('InvalidRequest', 'The replication operation is unsupported.', 400);
+    }
     return reply.code(204).send();
   });
   fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {

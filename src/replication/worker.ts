@@ -38,7 +38,7 @@ export class ReplicationWorker {
   private async deliver(event: ReplicationEvent): Promise<void> {
     const attempts = event.attempts + 1;
     try {
-      const body = await fs.readFile(event.payloadPath);
+      const body = event.operation === 'PutObject' ? await fs.readFile(event.payloadPath) : undefined;
       for (const peer of this.peers) {
         const response = await fetch(`${peer.replace(/\/$/, '')}/internal/replication`, {
           method: 'PUT',
@@ -49,6 +49,8 @@ export class ReplicationWorker {
             'x-s3mini-bucket': event.bucket,
             'x-s3mini-key': event.key,
             'x-s3mini-version-id': event.versionId,
+            'x-s3mini-operation': event.operation,
+            'x-s3mini-delete-marker': String(event.deleteMarker),
             'x-s3mini-etag': event.etag,
             'x-s3mini-last-modified': String(event.createdAt.getTime()),
           },

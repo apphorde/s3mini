@@ -316,6 +316,7 @@ describe('S3 HTTP routes', () => {
         'x-s3mini-bucket': bucket,
         'x-s3mini-key': 'replica.txt',
         'x-s3mini-version-id': 'replica-version+',
+        'x-s3mini-operation': 'PutObject',
         'x-s3mini-etag': etag,
         'x-s3mini-last-modified': String(Date.now()),
       },
@@ -324,6 +325,22 @@ describe('S3 HTTP routes', () => {
     expect(replicated.statusCode).toBe(204);
     expect((await s3.getObject(bucket, 'replica.txt', 'replica-version+')).data.toString()).toBe('replicated body');
     expect((await s3.listReplicationEvents()).some(event => event.key === 'replica.txt')).toBe(false);
+    const deleted = await app.inject({
+      method: 'PUT',
+      url: '/internal/replication',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-s3mini-replication-token': 'replication-token',
+        'x-s3mini-bucket': bucket,
+        'x-s3mini-key': 'replica.txt',
+        'x-s3mini-version-id': 'replica-version+',
+        'x-s3mini-operation': 'DeleteObject',
+        'x-s3mini-delete-marker': 'false',
+        'x-s3mini-last-modified': String(Date.now()),
+      },
+    });
+    expect(deleted.statusCode).toBe(204);
+    await expect(s3.getObject(bucket, 'replica.txt', 'replica-version+')).rejects.toMatchObject({ code: 'NoSuchKey' });
     delete process.env.S3MINI_REPLICATION_TOKEN;
   });
 });
