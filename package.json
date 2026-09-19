@@ -1,5 +1,5 @@
 {
-  "name": "s3mini",
+  "name": "@cloud-cli/s3mini",
   "version": "0.1.0",
   "description": "A minimal S3-compatible object storage server in TypeScript",
   "type": "module",

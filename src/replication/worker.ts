@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import crypto from 'node:crypto';
 import { REPLICATION_MAX_ATTEMPTS } from '../storage/s3mini.js';
 import type { PeerHealthState, ReplicationEvent, ReplicationInventoryItem, S3Mini } from '../storage/s3mini.js';
 
@@ -97,6 +98,7 @@ export class ReplicationWorker {
             'x-s3mini-operation': event.operation,
             'x-s3mini-delete-marker': String(event.deleteMarker),
             'x-s3mini-etag': event.etag,
+            ...(event.operation === 'PutObject' ? { 'x-s3mini-sha256': event.sha256 || crypto.createHash('sha256').update(body!).digest('hex') } : {}),
             'x-s3mini-last-modified': String(event.createdAt.getTime()),
           },
           body,

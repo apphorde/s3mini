@@ -27,7 +27,7 @@ Peer communication currently uses the configured internal URL and shared token; 
 
 - Replicate deletes and delete markers as durable tombstone events. Delete delivery is now implemented, including idempotent version removal and delete-marker preservation.
 - The authenticated `/internal/replication/inventory` endpoint exposes object-version fingerprints and tombstones; the worker compares this inventory and replays missing local journal events as best-effort anti-entropy repair.
-- Add peer registration. Replication events now use SQLite leases with expiry so concurrent workers do not deliver the same event simultaneously, and crashed workers can be recovered; exhausted events move to a durable dead-letter state and can be requeued by an admin.
+- Add peer registration. Replication events now use SQLite leases with expiry so concurrent workers do not deliver the same event simultaneously, and crashed workers can be recovered; exhausted events move to a durable dead-letter state and can be requeued by an admin. New replication deliveries carry and validate a SHA-256 body digest in addition to the ETag.
 - Peer health is persisted in SQLite and exposed through the admin control plane; PUT delivery validates MD5 ETags and inventory repair compares ETags. Stronger content hashes remain future work.
 - Define conflict handling for concurrent writes from different nodes.
 - Add read-repair and an explicit consistency policy.

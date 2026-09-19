@@ -73,7 +73,8 @@ paths:
          - { name: x-s3mini-version-id, in: header, required: true, schema: { type: string } }
          - { name: x-s3mini-operation, in: header, required: true, schema: { type: string, enum: [PutObject, DeleteObject] } }
          - { name: x-s3mini-delete-marker, in: header, required: true, schema: { type: boolean } }
-         - { name: x-s3mini-etag, in: header, required: false, schema: { type: string } }
+          - { name: x-s3mini-etag, in: header, required: false, schema: { type: string } }
+          - { name: x-s3mini-sha256, in: header, required: false, schema: { type: string, pattern: '^[a-f0-9]{64}$' } }
         - { name: x-s3mini-last-modified, in: header, required: true, schema: { type: integer, format: int64 } }
       requestBody:
          required: false
@@ -279,6 +280,7 @@ components:
         key: { type: string }
         versionId: { type: string }
         etag: { type: string }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
         size: { type: integer, format: int64 }
         lastModified: { type: string, format: date-time }
          deleteMarker: { type: boolean }

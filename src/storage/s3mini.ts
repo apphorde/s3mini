@@ -43,6 +43,7 @@ export interface ReplicationEvent {
   sourceNodeId: string;
   payloadPath: string;
   etag: string;
+  sha256?: string;
   size: number;
   deleteMarker: boolean;
   status: 'Pending' | 'Delivered' | 'Failed' | 'DeadLetter';
@@ -74,6 +75,7 @@ export interface ReplicatedObject {
   key: string;
   versionId: string;
   etag: string;
+  sha256?: string;
   lastModified: number;
   body: Buffer;
 }
@@ -207,12 +209,14 @@ export class S3Mini {
       attempts INTEGER NOT NULL DEFAULT 0,
       nextAttemptAt INTEGER,
       deleteMarker INTEGER NOT NULL DEFAULT 0,
+      sha256 TEXT,
       leaseOwner TEXT,
       leaseUntil INTEGER,
       createdAt INTEGER NOT NULL,
       UNIQUE(bucket, key, versionId, operation, sourceNodeId)
     )`);
     try { await this.run('ALTER TABLE replication_events ADD COLUMN deleteMarker INTEGER NOT NULL DEFAULT 0'); } catch { /* Existing databases already have the column. */ }
+    try { await this.run('ALTER TABLE replication_events ADD COLUMN sha256 TEXT'); } catch { /* Existing databases already have the column. */ }
     try { await this.run('ALTER TABLE replication_events ADD COLUMN leaseOwner TEXT'); } catch { /* Existing databases already have the column. */ }
     try { await this.run('ALTER TABLE replication_events ADD COLUMN leaseUntil INTEGER'); } catch { /* Existing databases already have the column. */ }
     await this.run(`CREATE TABLE IF NOT EXISTS replication_peer_health (
@@ -387,6 +391,7 @@ export class S3Mini {
       sourceNodeId: row.sourceNodeId,
       payloadPath: row.payloadPath,
       etag: row.etag,
+      sha256: row.sha256 || undefined,
       size: row.size,
       deleteMarker: Boolean(row.deleteMarker),
       status: row.status,
@@ -455,7 +460,7 @@ export class S3Mini {
   }
 
   private async queueReplicationEvent(event: Omit<ReplicationEvent, 'id' | 'status' | 'attempts' | 'nextAttemptAt'>): Promise<void> {
-    await this.run('INSERT OR IGNORE INTO replication_events (bucket, key, versionId, operation, sourceNodeId, payloadPath, etag, size, deleteMarker, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [event.bucket, event.key, event.versionId, event.operation, event.sourceNodeId, event.payloadPath, event.etag, event.size, event.deleteMarker ? 1 : 0, event.createdAt.getTime()]);
+    await this.run('INSERT OR IGNORE INTO replication_events (bucket, key, versionId, operation, sourceNodeId, payloadPath, etag, size, deleteMarker, sha256, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [event.bucket, event.key, event.versionId, event.operation, event.sourceNodeId, event.payloadPath, event.etag, event.size, event.deleteMarker ? 1 : 0, event.sha256 || null, event.createdAt.getTime()]);
   }
 
   async readReplicationPayload(event: ReplicationEvent): Promise<Buffer> {
@@ -466,6 +471,8 @@ export class S3Mini {
     this.validateKey(object.key);
     if (!/^[A-Za-z0-9._+-]+$/.test(object.versionId)) throw new S3Error('InvalidRequest', 'The replicated version ID is invalid.', 400, object.bucket, object.key);
     if ('"' + crypto.createHash('md5').update(object.body).digest('hex') + '"' !== object.etag) throw new S3Error('BadDigest', 'The replicated object ETag did not match its body.', 400, object.bucket, object.key);
+    const sha256 = crypto.createHash('sha256').update(object.body).digest('hex');
+    if (object.sha256 && object.sha256 !== sha256) throw new S3Error('BadDigest', 'The replicated object SHA-256 digest did not match its body.', 400, object.bucket, object.key);
     if (!(await this.get('SELECT name FROM buckets WHERE name = ?', [object.bucket]))) throw new S3Error('NoSuchBucket', 'Bucket not found', 404, object.bucket);
     if (await this.get('SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?', [object.bucket, object.key, object.versionId])) return;
 
@@ -550,7 +557,7 @@ export class S3Mini {
          lastModified, body.length, meta.storageClass || 'STANDARD', versionId, '000000000000000000000000', 's3mini', meta.serverSideEncryption || null, meta.sseKmsKeyId || null, meta.objectLockMode || null, meta.retainUntil ? new Date(meta.retainUntil).getTime() : null, meta.legalHold || null, 0, JSON.stringify(meta.userMetadata || {})
         ]
       );
-      await this.queueReplicationEvent({ bucket: bucketName, key, versionId, operation: 'PutObject', sourceNodeId: NODE_ID, payloadPath: versionFilePath, etag, size: body.length, deleteMarker: false, createdAt: new Date(lastModified) });
+      await this.queueReplicationEvent({ bucket: bucketName, key, versionId, operation: 'PutObject', sourceNodeId: NODE_ID, payloadPath: versionFilePath, etag, sha256: crypto.createHash('sha256').update(body).digest('hex'), size: body.length, deleteMarker: false, createdAt: new Date(lastModified) });
       this.db?.exec('COMMIT');
     } catch (error) {
       this.db?.exec('ROLLBACK');

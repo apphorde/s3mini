@@ -57,11 +57,12 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const operation = String(request.headers['x-s3mini-operation'] || '');
     const deleteMarker = request.headers['x-s3mini-delete-marker'] === 'true';
     const etag = String(request.headers['x-s3mini-etag'] || '');
+    const sha256 = request.headers['x-s3mini-sha256'] ? String(request.headers['x-s3mini-sha256']) : undefined;
     const lastModified = Number(request.headers['x-s3mini-last-modified']);
     if (!bucket || !key || !operation || (operation === 'PutObject' && !versionId) || !Number.isFinite(lastModified)) throw new S3Error('InvalidRequest', 'Replication metadata is incomplete.', 400);
     if (operation === 'PutObject') {
       if (!etag || !Buffer.isBuffer(request.body)) throw new S3Error('InvalidRequest', 'Replicated object data is missing.', 400);
-      await s3.acceptReplicatedObject({ bucket, key, versionId, etag, lastModified, body: request.body });
+      await s3.acceptReplicatedObject({ bucket, key, versionId, etag, sha256, lastModified, body: request.body });
     } else if (operation === 'DeleteObject') {
       await s3.acceptReplicatedDelete({ bucket, key, versionId, lastModified, deleteMarker });
     } else {

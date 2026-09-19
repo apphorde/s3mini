@@ -34,7 +34,7 @@ self-hosted clients such as MinIO clients and compatible tooling.
 - Verification baseline: 50 tests passing and `npm run build` passing.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
-- Next implementation slice: strengthen content-hash verification. Initial geolocated test nodes may connect over private VPN endpoints; keep secrets in environment variables.
+- Next implementation slice: extend SHA-256 validation to inventory comparisons and older event migration paths. Initial geolocated test nodes may connect over private VPN endpoints; keep secrets in environment variables.
 - Update this handoff and `docs/project-status.md` when the next checkpoint changes.
 
 ## Security and Privacy

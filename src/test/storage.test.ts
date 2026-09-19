@@ -65,10 +65,24 @@ describe('S3Mini', () => {
     const object = await s3.putObject(bucket, 'replicated.txt', Buffer.from('replicate me'), {});
     const event = (await s3.listReplicationEvents()).find(item => item.bucket === bucket && item.key === 'replicated.txt' && item.versionId === object.versionId);
     expect(event).toMatchObject({ operation: 'PutObject', status: 'Pending', etag: object.etag, size: 12 });
+    expect(event?.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect((await s3.claimReplicationEvents('test-worker')).map(item => item.id)).toEqual([event!.id]);
     expect(await s3.claimReplicationEvents('other-worker')).toEqual([]);
     await s3.updateReplicationEvent(event!.id, 'Delivered', 1);
     expect((await s3.listReplicationEvents()).find(item => item.id === event!.id)?.status).toBe('Delivered');
+  });
+
+  it('rejects replicated bodies with an invalid SHA-256 digest', async () => {
+    await s3.createBucket(bucket);
+    await expect(s3.acceptReplicatedObject({
+      bucket,
+      key: 'invalid-sha.txt',
+      versionId: 'remote-version+',
+      etag: '"9dd4e461268c8034f5c8564e155c67a6"',
+      sha256: 'bad',
+      lastModified: Date.now(),
+      body: Buffer.from('test'),
+    })).rejects.toMatchObject({ code: 'BadDigest' });
   });
 
   it('persists replication peer health across storage restarts', async () => {
