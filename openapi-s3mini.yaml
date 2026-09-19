@@ -131,6 +131,53 @@ paths:
       responses:
         '204': { description: Event requeued. }
         '403': { $ref: '#/components/responses/S3Error' }
+  /admin/buckets:
+    get:
+      operationId: ListAdminBuckets
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      responses:
+        '200': { description: Managed buckets, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminBucket' } } } } }
+    post:
+      operationId: CreateAdminBucket
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateAdminBucket' } } } }
+      responses:
+        '201': { description: Bucket created. }
+        '403': { $ref: '#/components/responses/S3Error' }
+  /admin/buckets/{bucket}:
+    delete:
+      operationId: DeleteAdminBucket
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      parameters: [{ $ref: '#/components/parameters/Bucket' }]
+      responses:
+        '204': { description: Bucket deleted. }
+        '403': { $ref: '#/components/responses/S3Error' }
+  /admin/buckets/{bucket}/policy:
+    get:
+      operationId: GetAdminBucketPolicy
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      parameters: [{ $ref: '#/components/parameters/Bucket' }]
+      responses:
+        '200': { description: Bucket policy, content: { application/json: { schema: { type: object } } } }
+    put:
+      operationId: PutAdminBucketPolicy
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      parameters: [{ $ref: '#/components/parameters/Bucket' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '204': { description: Policy saved. }
+    delete:
+      operationId: DeleteAdminBucketPolicy
+      tags: [Admin]
+      security: [{ AdminBearer: [] }]
+      parameters: [{ $ref: '#/components/parameters/Bucket' }]
+      responses:
+        '204': { description: Policy deleted. }
   /:
     get:
       operationId: ListBuckets
@@ -270,8 +317,21 @@ components:
         - $ref: '#/components/schemas/AccessKey'
         - type: object
           required: [secretAccessKey]
-           properties:
+         properties:
              secretAccessKey: { type: string }
+    AdminBucket:
+      type: object
+      required: [name, creationDate]
+      properties:
+        name: { type: string }
+        creationDate: { type: string, format: date-time }
+        locationConstraint: { type: string }
+    CreateAdminBucket:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        locationConstraint: { type: string }
     ReplicationInventoryItem:
       type: object
       required: [bucket, key, versionId, etag, size, lastModified, deleteMarker]

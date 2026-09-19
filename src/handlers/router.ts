@@ -117,6 +117,31 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     await s3.setAccessKeyStatus(accessKeyId, 'Disabled');
     return reply.code(204).send();
   });
+  fastify.get('/admin/buckets', { preHandler: requireAdmin }, async (_request, reply) => reply.send(await s3.listBuckets()));
+  fastify.post('/admin/buckets', { preHandler: requireAdmin }, async (request, reply) => {
+    const body = request.body && typeof request.body === 'object' ? request.body as { name?: string; locationConstraint?: string } : {};
+    if (!body.name) throw new S3Error('InvalidBucketName', 'A bucket name is required.', 400);
+    await s3.createBucket(body.name, body.locationConstraint);
+    return reply.code(201).send({ name: body.name });
+  });
+  fastify.delete('/admin/buckets/:bucket', { preHandler: requireAdmin }, async (request, reply) => {
+    await s3.deleteBucket((request.params as { bucket: string }).bucket);
+    return reply.code(204).send();
+  });
+  fastify.get('/admin/buckets/:bucket/policy', { preHandler: requireAdmin }, async (request, reply) => {
+    const bucket = (request.params as { bucket: string }).bucket;
+    return reply.send((await s3.getBucketConfiguration(bucket, 'policy')) || {});
+  });
+  fastify.put('/admin/buckets/:bucket/policy', { preHandler: requireAdmin }, async (request, reply) => {
+    const bucket = (request.params as { bucket: string }).bucket;
+    if (!request.body || typeof request.body !== 'object') throw new S3Error('MalformedPolicy', 'A JSON bucket policy is required.', 400, bucket);
+    await s3.putBucketConfiguration(bucket, 'policy', request.body);
+    return reply.code(204).send();
+  });
+  fastify.delete('/admin/buckets/:bucket/policy', { preHandler: requireAdmin }, async (request, reply) => {
+    await s3.deleteBucketConfiguration((request.params as { bucket: string }).bucket, 'policy');
+    return reply.code(204).send();
+  });
 
   // --- Bucket Operations ---
 
@@ -724,6 +749,11 @@ const ADMIN_HTML = `<!doctype html>
     <table><thead><tr><th>Peer</th><th>Status</th><th>Failures</th><th>Last activity</th></tr></thead><tbody id="peers"></tbody></table>
     <table><thead><tr><th>Object</th><th>Operation</th><th>Status</th><th>Attempts</th><th></th></tr></thead><tbody id="events"></tbody></table>
   </section>
+  <section>
+    <h2>Buckets</h2>
+    <form id="bucket-create"><input id="bucket-name" placeholder="Bucket name" maxlength="63"><input id="bucket-region" placeholder="Location (optional)"><button>Create bucket</button></form>
+    <table><thead><tr><th>Name</th><th>Created</th><th>Policy JSON</th><th></th></tr></thead><tbody id="buckets"></tbody></table>
+  </section>
   <script>
     const token = () => document.querySelector('#token').value;
     const message = text => document.querySelector('#message').textContent = text || '';
@@ -739,9 +769,12 @@ const ADMIN_HTML = `<!doctype html>
       if (healthResponse.ok) { const peers = await healthResponse.json(); document.querySelector('#peers').innerHTML = peers.map(peer => '<tr><td><code>' + html(peer.peer) + '</code></td><td class="' + html(peer.status.toLowerCase()) + '">' + html(peer.status) + '</td><td>' + html(peer.consecutiveFailures) + '</td><td>' + html(new Date(peer.lastSuccessAt || peer.lastFailureAt || 0).toLocaleString()) + '</td></tr>').join('') || '<tr><td colspan="4">No configured peers.</td></tr>'; }
       const eventsResponse = await request('/admin/replication/events?limit=100');
       if (eventsResponse.ok) { const events = await eventsResponse.json(); document.querySelector('#events').innerHTML = events.map(event => '<tr><td><code>' + html(event.bucket + '/' + event.key) + '</code></td><td>' + html(event.operation) + '</td><td class="' + (event.status === 'DeadLetter' ? 'dead' : '') + '">' + html(event.status) + '</td><td>' + html(event.attempts) + '</td><td>' + (event.status === 'DeadLetter' ? '<button data-retry="' + html(event.id) + '">Retry</button>' : '') + '</td></tr>').join('') || '<tr><td colspan="5">No replication events.</td></tr>'; document.querySelectorAll('[data-retry]').forEach(button => button.onclick = async () => { await request('/admin/replication/events/' + button.dataset.retry + '/retry', { method: 'POST' }); load(); }); }
+      const bucketsResponse = await request('/admin/buckets');
+      if (bucketsResponse.ok) { const buckets = await bucketsResponse.json(); document.querySelector('#buckets').innerHTML = buckets.map(bucket => '<tr><td><code>' + html(bucket.name) + '</code></td><td>' + html(new Date(bucket.creationDate).toLocaleString()) + '</td><td><textarea data-policy="' + html(bucket.name) + '" rows="3" cols="34" placeholder="No policy"></textarea><br><button data-save-policy="' + html(bucket.name) + '">Save</button> <button class="danger" data-clear-policy="' + html(bucket.name) + '">Clear</button></td><td><button class="danger" data-delete-bucket="' + html(bucket.name) + '">Delete</button></td></tr>').join('') || '<tr><td colspan="4">No buckets.</td></tr>'; for (const bucket of buckets) { const response = await request('/admin/buckets/' + encodeURIComponent(bucket.name) + '/policy'); if (response.ok) document.querySelector('[data-policy="' + CSS.escape(bucket.name) + '"]').value = JSON.stringify(await response.json(), null, 2); } document.querySelectorAll('[data-save-policy]').forEach(button => button.onclick = async () => { const name = button.dataset.savePolicy; try { await request('/admin/buckets/' + encodeURIComponent(name) + '/policy', { method: 'PUT', body: document.querySelector('[data-policy="' + CSS.escape(name) + '"]').value }); load(); } catch { message('Unable to save policy.'); } }); document.querySelectorAll('[data-clear-policy]').forEach(button => button.onclick = async () => { await request('/admin/buckets/' + encodeURIComponent(button.dataset.clearPolicy) + '/policy', { method: 'DELETE' }); load(); }); document.querySelectorAll('[data-delete-bucket]').forEach(button => button.onclick = async () => { await request('/admin/buckets/' + encodeURIComponent(button.dataset.deleteBucket), { method: 'DELETE' }); load(); }); }
       message('');
     }
     document.querySelector('#load').onclick = load;
+    document.querySelector('#bucket-create').onsubmit = async event => { event.preventDefault(); const name = document.querySelector('#bucket-name').value; const locationConstraint = document.querySelector('#bucket-region').value; const response = await request('/admin/buckets', { method: 'POST', body: JSON.stringify({ name, locationConstraint: locationConstraint || undefined }) }); if (!response.ok) return message('Unable to create bucket (' + response.status + ').'); document.querySelector('#bucket-name').value = ''; load(); };
     document.querySelector('#create').onsubmit = async event => { event.preventDefault(); const response = await request('/admin/access-keys', { method: 'POST', body: JSON.stringify({ displayName: document.querySelector('#name').value }) }); if (!response.ok) return message('Unable to issue key (' + response.status + ').'); const issued = await response.json(); document.querySelector('#issued').textContent = 'Access key: ' + issued.accessKeyId + '\\nSecret: ' + issued.secretAccessKey; document.querySelector('#name').value = ''; load(); };
   </script>
 </body>

@@ -295,6 +295,19 @@ describe('S3 HTTP routes', () => {
     delete process.env.S3MINI_ADMIN_TOKEN;
   });
 
+  it('manages buckets and policies through the admin control plane', async () => {
+    process.env.S3MINI_ADMIN_TOKEN = 'test-admin-token';
+    const managedBucket = `${bucket}-managed`;
+    const created = await app.inject({ method: 'POST', url: '/admin/buckets', headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' }, payload: JSON.stringify({ name: managedBucket }) });
+    expect(created.statusCode).toBe(201);
+    const policy = { statements: [{ effect: 'Deny', principal: '*', action: 's3:PutObject', resource: `arn:aws:s3:::${managedBucket}/*` }] };
+    expect((await app.inject({ method: 'PUT', url: `/admin/buckets/${managedBucket}/policy`, headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' }, payload: JSON.stringify(policy) })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: `/admin/buckets/${managedBucket}/policy`, headers: { authorization: 'Bearer test-admin-token' } })).json()).toEqual(policy);
+    expect((await app.inject({ method: 'DELETE', url: `/admin/buckets/${managedBucket}/policy`, headers: { authorization: 'Bearer test-admin-token' } })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'DELETE', url: `/admin/buckets/${managedBucket}`, headers: { authorization: 'Bearer test-admin-token' } })).statusCode).toBe(204);
+    delete process.env.S3MINI_ADMIN_TOKEN;
+  });
+
   it('exposes dead-letter replication events and supports operator retry', async () => {
     process.env.S3MINI_ADMIN_TOKEN = 'test-admin-token';
     await s3.createBucket(bucket);

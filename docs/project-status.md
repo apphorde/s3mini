@@ -31,6 +31,7 @@ container, or reverse-proxied deployment.
 - Replication events that exhaust eight delivery attempts are persisted as dead letters, listed through the admin API, and can be explicitly requeued.
 - New replication events persist a SHA-256 body digest, include it in delivery headers, and validate it at the receiving node.
 - The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.
+- The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
 - RestoreObject and a limited `SELECT * FROM S3Object` operation are implemented.
@@ -56,7 +57,7 @@ database locking during test execution.
 ## Next Steps
 
 1. Extend SHA-256 metadata validation to inventory comparisons and older event migration paths.
-2. Add bucket/policy management to the authenticated control plane and dashboard.
+2. Integrate OIDC dashboard login and the Li3 UI modernization tasks.
 3. Add compatibility tests for MinIO and Backblaze B2 where behavior overlaps with the AWS S3 core.
 4. Continue tightening AWS-compatible status codes, error XML, headers, and edge cases.
 
