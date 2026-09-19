@@ -367,6 +367,12 @@ describe('S3 HTTP routes', () => {
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
   });
 
+  it('clears the OIDC dashboard session on logout', async () => {
+    const response = await app.inject({ method: 'POST', url: '/admin/logout' });
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['set-cookie']).toContain('s3mini_oidc_token=;');
+  });
+
   it('accepts authenticated replicated object writes without creating a replication loop', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     process.env.S3MINI_REPLICATION_TOKEN = 'replication-token';

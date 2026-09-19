@@ -161,6 +161,10 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     reply.header('Set-Cookie', `s3mini_oidc_token=${encodeURIComponent(token)}; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=3600`);
     return reply.redirect('/admin');
   });
+  fastify.post('/admin/logout', async (_request, reply) => {
+    reply.header('Set-Cookie', 's3mini_oidc_token=; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=0');
+    return reply.code(204).send();
+  });
   fastify.get('/admin/replication/health', { preHandler: requireAdmin }, async (_request, reply) => reply.send(replication?.getPeerHealth() || []));
   fastify.get('/admin/replication/events', { preHandler: requireAdmin }, async (request, reply) => {
     const query = request.query as { status?: string; limit?: string };
@@ -813,6 +817,7 @@ const ADMIN_HTML = `<!doctype html>
   <section>
     <label>Admin token <input id="token" type="password" autocomplete="off"></label>
     <button id="load">Load keys</button>
+    <button id="logout">Sign out</button>
     <dashboard-status id="status" message=""></dashboard-status>
   </section>
   <section>
@@ -834,7 +839,7 @@ const ADMIN_HTML = `<!doctype html>
     const token = () => document.querySelector('#token').value;
      const message = text => { const status = document.querySelector('#status'); if (status) status.message = text || ''; };
     const html = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
-    const request = (url, options = {}) => fetch(url, { ...options, headers: { ...(options.body ? {'Content-Type': 'application/json'} : {}), Authorization: 'Bearer ' + token(), ...(options.headers || {}) } });
+     const request = async (url, options = {}) => { const response = await fetch(url, { ...options, headers: { ...(options.body ? {'Content-Type': 'application/json'} : {}), Authorization: 'Bearer ' + token(), ...(options.headers || {}) } }); if ((response.status === 401 || response.status === 403) && !location.pathname.endsWith('/login')) location.href = '/admin/login'; return response; };
     async function load() {
       const response = await request('/admin/access-keys');
       if (!response.ok) return message('Unable to load keys (' + response.status + ').');
@@ -850,6 +855,7 @@ const ADMIN_HTML = `<!doctype html>
       message('');
     }
     document.querySelector('#load').onclick = load;
+    document.querySelector('#logout').onclick = async () => { await fetch('/admin/logout', { method: 'POST' }); location.href = '/admin/login'; };
     document.querySelector('#bucket-create').onsubmit = async event => { event.preventDefault(); const name = document.querySelector('#bucket-name').value; const locationConstraint = document.querySelector('#bucket-region').value; const response = await request('/admin/buckets', { method: 'POST', body: JSON.stringify({ name, locationConstraint: locationConstraint || undefined }) }); if (!response.ok) return message('Unable to create bucket (' + response.status + ').'); document.querySelector('#bucket-name').value = ''; load(); };
     document.querySelector('#create').onsubmit = async event => { event.preventDefault(); const response = await request('/admin/access-keys', { method: 'POST', body: JSON.stringify({ displayName: document.querySelector('#name').value }) }); if (!response.ok) return message('Unable to issue key (' + response.status + ').'); const issued = await response.json(); document.querySelector('#issued').textContent = 'Access key: ' + issued.accessKeyId + '\\nSecret: ' + issued.secretAccessKey; document.querySelector('#name').value = ''; load(); };
   </script>
