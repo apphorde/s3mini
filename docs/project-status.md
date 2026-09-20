@@ -17,6 +17,7 @@ remain secondary until the core S3 path is complete and well tested.
 
 - Core bucket and object CRUD is implemented.
 - ListObjectsV2 supports prefixes, delimiters, common prefixes, pagination, and continuation tokens.
+- Legacy ListObjects supports marker pagination for clients that do not use ListObjectsV2.
 - Multipart upload lifecycle and UploadPartCopy are implemented.
 - Versioning, version-specific reads/deletes, and delete markers are implemented.
 - Bucket and object tagging and ACL query operations are implemented.
