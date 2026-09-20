@@ -53,6 +53,9 @@ describe('S3 HTTP routes', () => {
     expect((await app.inject({ method: 'PUT', url: `/${bucket}?tagging`, headers: { 'content-type': 'application/xml' }, payload: tags })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: `/${bucket}?tagging` })).body).toContain('<Value>storage</Value>');
     expect((await app.inject({ method: 'DELETE', url: `/${bucket}?tagging` })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'PUT', url: `/${bucket}?acl`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ CannedACL: 'private' }) })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `/${bucket}?acl` })).body).toContain('<CannedACL>private</CannedACL>');
+    expect((await app.inject({ method: 'DELETE', url: `/${bucket}?acl` })).statusCode).toBe(204);
     expect((await app.inject({ method: 'PUT', url: `/${bucket}?website`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ index: 'index.html' }) })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: `/${bucket}?website` })).body).toContain('<index>index.html</index>');
     expect((await app.inject({ method: 'DELETE', url: `/${bucket}?website` })).statusCode).toBe(204);
@@ -450,6 +453,27 @@ describe('S3 HTTP routes', () => {
     delete process.env.OIDC_CLIENT_ID;
     delete process.env.OIDC_CLIENT_SECRET;
     delete process.env.OIDC_REDIRECT_URI;
+  });
+
+  it('exchanges an OIDC callback code and creates an admin session', async () => {
+    process.env.S3MINI_OIDC_CLIENT_ID = 's3mini-dashboard';
+    process.env.S3MINI_OIDC_CLIENT_SECRET = 'secret';
+    const login = await app.inject({ method: 'GET', url: '/admin/login' });
+    const stateCookie = String(login.headers['set-cookie']).match(/s3mini_oidc_state=([^;]+)/)?.[1];
+    expect(stateCookie).toBeTruthy();
+    const state = JSON.parse(Buffer.from(stateCookie!, 'base64url').toString('utf8')) as { state: string };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ access_token: 'issued-access-token' }), { status: 200 })));
+    const callback = await app.inject({
+      method: 'GET',
+      url: `/auth/callback?code=authorization-code&state=${encodeURIComponent(state.state)}`,
+      headers: { cookie: `s3mini_oidc_state=${stateCookie}` },
+    });
+    expect(callback.statusCode).toBe(302);
+    expect(callback.headers.location).toBe('/admin');
+    expect(callback.headers['set-cookie']).toContain('s3mini_oidc_token=issued-access-token');
+    vi.unstubAllGlobals();
+    delete process.env.S3MINI_OIDC_CLIENT_ID;
+    delete process.env.S3MINI_OIDC_CLIENT_SECRET;
   });
 
   it('authorizes OIDC dashboard API requests with the authenticated user', async () => {

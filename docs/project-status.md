@@ -53,7 +53,7 @@ remain secondary until the core S3 path is complete and well tested.
 - Optional SigV4 header and presigned URL verification are implemented.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
-- The current compatibility checkpoint is tracked in git history with 70 passing tests.
+- The current compatibility checkpoint is tracked in git history with 71 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
