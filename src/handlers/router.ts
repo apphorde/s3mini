@@ -461,6 +461,15 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     if (ifNoneMatch && (ifNoneMatch === '*' || String(ifNoneMatch).split(',').map(value => value.trim()).includes(original.metadata.etag))) {
       return reply.code(304).header('ETag', original.metadata.etag).send();
     }
+    const ifModifiedSince = request.headers['if-modified-since'] ? Date.parse(String(request.headers['if-modified-since'])) : NaN;
+    const ifUnmodifiedSince = request.headers['if-unmodified-since'] ? Date.parse(String(request.headers['if-unmodified-since'])) : NaN;
+    const lastModifiedSeconds = Math.floor(original.metadata.lastModified.getTime() / 1000) * 1000;
+    if (Number.isFinite(ifUnmodifiedSince) && lastModifiedSeconds > ifUnmodifiedSince) {
+      throw new S3Error('PreconditionFailed', 'At least one of the preconditions you specified did not hold.', 412, params.bucket, key);
+    }
+    if (Number.isFinite(ifModifiedSince) && lastModifiedSeconds <= ifModifiedSince) {
+      return reply.code(304).header('ETag', original.metadata.etag).header('Last-Modified', original.metadata.lastModified.toUTCString()).send();
+    }
     let data = original.data;
     let metadata = original.metadata;
     let checksumSha256 = crypto.createHash('sha256').update(original.data).digest('base64');
@@ -468,10 +477,14 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const range = request.headers.range;
     let contentRange: string | undefined;
     if (range) {
-      const match = /^bytes=(\d+)-(\d*)$/.exec(String(range));
+      const match = /^bytes=(\d*)-(\d*)$/.exec(String(range));
       if (!match) throw new S3Error('InvalidRange', 'The requested range is not satisfiable.', 416, params.bucket, key);
-      const start = Number(match[1]);
-      const end = match[2] ? Number(match[2]) : undefined;
+      if (!match[1] && !match[2]) throw new S3Error('InvalidRange', 'The requested range is not satisfiable.', 416, params.bucket, key);
+      const totalSize = original.data.length;
+      const suffixLength = match[1] ? undefined : Number(match[2]);
+      const start = suffixLength !== undefined ? Math.max(0, totalSize - suffixLength) : Number(match[1]);
+      const end = suffixLength !== undefined ? totalSize - 1 : match[2] ? Number(match[2]) : undefined;
+      if (start >= totalSize || (end !== undefined && end < start)) throw new S3Error('InvalidRange', 'The requested range is not satisfiable.', 416, params.bucket, key);
       const ranged = await s3.getObjectRange(params.bucket, key, start, end);
       data = ranged.data;
       contentRange = `bytes ${start}-${start + data.length - 1}/${ranged.totalSize}`;

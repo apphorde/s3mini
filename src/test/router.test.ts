@@ -55,6 +55,11 @@ describe('S3 HTTP routes', () => {
     expect(range.statusCode).toBe(206);
     expect(range.body).toBe('bcd');
     expect(range.headers['content-range']).toBe('bytes 1-3/6');
+    const suffix = await app.inject({ method: 'GET', url: `/${bucket}/a.txt`, headers: { range: 'bytes=-2' } });
+    expect(suffix.statusCode).toBe(206);
+    expect(suffix.body).toBe('ef');
+    const modified = await app.inject({ method: 'GET', url: `/${bucket}/a.txt`, headers: { 'if-modified-since': full.headers['last-modified'] as string } });
+    expect(modified.statusCode).toBe(304);
 
     const notModified = await app.inject({ method: 'GET', url: `/${bucket}/a.txt`, headers: { 'if-none-match': full.headers.etag as string } });
     expect(notModified.statusCode).toBe(304);
