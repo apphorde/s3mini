@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import type { S3Mini } from '../storage/s3mini.js';
 import { S3Error, VALID_STORAGE_CLASSES } from '../types/models.js';
 import { verifyPresignedSigV4, verifySigV4 } from '../auth/sigv4.js';
+import { verifyOidcToken } from '../auth/oidc.js';
 import type { ReplicationWorker } from '../replication/worker.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, replication?: ReplicationWorker) {
@@ -128,7 +129,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
 
   async function isOidcAdmin(token: string): Promise<boolean> {
     try {
-      const response = await fetch(`${oidcBaseUrl()}/userinfo`, { headers: { authorization: `Bearer ${token}`, 'x-auth-audience': process.env.S3MINI_OIDC_AUDIENCE || oidcClientId()! } });
+      const audience = process.env.S3MINI_OIDC_AUDIENCE || oidcClientId()!;
+      await verifyOidcToken(token, oidcBaseUrl(), audience);
+      const response = await fetch(`${oidcBaseUrl()}/userinfo`, { headers: { authorization: `Bearer ${token}`, 'x-auth-audience': audience } });
       if (!response.ok) return false;
       const user = await response.json() as { email?: string };
       const allowed = (process.env.S3MINI_OIDC_ADMIN_EMAILS || '').split(',').map(email => email.trim()).filter(Boolean);

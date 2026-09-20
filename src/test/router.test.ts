@@ -406,8 +406,17 @@ describe('S3 HTTP routes', () => {
   it('authorizes OIDC dashboard API requests with the authenticated user', async () => {
     process.env.S3MINI_OIDC_CLIENT_ID = 's3mini-dashboard';
     process.env.S3MINI_OIDC_CLIENT_SECRET = 'secret';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ email: 'admin@example.com' }), { status: 200 })));
-    const response = await app.inject({ method: 'GET', url: '/admin/replication/events', headers: { cookie: 's3mini_oidc_token=access-token' } });
+    const keys = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const publicJwk = keys.publicKey.export({ format: 'jwk' }) as JsonWebKey;
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'test-key' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ iss: 'https://auth.api.apphor.de', aud: 's3mini-dashboard', sub: 'user-1', exp: Math.floor(Date.now() / 1000) + 300 })).toString('base64url');
+    const signed = `${header}.${payload}`;
+    const signature = crypto.createSign('RSA-SHA256').update(signed).sign(keys.privateKey).toString('base64url');
+    const token = `${signed}.${signature}`;
+    vi.stubGlobal('fetch', vi.fn((input: string | URL) => String(input).endsWith('/jwks.json')
+      ? Promise.resolve(new Response(JSON.stringify({ keys: [{ ...publicJwk, kid: 'test-key', kty: 'RSA' }] }), { status: 200 }))
+      : Promise.resolve(new Response(JSON.stringify({ email: 'admin@example.com' }), { status: 200 }))));
+    const response = await app.inject({ method: 'GET', url: '/admin/replication/events', headers: { cookie: `s3mini_oidc_token=${token}` } });
     expect(response.statusCode).toBe(200);
     vi.unstubAllGlobals();
     delete process.env.S3MINI_OIDC_CLIENT_ID;

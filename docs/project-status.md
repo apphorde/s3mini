@@ -40,7 +40,7 @@ remain secondary until the core S3 path is complete and well tested.
 - New replication events persist a SHA-256 body digest, include it in delivery headers, validate it at the receiving node, and compare it during inventory repair; legacy events retain ETag fallback behavior.
 - The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.
 - The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
-- Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is checked against `/userinfo`, with optional email allowlisting via `S3MINI_OIDC_ADMIN_EMAILS`.
+- Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is verified with the provider's RS256 JWKS, checked against `/userinfo` with `X-Auth-Audience`, and optionally restricted by email via `S3MINI_OIDC_ADMIN_EMAILS`.
 - OIDC setup is documented in `README.md`: register `/admin/callback`, configure client credentials and audience, and use `S3MINI_OIDC_ADMIN_EMAILS` to restrict administrators.
 - `.env.example` and the production container default wire the OIDC provider URL into the application without including credentials.
 - The live deployment names `AUTH_PROVIDER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` are accepted directly, with `S3MINI_OIDC_*` aliases retained.

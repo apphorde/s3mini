@@ -40,6 +40,11 @@ can override the provider base URL. The admin email allowlist is optional; when
 omitted, any authenticated provider user is accepted. Client secrets and
 allowlists must remain in environment variables or local untracked config.
 
+S3MINI follows the provider's Node client flow: authorization-code PKCE uses
+`/authorize` and `/token`, access tokens are verified as RS256 JWTs using
+`/.well-known/jwks.json`, and user identity is loaded from `/userinfo` with
+`X-Auth-Audience`.
+
 Set `S3MINI_REPLICATION_QUORUM` to a positive number to expose a degraded
 state when fewer than that many configured peers are healthy. Current writes
 remain asynchronous; quorum acknowledgement enforcement is intentionally
