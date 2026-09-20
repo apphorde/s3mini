@@ -40,6 +40,24 @@ describe('S3 HTTP routes', () => {
     expect((await app.inject({ method: 'DELETE', url: `/${bucket}/hello.txt` })).statusCode).toBe(204);
   });
 
+  it('covers bucket listing, location, tags, and configuration deletion', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}?locationConstraint=eu-west-1` });
+    const buckets = await app.inject({ method: 'GET', url: '/' });
+    expect(buckets.statusCode).toBe(200);
+    expect(buckets.body).toContain(`<Name>${bucket}</Name>`);
+    expect((await app.inject({ method: 'HEAD', url: `/${bucket}` })).statusCode).toBe(200);
+
+    const location = await app.inject({ method: 'GET', url: `/${bucket}?location` });
+    expect(location.body).toContain('eu-west-1');
+    const tags = '<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value></Tag></TagSet></Tagging>';
+    expect((await app.inject({ method: 'PUT', url: `/${bucket}?tagging`, headers: { 'content-type': 'application/xml' }, payload: tags })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `/${bucket}?tagging` })).body).toContain('<Value>storage</Value>');
+    expect((await app.inject({ method: 'DELETE', url: `/${bucket}?tagging` })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'PUT', url: `/${bucket}?website`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ index: 'index.html' }) })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `/${bucket}?website` })).body).toContain('<index>index.html</index>');
+    expect((await app.inject({ method: 'DELETE', url: `/${bucket}?website` })).statusCode).toBe(204);
+  });
+
   it('supports listing, ranges, and conditional requests', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     await app.inject({ method: 'PUT', url: `/${bucket}/a.txt`, headers: { 'content-type': 'application/octet-stream' }, payload: 'abcdef' });
@@ -127,6 +145,20 @@ describe('S3 HTTP routes', () => {
     });
     expect(completed.statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: `/${bucket}/multi.bin` })).body).toBe('multipart');
+  });
+
+  it('lists and aborts multipart uploads over HTTP', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    const initiated = await app.inject({ method: 'POST', url: `/${bucket}/pending.bin?uploads` });
+    const uploadId = initiated.body.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1];
+    await app.inject({ method: 'PUT', url: `/${bucket}/pending.bin?uploadId=${uploadId}&partNumber=1`, headers: { 'content-type': 'application/octet-stream' }, payload: 'pending' });
+    const parts = await app.inject({ method: 'GET', url: `/${bucket}/pending.bin?uploadId=${uploadId}` });
+    expect(parts.statusCode).toBe(200);
+    expect(parts.body).toContain('<PartNumber>1</PartNumber>');
+    const uploads = await app.inject({ method: 'GET', url: `/${bucket}?uploads` });
+    expect(uploads.statusCode).toBe(200);
+    expect(uploads.body).toContain('<Key>pending.bin</Key>');
+    expect((await app.inject({ method: 'DELETE', url: `/${bucket}/pending.bin?uploadId=${uploadId}` })).statusCode).toBe(204);
   });
 
   it('validates and returns SHA-256 checksums', async () => {
@@ -260,6 +292,21 @@ describe('S3 HTTP routes', () => {
     expect(get.body).toContain('<CannedACL>public-read</CannedACL>');
   });
 
+  it('supports object copy, tagging deletion, and batch deletion', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/source.txt`, headers: { 'content-type': 'text/plain' }, payload: 'source' });
+    const copied = await app.inject({ method: 'PUT', url: `/${bucket}/copy.txt`, headers: { 'x-amz-copy-source': `/${bucket}/source.txt` } });
+    expect(copied.statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `/${bucket}/copy.txt` })).body).toBe('source');
+    const tagXml = '<Tagging><TagSet><Tag><Key>temporary</Key><Value>true</Value></Tag></TagSet></Tagging>';
+    await app.inject({ method: 'PUT', url: `/${bucket}/copy.txt?tagging`, headers: { 'content-type': 'application/xml' }, payload: tagXml });
+    expect((await app.inject({ method: 'DELETE', url: `/${bucket}/copy.txt?tagging` })).statusCode).toBe(204);
+    const deleted = await app.inject({ method: 'POST', url: `/${bucket}?delete`, headers: { 'content-type': 'application/xml' }, payload: '<Delete><Object><Key>source.txt</Key></Object><Object><Key>copy.txt</Key></Object></Delete>' });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.body).toContain('<Key>source.txt</Key>');
+    expect(deleted.body).toContain('<Key>copy.txt</Key>');
+  });
+
   it('enforces explicit public bucket policy denies', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     await app.inject({
@@ -329,6 +376,8 @@ describe('S3 HTTP routes', () => {
     const managedBucket = `${bucket}-managed`;
     const created = await app.inject({ method: 'POST', url: '/admin/buckets', headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' }, payload: JSON.stringify({ name: managedBucket }) });
     expect(created.statusCode).toBe(201);
+    expect((await app.inject({ method: 'GET', url: '/admin/buckets', headers: { authorization: 'Bearer test-admin-token' } })).json()).toEqual(expect.arrayContaining([expect.objectContaining({ name: managedBucket })]));
+    expect((await app.inject({ method: 'GET', url: '/admin/replication/health', headers: { authorization: 'Bearer test-admin-token' } })).statusCode).toBe(200);
     const policy = { statements: [{ effect: 'Deny', principal: '*', action: 's3:PutObject', resource: `arn:aws:s3:::${managedBucket}/*` }] };
     expect((await app.inject({ method: 'PUT', url: `/admin/buckets/${managedBucket}/policy`, headers: { authorization: 'Bearer test-admin-token', 'content-type': 'application/json' }, payload: JSON.stringify(policy) })).statusCode).toBe(204);
     expect((await app.inject({ method: 'GET', url: `/admin/buckets/${managedBucket}/policy`, headers: { authorization: 'Bearer test-admin-token' } })).json()).toEqual(policy);
