@@ -5,6 +5,10 @@ N independently located machines. The implementation is intentionally staged:
 local durability comes before network replication, and network replication
 comes before quorum or failover claims.
 
+This is a secondary scale path, not a prerequisite for the core S3 service.
+Single-node correctness, recovery, and common-client interoperability take
+priority over completing high-availability behavior.
+
 ## Current Foundation
 
 - SQLite metadata is stored in `/data/s3mini.sqlite` with WAL mode and full synchronous writes.
@@ -23,12 +27,16 @@ Replication identity is `(bucket, key, versionId, sourceNodeId)`. A peer must ve
 
 Peer communication currently uses the configured internal URL and shared token; production deployments should place it behind authenticated TLS. The journal is the handoff boundary between the S3 request path and that worker.
 
-## Required Before HA Claims
+## Current Replication State
 
-- Replicate deletes and delete markers as durable tombstone events. Delete delivery is now implemented, including idempotent version removal and delete-marker preservation.
+- Replication of deletes and delete markers is implemented, including
+  idempotent version removal and delete-marker preservation.
 - The authenticated `/internal/replication/inventory` endpoint exposes object-version fingerprints and tombstones; the worker compares this inventory and replays missing local journal events as best-effort anti-entropy repair.
-- Add peer registration. Replication events now use SQLite leases with expiry so concurrent workers do not deliver the same event simultaneously, and crashed workers can be recovered; exhausted events move to a durable dead-letter state and can be requeued by an admin. New replication deliveries carry and validate a SHA-256 body digest in addition to the ETag.
+- Replication events use SQLite leases with expiry so concurrent workers do not deliver the same event simultaneously, and crashed workers can be recovered; exhausted events move to a durable dead-letter state and can be requeued by an admin. New replication deliveries carry and validate a SHA-256 body digest in addition to the ETag.
 - Peer health is persisted in SQLite and exposed through the admin control plane; PUT delivery validates MD5 ETags and SHA-256 digests, and inventory repair compares SHA-256 digests with an ETag fallback for legacy events.
+
+## Deferred Before HA Claims
+
 - Define conflict handling for concurrent writes from different nodes.
 - Add read-repair and an explicit consistency policy.
 - Test disk-full, process crash, peer loss, clock skew, and partial network failure.
