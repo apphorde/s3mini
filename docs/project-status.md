@@ -7,6 +7,12 @@ services, with AWS SDK for JavaScript v3 as the primary interoperability client.
 The compatibility mode is path-style addressing and can be used with a local,
 container, or reverse-proxied deployment.
 
+The near-term priority is a small, dependable S3 service, not a large-scale or
+high-volume storage platform. Feature work should first improve correctness,
+durability on one node, security, and compatibility with common S3 clients.
+Cluster-scale replication, high availability, and operational UI enhancements
+remain secondary until the core S3 path is complete and well tested.
+
 ## Current Progress
 
 - Core bucket and object CRUD is implemented.
@@ -46,7 +52,7 @@ container, or reverse-proxied deployment.
 - Optional SigV4 header and presigned URL verification are implemented.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
-- The current compatibility checkpoint is tracked in git history with 61 passing tests.
+- The current compatibility checkpoint is tracked in git history with 66 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
@@ -64,8 +70,10 @@ database locking during test execution.
 
 ## Next Steps
 
-1. Extend OIDC operational configuration/documentation and the Li3 component treatment across dashboard tables.
-2. Continue adding compatibility coverage for unsupported MinIO and Backblaze B2 edge cases.
+1. Close correctness and error-semantics gaps in the implemented AWS S3 operations.
+2. Expand interoperability tests for AWS SDK v3, MinIO, and Backblaze B2 clients.
+3. Harden single-node durability, recovery, authentication, authorization, and request validation.
+4. Defer dashboard polish, quorum acknowledgement, multi-master behavior, and other scale-oriented work unless it directly protects core S3 correctness.
 
 ## Next Session Handoff
 

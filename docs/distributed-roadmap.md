@@ -5,6 +5,12 @@ durable, operator-controlled storage cluster for geographically distributed
 deployments. The design prioritizes recoverability and observable degradation
 over pretending that an unreachable peer is healthy.
 
+This roadmap is secondary to the core product goal: a small, dependable S3
+service. Distributed features must not displace fixes to S3 semantics, common
+client interoperability, single-node durability, or recovery. They should be
+implemented only when the core compatibility suite is green and there is a
+concrete deployment need.
+
 ## Guarantees
 
 - A successful local write is durable before the client receives success.
@@ -41,12 +47,15 @@ one.
 
 ## Operational Phases
 
-1. Per-peer delivery journal, quorum/degraded-state reporting, and durable
-   leases.
-2. Monotonic conflict ordering and resumable anti-entropy repair.
-3. Encryption, key rotation, metrics, structured logs, readiness, and alerts.
-4. Rolling migrations, backup/restore workflows, failure injection, and
-   interoperability matrices against MinIO, Garage, AWS S3, and Backblaze B2.
+1. Keep the existing local durability and asynchronous replication behavior
+   correct and observable without making replication a prerequisite for S3
+   request success.
+2. Only if needed by a real deployment, add monotonic conflict ordering and
+   resumable anti-entropy repair.
+3. Later, consider encryption/key rotation, metrics, structured logs,
+   readiness, alerts, rolling migrations, and backup/restore workflows.
+4. Treat quorum acknowledgement, synchronous global durability, and automatic
+   multi-master behavior as deferred scale features rather than core S3 work.
 
 ## Non-Goals
 

@@ -42,4 +42,5 @@ allowlists must remain in environment variables or local untracked config.
 
 Set `S3MINI_REPLICATION_QUORUM` to a positive number to expose a degraded
 state when fewer than that many configured peers are healthy. Current writes
-remain asynchronous; quorum acknowledgement enforcement is planned.
+remain asynchronous; quorum acknowledgement enforcement is intentionally
+deferred while the project focuses on core S3 behavior and small deployments.

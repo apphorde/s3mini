@@ -63,6 +63,8 @@ operation's compatibility requirement.
 Features outside this core target remain explicitly unsupported until they have
 dedicated behavior and SDK tests.
 
-The compatibility suite currently verifies 34 tests, including AWS SDK v3
-bucket/object CRUD, pagination, multipart upload, CopyObject, tagging,
-versioning, ranges, checksums, and conditional reads.
+The current test suite has 66 tests. AWS SDK v3 coverage includes bucket/object
+CRUD, authentication, multipart upload, tagging, and versioning; direct HTTP
+coverage exercises pagination, CopyObject, ranges, checksums, and conditional
+reads. Additional MinIO and Backblaze B2 interoperability coverage remains a
+core follow-up, while scale-oriented features are deferred.

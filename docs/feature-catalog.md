@@ -4,6 +4,23 @@ This document separates the AWS S3 surface area from the subset currently implem
 S3MINI. A checked item means implemented and tested; an unchecked item is planned or out of
 scope. The server is API-only and stores its SQLite metadata and object files below `/data`.
 
+## Priority Policy
+
+S3MINI optimizes for a small deployment and dependable common-client behavior,
+not large or high-volume storage. Prioritize features in this order:
+
+1. **Essential:** core bucket/object operations, correct S3 errors and headers,
+   authentication and authorization, integrity checks, local durability, and
+   AWS SDK v3/MinIO/Backblaze B2 interoperability.
+2. **Useful:** commonly requested S3 features that can be implemented without
+   changing the storage model, such as tagging, versioning, lifecycle, and
+   multipart uploads.
+3. **Deferred:** features whose primary value is scale, multi-region operation,
+   fleet management, or high-volume optimization.
+
+Do not start deferred work while essential compatibility or single-node
+recovery behavior has known gaps.
+
 ## Implemented
 
 - [x] ListBuckets: `GET /`
@@ -95,6 +112,8 @@ scope. The server is API-only and stores its SQLite metadata and object files be
 - [ ] Glacier, Deep Archive, and Intelligent-Tiering backends
 - [ ] Replication to external regions or storage systems
 - [ ] A web UI; S3MINI provides an API only
+- [ ] Large-scale storage optimization, high-volume throughput tuning, and
+  multi-region/high-availability guarantees
 
 The feature list is intentionally explicit so the OpenAPI contract and implementation status do
 not imply AWS compatibility that has not yet been delivered.

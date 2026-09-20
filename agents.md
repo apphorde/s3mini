@@ -28,16 +28,22 @@ self-hosted clients such as MinIO clients and compatible tooling.
 3. Shared behavior with MinIO and Backblaze B2 S3 APIs.
 4. Clear, documented deviations for unsupported features.
 
+## Scope Priorities
+
+- Optimize for a small, reliable deployment rather than large or high-volume storage.
+- Treat core S3 semantics, local durability, security, recovery, and common-client tests as higher priority than distributed scale features.
+- Defer quorum acknowledgement, multi-master behavior, high-availability guarantees, throughput tuning, and dashboard polish unless a concrete core-S3 requirement depends on them.
+
 ## Current Handoff
 
 - Latest pushed checkpoint: inspect the most recent commit on `main`.
-- Verification baseline: 61 tests passing and `npm run build` passing.
+- Verification baseline: 66 tests passing and `npm run build` passing.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
-- Next implementation slice: improve OIDC operational configuration and Li3 dashboard components, then add compatibility coverage for remaining MinIO and Backblaze B2 edge cases. OIDC dashboard login uses `auth.api.apphor.de`; keep its client credentials and allowlist in environment variables. Initial geolocated test nodes may connect over private VPN endpoints; keep secrets in environment variables.
+- Next implementation slice: close core S3 correctness gaps and add compatibility coverage for remaining MinIO and Backblaze B2 edge cases. OIDC dashboard polish and distributed-storage enhancements are deferred unless required by a concrete deployment need. Keep all credentials, allowlists, and private test-node configuration in environment variables.
 - OIDC configuration reference: live names `AUTH_PROVIDER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`; optional `S3MINI_OIDC_REDIRECT_URI`, `S3MINI_OIDC_AUDIENCE`, and `S3MINI_OIDC_ADMIN_EMAILS`. The `S3MINI_OIDC_*` client/provider names remain aliases.
 - Distributed-storage design constraints and implementation phases are tracked in `docs/distributed-roadmap.md`; do not weaken its durability, convergence, or rolling-upgrade invariants.
-- Replication delivery now has a per-peer SQLite journal; the next distributed-storage slice is quorum policy and degraded-state reporting, not another global event-status abstraction.
+- Replication delivery has a per-peer SQLite journal; do not prioritize quorum policy or other distributed-storage slices ahead of core S3 compatibility and single-node recovery.
 - Update this handoff and `docs/project-status.md` when the next checkpoint changes.
 
 ## Security and Privacy
