@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
 import { S3Mini } from '../storage/s3mini.js';
 import { S3Error } from '../types/models.js';
 
@@ -58,6 +60,21 @@ describe('S3Mini', () => {
 
     await s3.deleteObject(bucket, 'folder/item.txt');
     await expect(s3.getObject(bucket, 'folder/item.txt')).rejects.toMatchObject({ code: 'NoSuchKey' });
+  });
+
+  it('does not remove another object version when deleting a key', async () => {
+    await s3.createBucket(bucket);
+    const other = await s3.putObject(bucket, 'other.txt', Buffer.from('keep'), {});
+    await s3.putObject(bucket, 'remove.txt', Buffer.from('remove'), {});
+    await s3.deleteObject(bucket, 'remove.txt');
+    expect((await s3.getObject(bucket, 'other.txt', other.versionId)).data.toString()).toBe('keep');
+  });
+
+  it('fails closed when a committed object version file is missing', async () => {
+    await s3.createBucket(bucket);
+    const object = await s3.putObject(bucket, 'missing.txt', Buffer.from('missing'), {});
+    await rm(path.join('/data/objects', bucket, '.versions', object.versionId, 'missing.txt'));
+    await expect(s3.getObject(bucket, 'missing.txt', object.versionId)).rejects.toMatchObject({ code: 'InternalError' });
   });
 
   it('records durable replication intent for object writes', async () => {
@@ -145,7 +162,7 @@ describe('S3Mini', () => {
       uploadId: upload.uploadId,
       parts: [{ partNumber: 1, etag: first.etag }, { partNumber: 2, etag: second.etag }],
     });
-    expect(completed.etag).toBeTruthy();
+    expect(completed.etag).toMatch(/^"[a-f0-9]{32}-2"$/);
     expect((await s3.getObject(bucket, 'large.bin')).data.toString()).toBe('hello world');
 
     const aborted = await s3.createMultipartUpload(bucket, 'aborted.bin');

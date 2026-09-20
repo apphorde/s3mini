@@ -33,11 +33,20 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const params = request.params as { bucket?: string; '*': string };
     const query = request.query as Record<string, string | undefined>;
     const key = params['*'] ? normalizeObjectKey(params['*']) : undefined;
-    if (params.bucket && query.policy === undefined && query.acl === undefined && (key || request.method !== 'PUT')) {
-      const action = key
-        ? `${request.method === 'GET' || request.method === 'HEAD' ? 'Get' : request.method === 'PUT' ? 'Put' : request.method === 'DELETE' ? 'Delete' : request.method}Object`
+    const credentialsConfigured = Boolean(process.env.S3MINI_ACCESS_KEY && process.env.S3MINI_SECRET_KEY);
+    if (params.bucket && credentialsConfigured && !authorization && !hasPresign && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+      throw new S3Error('AccessDenied', 'Authentication is required.', 403, params.bucket, key);
+    }
+    const creatingBucket = !key && request.method === 'PUT' && Object.keys(query).every(name => name === 'locationConstraint');
+    if (params.bucket && !creatingBucket) {
+      const verb = request.method === 'GET' || request.method === 'HEAD' ? 'Get' : request.method === 'PUT' ? 'Put' : request.method === 'DELETE' ? 'Delete' : request.method;
+      const action = query.policy !== undefined
+        ? `${verb}BucketPolicy`
+        : query.acl !== undefined
+          ? key ? `${verb}ObjectAcl` : `${verb}BucketAcl`
+          : key
+        ? `${verb}Object`
         : request.method === 'GET' ? 'ListBucket' : `${request.method}Bucket`;
-      const credentialsConfigured = Boolean(process.env.S3MINI_ACCESS_KEY && process.env.S3MINI_SECRET_KEY);
       const authenticatedPrincipal = authorization || hasPresign ? accessKeyId || '' : 'anonymous';
       const context = {
         's3:x-amz-acl': String(request.headers['x-amz-acl'] || ''),
@@ -47,7 +56,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       if (await s3.isRequestDenied(params.bucket, key, `s3:${action}`, authenticatedPrincipal, context)) {
         throw new S3Error('AccessDenied', 'Access denied by bucket policy.', 403, params.bucket, key);
       }
-      if (credentialsConfigured && key && authenticatedPrincipal === 'anonymous' && ['GetObject', 'PutObject', 'DeleteObject'].includes(action) && await s3.isObjectRequestDenied(params.bucket, key, action, authenticatedPrincipal)) {
+      if (credentialsConfigured && key && authenticatedPrincipal === 'anonymous' && ['GetObject', 'PutObject', 'DeleteObject', 'GetObjectAcl', 'PutObjectAcl', 'DeleteObjectAcl'].includes(action) && await s3.isObjectRequestDenied(params.bucket, key, action, authenticatedPrincipal)) {
         throw new S3Error('AccessDenied', 'Access denied by object ACL.', 403, params.bucket, key);
       }
     }
@@ -369,7 +378,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       const sourceBucket = source.shift();
       if (!sourceBucket || !source.length) throw new S3Error('InvalidRequest', 'x-amz-copy-source is invalid.', 400);
       const obj = await s3.copyObject(sourceBucket, source.join('/'), params.bucket, key);
-      return reply.type('application/xml').code(200).send(wrapXml('CopyObjectResult', { ETag: obj.etag, LastModified: obj.lastModified.toISOString() }));
+      return reply.type('application/xml').code(200).header('ETag', obj.etag).header('x-amz-version-id', obj.versionId).send(wrapXml('CopyObjectResult', { ETag: obj.etag, LastModified: obj.lastModified.toISOString(), VersionId: obj.versionId }));
     }
     const body = request.body as Buffer;
     const checksum = request.headers['x-amz-checksum-sha256'];
@@ -429,7 +438,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     if (legalHold) meta.legalHold = legalHold;
 
     const obj = await s3.putObject(params.bucket, key, body, meta);
-    reply.type('application/xml').code(200).header('x-amz-checksum-sha256', checksumSha256).send(wrapXml('PutObjectResult', { ETag: obj.etag, ChecksumSHA256: checksumSha256 }));
+    reply.type('application/xml').code(200).header('ETag', obj.etag).header('x-amz-version-id', obj.versionId).header('x-amz-checksum-sha256', checksumSha256).send(wrapXml('PutObjectResult', { ETag: obj.etag, ChecksumSHA256: checksumSha256, VersionId: obj.versionId }));
   }
 
   async function getObject(request: FastifyRequest, reply: FastifyReply) {
@@ -504,9 +513,12 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       .header('Content-Disposition', metadata.contentDisposition || '')
       .header('Content-Encoding', metadata.contentEncoding || '')
       .header('x-amz-checksum-sha256', checksumSha256)
+      .header('x-amz-storage-class', metadata.storageClass)
+      .header('x-amz-version-id', metadata.versionId)
       .header('Accept-Ranges', 'bytes')
       .code(status);
     if (metadata.serverSideEncryption) reply.header('x-amz-server-side-encryption', metadata.serverSideEncryption);
+    if (metadata.expires) reply.header('Expires', metadata.expires.toUTCString());
     if (metadata.sseKmsKeyId) reply.header('x-amz-server-side-encryption-aws-kms-key-id', metadata.sseKmsKeyId);
     if (metadata.objectLockMode) reply.header('x-amz-object-lock-mode', metadata.objectLockMode);
     if (metadata.objectLockRetainUntilDate) reply.header('x-amz-object-lock-retain-until-date', metadata.objectLockRetainUntilDate.toUTCString());
@@ -521,7 +533,8 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const key = normalizeObjectKey((request.params as any)['*'] as string);
     if (!key) return headBucket(request, reply);
     const query = request.query as Record<string, string | undefined>;
-    const { metadata } = await s3.getObject(params.bucket, key, query.versionId);
+    const object = await s3.getObject(params.bucket, key, query.versionId);
+    const { metadata } = object;
 
     reply.code(200)
       .header('ETag', metadata.etag)
@@ -532,7 +545,10 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       .header('Cache-Control', metadata.cacheControl || '')
       .header('Content-Disposition', metadata.contentDisposition || '')
       .header('Content-Encoding', metadata.contentEncoding || '')
-      .header('x-amz-checksum-sha256', crypto.createHash('sha256').update((await s3.getObject(params.bucket, key)).data).digest('base64'));
+      .header('x-amz-checksum-sha256', crypto.createHash('sha256').update(object.data).digest('base64'))
+      .header('x-amz-storage-class', metadata.storageClass)
+      .header('x-amz-version-id', metadata.versionId);
+    if (metadata.expires) reply.header('Expires', metadata.expires.toUTCString());
     if (metadata.serverSideEncryption) reply.header('x-amz-server-side-encryption', metadata.serverSideEncryption);
     if (metadata.sseKmsKeyId) reply.header('x-amz-server-side-encryption-aws-kms-key-id', metadata.sseKmsKeyId);
     if (metadata.objectLockMode) reply.header('x-amz-object-lock-mode', metadata.objectLockMode);
@@ -698,7 +714,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       .map(match => ({ partNumber: Number(readXmlTag(match[1], 'PartNumber')), etag: unescapeXml(readXmlTag(match[1], 'ETag') || '') }))
       .filter(part => Number.isInteger(part.partNumber) && part.partNumber > 0 && part.etag);
     const result = await s3.completeMultipartUpload({ bucket: params.bucket, key, uploadId: query.uploadId, parts });
-    reply.type('application/xml').send(wrapXml('CompleteMultipartUploadResult', { Bucket: result.bucket, Key: result.key, ETag: result.etag }));
+     reply.type('application/xml').header('ETag', result.etag).header('x-amz-version-id', result.versionId).send(wrapXml('CompleteMultipartUploadResult', { Bucket: result.bucket, Key: result.key, ETag: result.etag, VersionId: result.versionId }));
   });
   fastify.get('/:bucket/*', { exposeHeadRoute: false }, getObject);
   fastify.head('/:bucket/*', headObject);

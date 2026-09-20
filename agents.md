@@ -37,7 +37,7 @@ self-hosted clients such as MinIO clients and compatible tooling.
 ## Current Handoff
 
 - Latest pushed checkpoint: inspect the most recent commit on `main`.
-- Verification baseline: 71 tests passing and `npm run build` passing.
+- Verification baseline: 75 tests passing and `npm run build` passing.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
 - Next implementation slice: close core S3 correctness gaps and add compatibility coverage for remaining MinIO and Backblaze B2 edge cases. OIDC dashboard polish and distributed-storage enhancements are deferred unless required by a concrete deployment need. Keep all credentials, allowlists, and private test-node configuration in environment variables.

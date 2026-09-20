@@ -65,8 +65,10 @@ operation's compatibility requirement.
 Features outside this core target remain explicitly unsupported until they have
 dedicated behavior and SDK tests.
 
-The current test suite has 71 tests. AWS SDK v3 coverage includes bucket/object
+The current test suite has 75 tests. AWS SDK v3 coverage includes bucket/object
 CRUD, batch deletion, authentication, multipart upload, tagging, and versioning;
 direct HTTP coverage exercises pagination, CopyObject, ranges, checksums, and
-conditional reads. Additional MinIO and Backblaze B2 interoperability coverage
-remains a core follow-up, while scale-oriented features are deferred.
+conditional reads. Opt-in MinIO and Backblaze B2 interoperability coverage is
+available in `src/test/s3-compatibility.test.ts`; set the corresponding
+`S3MINI_MINIO_*` or `S3MINI_B2_*` endpoint and credential variables before
+running it. Scale-oriented features are deferred.

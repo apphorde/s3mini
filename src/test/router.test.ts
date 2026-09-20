@@ -10,6 +10,8 @@ describe('S3 HTTP routes', () => {
   let bucket: string;
 
   beforeEach(async () => {
+    delete process.env.S3MINI_ACCESS_KEY;
+    delete process.env.S3MINI_SECRET_KEY;
     bucket = `http-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     s3 = new S3Mini();
     await s3.init();
@@ -18,6 +20,8 @@ describe('S3 HTTP routes', () => {
   });
 
   afterEach(async () => {
+    delete process.env.S3MINI_ACCESS_KEY;
+    delete process.env.S3MINI_SECRET_KEY;
     await app.close();
     await s3.clearBucket(bucket);
     await s3.close();
@@ -28,6 +32,8 @@ describe('S3 HTTP routes', () => {
     const put = await app.inject({ method: 'PUT', url: `/${bucket}/hello.txt`, headers: { 'content-type': 'text/plain' }, payload: 'hello' });
     expect(put.statusCode).toBe(200);
     expect(put.body).toContain('PutObjectResult');
+    expect(put.headers.etag).toMatch(/^"[a-f0-9]{32}"$/);
+    expect(put.headers['x-amz-version-id']).toBeTruthy();
     expect(put.headers['x-amz-request-id']).toBeTruthy();
     expect(put.headers['x-amz-id-2']).toBeTruthy();
 
@@ -350,13 +356,9 @@ describe('S3 HTTP routes', () => {
   it('evaluates XML ACL grants for anonymous reads', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     await app.inject({ method: 'PUT', url: `/${bucket}/grant.txt`, headers: { 'content-type': 'text/plain' }, payload: 'grant' });
-    process.env.S3MINI_ACCESS_KEY = 's3mini';
-    process.env.S3MINI_SECRET_KEY = 's3mini-secret';
     const acl = '<AccessControlPolicy><AccessControlList><Grant><Grantee><Type>Group</Type><URI>http://acs.amazonaws.com/groups/global/AllUsers</URI></Grantee><Permission>READ</Permission></Grant></AccessControlList></AccessControlPolicy>';
     await app.inject({ method: 'PUT', url: `/${bucket}/grant.txt?acl`, headers: { 'content-type': 'application/xml' }, payload: acl });
     expect((await app.inject({ method: 'GET', url: `/${bucket}/grant.txt` })).statusCode).toBe(200);
-    delete process.env.S3MINI_ACCESS_KEY;
-    delete process.env.S3MINI_SECRET_KEY;
   });
 
   it('protects the access-key control plane with an admin bearer token', async () => {
@@ -372,6 +374,16 @@ describe('S3 HTTP routes', () => {
     expect(listed.body).not.toContain(credentials.secretAccessKey);
     expect((await app.inject({ method: 'DELETE', url: `/admin/access-keys/${credentials.accessKeyId}`, headers: { authorization: 'Bearer test-admin-token' } })).statusCode).toBe(204);
     delete process.env.S3MINI_ADMIN_TOKEN;
+  });
+
+  it('requires authentication for mutating S3 requests when static credentials are configured', async () => {
+    process.env.S3MINI_ACCESS_KEY = 's3mini';
+    process.env.S3MINI_SECRET_KEY = 's3mini-secret';
+    const denied = await app.inject({ method: 'PUT', url: `/${bucket}` });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.body).toContain('<Code>AccessDenied</Code>');
+    delete process.env.S3MINI_ACCESS_KEY;
+    delete process.env.S3MINI_SECRET_KEY;
   });
 
   it('manages buckets and policies through the admin control plane', async () => {

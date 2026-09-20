@@ -550,7 +550,8 @@ export class S3Mini {
   async acceptReplicatedObject(object: ReplicatedObject): Promise<void> {
     this.validateKey(object.key);
     if (!/^[A-Za-z0-9._+-]+$/.test(object.versionId)) throw new S3Error('InvalidRequest', 'The replicated version ID is invalid.', 400, object.bucket, object.key);
-    if ('"' + crypto.createHash('md5').update(object.body).digest('hex') + '"' !== object.etag) throw new S3Error('BadDigest', 'The replicated object ETag did not match its body.', 400, object.bucket, object.key);
+    const md5Etag = '"' + crypto.createHash('md5').update(object.body).digest('hex') + '"';
+    if (md5Etag !== object.etag && !/^"[a-f0-9]{32}-\d+"$/.test(object.etag)) throw new S3Error('BadDigest', 'The replicated object ETag did not match its body.', 400, object.bucket, object.key);
     const sha256 = crypto.createHash('sha256').update(object.body).digest('hex');
     if (object.sha256 && object.sha256 !== sha256) throw new S3Error('BadDigest', 'The replicated object SHA-256 digest did not match its body.', 400, object.bucket, object.key);
     if (!(await this.get('SELECT name FROM buckets WHERE name = ?', [object.bucket]))) throw new S3Error('NoSuchBucket', 'Bucket not found', 404, object.bucket);
@@ -616,7 +617,7 @@ export class S3Mini {
     if (!b) throw new S3Error('NoSuchBucket', 'Bucket not found', 404, bucketName);
 
     const versionId = crypto.randomBytes(8).toString('hex') + '+';
-    const etag = '"' + crypto.createHash('md5').update(body).digest('hex') + '"';
+    const etag = meta.etag || ('"' + crypto.createHash('md5').update(body).digest('hex') + '"');
     const lastModified = Date.now();
     const filePath = path.join(STORAGE_BASE, bucketName, key);
     const versionFilePath = this.versionPath(bucketName, key, versionId);
@@ -672,8 +673,12 @@ export class S3Mini {
     if (row.deleteMarker) throw new S3Error('NoSuchKey', 'The object is deleted.', 404, bucketName, key);
 
     const versionFilePath = this.versionPath(bucketName, key, row.versionId);
-    const filePath = await fs.stat(versionFilePath).then(() => versionFilePath).catch(() => path.join(STORAGE_BASE, bucketName, key));
-    const data = await fs.readFile(filePath);
+    let data: Buffer;
+    try {
+      data = await fs.readFile(versionFilePath);
+    } catch {
+      throw new S3Error('InternalError', 'The stored object data is missing.', 500, bucketName, key);
+    }
 
     const metadata: ObjectMetadata = {
        key: row.key, bucket: row.bucket, versionId: row.versionId, size: row.size, etag: row.etag,
@@ -741,12 +746,13 @@ export class S3Mini {
       await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
       return;
     }
+    const versions = await this.all('SELECT versionId FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM objs WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM tags WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM object_tags WHERE bucket = ? AND key = ?', [bucketName, key]);
     await this.run('DELETE FROM object_acl WHERE bucket = ? AND key = ?', [bucketName, key]);
     await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
-    await fs.rm(path.join(STORAGE_BASE, bucketName, '.versions'), { recursive: true, force: true });
+    for (const version of versions as Array<{ versionId: string }>) await fs.rm(this.versionPath(bucketName, key, version.versionId), { force: true });
     await this.queueReplicationEvent({ bucket: bucketName, key, versionId: '', operation: 'DeleteObject', sourceNodeId: NODE_ID, payloadPath: '', etag: '', size: 0, deleteMarker: false, createdAt: new Date() });
   }
 
@@ -882,7 +888,7 @@ export class S3Mini {
     const resource = `arn:aws:s3:::${bucket}${key ? `/${key}` : ''}`;
     const matching = policy.statements.filter(statement => policyStatementMatches(statement, resource, action, principal, context));
     if (matching.some(statement => statement.effect === 'Deny')) return true;
-    return matching.some(statement => statement.effect === 'Allow') ? false : policy.statements.some(statement => statement.effect === 'Allow');
+    return policy.statements.some(statement => statement.effect === 'Allow') && !matching.some(statement => statement.effect === 'Allow');
   }
 
   async isObjectRequestDenied(bucket: string, key: string, action: string, principal: string): Promise<boolean> {
@@ -1021,7 +1027,8 @@ export class S3Mini {
       if (!row || row.etag !== part.etag) throw new S3Error('InvalidPart', 'One or more requested parts could not be found.', 400, request.bucket, request.key);
       bodies.push(row.body);
     }
-    const result = await this.putObject(request.bucket, request.key, Buffer.concat(bodies), {});
+    const multipartDigest = crypto.createHash('md5').update(Buffer.concat(request.parts.map(part => Buffer.from(part.etag.replace(/^"|"$/g, ''), 'hex')))).digest('hex');
+    const result = await this.putObject(request.bucket, request.key, Buffer.concat(bodies), { storageClass: upload.storageClass, etag: `"${multipartDigest}-${request.parts.length}"` });
     await this.run('DELETE FROM multipart_parts WHERE uploadId = ?', [request.uploadId]);
     await this.run('DELETE FROM multipart_uploads WHERE uploadId = ?', [request.uploadId]);
     return { bucket: request.bucket, key: request.key, etag: result.etag, versionId: result.versionId };
@@ -1067,6 +1074,8 @@ async function writeDurableFile(filePath: string, body: Buffer): Promise<void> {
       await handle.close();
     }
     await fs.rename(temporaryPath, filePath);
+    const directory = await fs.open(path.dirname(filePath), 'r');
+    try { await directory.sync(); } finally { await directory.close(); }
   } catch (error) {
     await fs.rm(temporaryPath, { force: true });
     throw error;

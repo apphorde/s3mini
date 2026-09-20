@@ -15,6 +15,10 @@ describe('S3 model helpers', () => {
     expect(new S3Error('Invalid', '<bad>&').toResponseXml('id')).toContain('&lt;bad&gt;&amp;');
   });
 
+  it('escapes XML request identifiers', () => {
+    expect(new S3Error('Invalid', 'bad').toResponseXml('request<&')).toContain('<RequestId>request&lt;&amp;</RequestId>');
+  });
+
   it('generates deterministic quoted MD5 ETags', () => {
     expect(generateETag(Buffer.from('hello'))).toBe('"5d41402abc4b2a76b9719d911017c592"');
   });

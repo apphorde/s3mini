@@ -96,7 +96,7 @@ export class S3Error extends Error {
 
   toResponseXml(requestId: string): string {
     const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<Error>\n  <Code>${esc(this.code)}</Code>\n  <Message>${esc(this.message)}</Message>\n${this.bucketName ? `  <BucketName>${esc(this.bucketName)}</BucketName>\n` : ''}${this.keyName ? `  <KeyName>${esc(this.keyName)}</KeyName>\n` : ''}  <RequestId>${requestId}</RequestId>\n</Error>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<Error>\n  <Code>${esc(this.code)}</Code>\n  <Message>${esc(this.message)}</Message>\n${this.bucketName ? `  <BucketName>${esc(this.bucketName)}</BucketName>\n` : ''}${this.keyName ? `  <KeyName>${esc(this.keyName)}</KeyName>\n` : ''}  <RequestId>${esc(requestId)}</RequestId>\n</Error>`;
   }
 }
 
