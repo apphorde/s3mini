@@ -391,12 +391,12 @@ describe('S3 HTTP routes', () => {
     process.env.AUTH_PROVIDER = 'https://auth.api.apphor.de/api';
     process.env.OIDC_CLIENT_ID = 'live-client';
     process.env.OIDC_CLIENT_SECRET = 'live-secret';
-    process.env.OIDC_REDIRECT_URI = 'https://storage.example.com/admin/callback';
+    process.env.OIDC_REDIRECT_URI = 'https://storage.example.com/auth/callback';
     const login = await app.inject({ method: 'GET', url: '/admin/login' });
     expect(login.statusCode).toBe(302);
     expect(login.headers.location).toContain('https://auth.api.apphor.de/authorize');
     expect(login.headers.location).toContain('client_id=live-client');
-    expect(login.headers.location).toContain('redirect_uri=https%3A%2F%2Fstorage.example.com%2Fadmin%2Fcallback');
+    expect(login.headers.location).toContain('redirect_uri=https%3A%2F%2Fstorage.example.com%2Fauth%2Fcallback');
     delete process.env.AUTH_PROVIDER;
     delete process.env.OIDC_CLIENT_ID;
     delete process.env.OIDC_CLIENT_SECRET;
