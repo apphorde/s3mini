@@ -31,6 +31,7 @@ recovery behavior has known gaps.
 - [x] GetObject: `GET /{bucket}/{key}`
 - [x] HeadObject: `HEAD /{bucket}/{key}`
 - [x] DeleteObject: `DELETE /{bucket}/{key}`
+- [x] DeleteObjects: `POST /{bucket}?delete`
 - [x] ListObjectsV2: `GET /{bucket}` with `prefix`
 - [x] S3-style XML errors for implemented operations
 - [x] Basic object metadata: content type, disposition, encoding, cache control, expires, storage class

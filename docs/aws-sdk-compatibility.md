@@ -32,6 +32,7 @@ const client = new S3Client({
 | Get object | `GetObjectCommand` | Required |
 | Head object | `HeadObjectCommand` | Required |
 | Delete object | `DeleteObjectCommand` | Required |
+| Delete objects | `DeleteObjectsCommand` | Required |
 | List buckets | `ListBucketsCommand` | Required |
 | List objects | `ListObjectsV2Command` | Required |
 | Copy object | `CopyObjectCommand` | Required |
@@ -64,7 +65,7 @@ Features outside this core target remain explicitly unsupported until they have
 dedicated behavior and SDK tests.
 
 The current test suite has 66 tests. AWS SDK v3 coverage includes bucket/object
-CRUD, authentication, multipart upload, tagging, and versioning; direct HTTP
-coverage exercises pagination, CopyObject, ranges, checksums, and conditional
-reads. Additional MinIO and Backblaze B2 interoperability coverage remains a
-core follow-up, while scale-oriented features are deferred.
+CRUD, batch deletion, authentication, multipart upload, tagging, and versioning;
+direct HTTP coverage exercises pagination, CopyObject, ranges, checksums, and
+conditional reads. Additional MinIO and Backblaze B2 interoperability coverage
+remains a core follow-up, while scale-oriented features are deferred.
