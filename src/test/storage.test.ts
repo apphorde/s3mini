@@ -161,6 +161,14 @@ describe('S3Mini', () => {
     await expect(s3.completeMultipartUpload({ bucket, key: 'unordered.bin', uploadId: upload.uploadId, parts: [{ partNumber: 2, etag: second.etag }, { partNumber: 1, etag: first.etag }] })).rejects.toMatchObject({ code: 'InvalidPartOrder' });
   });
 
+  it('validates multipart storage class and list pagination parameters', async () => {
+    await s3.createBucket(bucket);
+    await expect(s3.createMultipartUpload(bucket, 'invalid.bin', 'MADE_UP')).rejects.toMatchObject({ code: 'InvalidStorageClass' });
+    const upload = await s3.createMultipartUpload(bucket, 'paged.bin');
+    await expect(s3.listParts({ bucket, key: 'paged.bin', uploadId: upload.uploadId, maxParts: 0 })).rejects.toMatchObject({ code: 'InvalidRequest' });
+    await expect(s3.listParts({ bucket, key: 'paged.bin', uploadId: upload.uploadId, partNumberMarker: -1 })).rejects.toMatchObject({ code: 'InvalidPart' });
+  });
+
   it('persists versioning and object and bucket tags', async () => {
     await s3.createBucket(bucket);
     expect(await s3.getVersioning(bucket)).toEqual({});

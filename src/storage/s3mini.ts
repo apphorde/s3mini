@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import crypto from 'crypto';
 import type { Bucket, ObjectMetadata, ObjectSummary } from '../types/models.js';
 import { S3Error } from '../types/models.js';
-import { VALID_LOCATION_CONSTRAINTS } from '../types/models.js';
+import { VALID_LOCATION_CONSTRAINTS, VALID_STORAGE_CLASSES } from '../types/models.js';
 import type {
   CompleteMultipartUploadRequest,
   CompleteMultipartUploadResult,
@@ -968,6 +968,8 @@ export class S3Mini {
 
   async createMultipartUpload(bucket: string, key: string, storageClass = 'STANDARD'): Promise<CreateMultipartUploadResult> {
     await this.headBucket(bucket);
+    this.validateKey(key);
+    if (!VALID_STORAGE_CLASSES.includes(storageClass as any)) throw new S3Error('InvalidStorageClass', 'The storage class is not supported.', 400, bucket, key);
     const uploadId = crypto.randomUUID();
     await this.run('INSERT INTO multipart_uploads (uploadId, bucket, key, initiated, storageClass) VALUES (?, ?, ?, ?, ?)', [uploadId, bucket, key, Date.now(), storageClass]);
     return { uploadId, bucket, key };
@@ -991,8 +993,10 @@ export class S3Mini {
   async listParts(request: ListPartsRequest): Promise<ListPartsResult> {
     const upload = await this.get('SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?', [request.uploadId, request.bucket, request.key]);
     if (!upload) throw new S3Error('NoSuchUpload', 'The specified multipart upload does not exist.', 404, request.bucket, request.key);
+    if (request.partNumberMarker !== undefined && (!Number.isInteger(request.partNumberMarker) || request.partNumberMarker < 0)) throw new S3Error('InvalidPart', 'The part number marker is invalid.', 400, request.bucket, request.key);
+    if (request.maxParts !== undefined && (!Number.isInteger(request.maxParts) || request.maxParts < 1)) throw new S3Error('InvalidRequest', 'max-parts must be a positive integer.', 400, request.bucket, request.key);
     const rows = await this.all('SELECT * FROM multipart_parts WHERE uploadId = ? AND partNumber > ? ORDER BY partNumber ASC', [request.uploadId, request.partNumberMarker || 0]);
-    const maxParts = Math.max(0, Math.min(request.maxParts ?? 1000, 1000));
+    const maxParts = Math.min(request.maxParts ?? 1000, 1000);
     const page = rows.slice(0, maxParts) as any[];
     return {
       bucket: request.bucket,

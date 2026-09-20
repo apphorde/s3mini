@@ -657,7 +657,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       return reply.type('application/octet-stream').send(body);
     }
     if (query.uploads !== undefined) {
-      const result = await s3.createMultipartUpload(params.bucket, key);
+      const result = await s3.createMultipartUpload(params.bucket, key, String(request.headers['x-amz-storage-class'] || 'STANDARD'));
       return reply.type('application/xml').send(wrapXml('InitiateMultipartUploadResult', { Bucket: result.bucket, Key: result.key, UploadId: result.uploadId }));
     }
     if (!query.uploadId) throw new S3Error('InvalidRequest', 'uploadId is required.', 400, params.bucket, key);
