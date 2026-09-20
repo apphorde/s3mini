@@ -33,6 +33,7 @@ recovery behavior has known gaps.
 - [x] DeleteObject: `DELETE /{bucket}/{key}`
 - [x] DeleteObjects: `POST /{bucket}?delete`
 - [x] ListObjectsV2: `GET /{bucket}` with `prefix`
+- [x] ListObjects: `GET /{bucket}?list-type=1` with marker pagination
 - [x] S3-style XML errors for implemented operations
 - [x] Basic object metadata: content type, disposition, encoding, cache control, expires, storage class
 - [x] Persistent hybrid storage: SQLite metadata in `/data/s3mini.sqlite` and binary files under `/data/objects`

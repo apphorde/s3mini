@@ -74,6 +74,20 @@ describe('S3 HTTP routes', () => {
     expect(list.body).toContain('folder%2Fspace%20key.txt');
   });
 
+  it('supports ListObjects version 1 pagination', async () => {
+    await app.inject({ method: 'PUT', url: `/${bucket}` });
+    await app.inject({ method: 'PUT', url: `/${bucket}/a.txt`, headers: { 'content-type': 'text/plain' }, payload: 'a' });
+    await app.inject({ method: 'PUT', url: `/${bucket}/b.txt`, headers: { 'content-type': 'text/plain' }, payload: 'b' });
+    const first = await app.inject({ method: 'GET', url: `/${bucket}?list-type=1&max-keys=1` });
+    expect(first.statusCode).toBe(200);
+    expect(first.body).toContain('<ListBucketResult>');
+    expect(first.body).toContain('<Key>a.txt</Key>');
+    expect(first.body).toContain('<NextMarker>a.txt</NextMarker>');
+    const second = await app.inject({ method: 'GET', url: `/${bucket}?list-type=1&marker=a.txt&max-keys=1` });
+    expect(second.body).toContain('<Key>b.txt</Key>');
+    expect(second.body).not.toContain('<IsTruncated>true</IsTruncated>');
+  });
+
   it('supports bucket versioning and tagging query operations', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}` });
     expect((await app.inject({ method: 'PUT', url: `/${bucket}?versioning`, headers: { 'content-type': 'text/xml' }, payload: '<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>' })).statusCode).toBe(200);

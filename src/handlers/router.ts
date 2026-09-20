@@ -607,6 +607,36 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       const value = await s3.getBucketConfiguration<Record<string, unknown>>(params.bucket, configuration);
       return reply.type('application/xml').send(wrapXml(configuration, value || {}));
     }
+    const listType = query['list-type'];
+    if (listType === '1') {
+      const marker = query.marker;
+      const result = await s3.listObjectsV2Advanced({
+        bucket: params.bucket,
+        prefix: query.prefix,
+        delimiter: query.delimiter,
+        maxKeys: query['max-keys'] ? Number(query['max-keys']) : undefined,
+        continuationToken: marker ? Buffer.from(marker).toString('base64url') : undefined,
+        encodingType: query['encoding-type'] === 'url' ? 'url' : undefined,
+      });
+      const encodeListValue = (value: string) => result.encodingType === 'url' ? encodeURIComponent(value) : value;
+      const lastKey = result.contents[result.contents.length - 1]?.key;
+      const lastPrefix = result.commonPrefixes[result.commonPrefixes.length - 1];
+      const nextMarker = lastPrefix || lastKey;
+      return reply.type('application/xml').send(wrapXml('ListBucketResult', {
+        Name: params.bucket,
+        Prefix: result.prefix,
+        Marker: marker,
+        NextMarker: result.isTruncated ? nextMarker : undefined,
+        MaxKeys: result.maxKeys,
+        IsTruncated: result.isTruncated,
+        Contents: result.contents.map(c => ({
+          Key: encodeListValue(c.key), LastModified: c.lastModified.toISOString(), ETag: c.etag,
+          Size: c.size, StorageClass: c.storageClass,
+        })),
+        CommonPrefixes: result.commonPrefixes.map(Prefix => ({ Prefix: encodeListValue(Prefix) })),
+        EncodingType: result.encodingType,
+      }));
+    }
     const result = await s3.listObjectsV2Advanced({
       bucket: params.bucket,
       prefix: query.prefix,
