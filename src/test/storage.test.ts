@@ -153,6 +153,14 @@ describe('S3Mini', () => {
     await expect(s3.listParts({ bucket, key: 'aborted.bin', uploadId: aborted.uploadId })).rejects.toMatchObject({ code: 'NoSuchUpload' });
   });
 
+  it('rejects multipart completion with unordered parts', async () => {
+    await s3.createBucket(bucket);
+    const upload = await s3.createMultipartUpload(bucket, 'unordered.bin');
+    const first = await s3.uploadPart({ bucket, key: 'unordered.bin', uploadId: upload.uploadId, partNumber: 1, body: Buffer.from('first') });
+    const second = await s3.uploadPart({ bucket, key: 'unordered.bin', uploadId: upload.uploadId, partNumber: 2, body: Buffer.from('second') });
+    await expect(s3.completeMultipartUpload({ bucket, key: 'unordered.bin', uploadId: upload.uploadId, parts: [{ partNumber: 2, etag: second.etag }, { partNumber: 1, etag: first.etag }] })).rejects.toMatchObject({ code: 'InvalidPartOrder' });
+  });
+
   it('persists versioning and object and bucket tags', async () => {
     await s3.createBucket(bucket);
     expect(await s3.getVersioning(bucket)).toEqual({});

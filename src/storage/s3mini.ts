@@ -1008,6 +1008,9 @@ export class S3Mini {
     const upload = await this.get('SELECT * FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?', [request.uploadId, request.bucket, request.key]);
     if (!upload) throw new S3Error('NoSuchUpload', 'The specified multipart upload does not exist.', 404, request.bucket, request.key);
     if (!request.parts.length) throw new S3Error('InvalidRequest', 'At least one part is required.', 400, request.bucket, request.key);
+    if (request.parts.some((part, index) => !Number.isInteger(part.partNumber) || part.partNumber < 1 || part.partNumber > 10000 || (index > 0 && part.partNumber <= request.parts[index - 1].partNumber))) {
+      throw new S3Error('InvalidPartOrder', 'Multipart parts must be listed in strictly ascending order.', 400, request.bucket, request.key);
+    }
     const bodies: Buffer[] = [];
     for (const part of request.parts) {
       const row = await this.get('SELECT body, etag FROM multipart_parts WHERE uploadId = ? AND partNumber = ?', [request.uploadId, part.partNumber]);
