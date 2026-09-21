@@ -4,6 +4,7 @@ type Jwk = { kid?: string; kty?: string; [key: string]: unknown };
 type Jwks = { keys?: Jwk[] };
 
 const jwksCache = new Map<string, { keys: Jwks; expiresAt: number }>();
+const introspectionCache = new Map<string, { active: boolean; scopes: string[]; expiresAt: number }>();
 
 function decodeBase64Url(value: string): Buffer {
   return Buffer.from(value, 'base64url');
@@ -45,4 +46,22 @@ export async function verifyOidcToken(token: string, issuer: string, audience: s
   if (payload.iss !== issuer || !audiences.includes(audience) || typeof payload.sub !== 'string') throw new Error('Invalid JWT claims');
   if (typeof payload.exp !== 'number' || payload.exp <= now) throw new Error('Expired JWT');
   if (typeof payload.nbf === 'number' && payload.nbf > now) throw new Error('JWT is not active');
+}
+
+export async function introspectOidcToken(token: string, issuer: string, clientId: string, clientSecret: string): Promise<{ active: boolean; scopes: string[] }> {
+  const cached = introspectionCache.get(token);
+  if (cached && Date.now() < cached.expiresAt) return { active: cached.active, scopes: cached.scopes };
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const response = await fetch(new URL('/oauth/introspect', issuer), {
+    method: 'POST',
+    headers: { Authorization: `Basic ${credentials}`, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token, token_type_hint: 'access_token' }),
+  });
+  if (!response.ok) throw new Error(`Could not introspect token: ${response.status}`);
+  const result = await response.json() as { active?: boolean; scope?: string | string[]; exp?: number };
+  const scopes = Array.isArray(result.scope) ? result.scope : typeof result.scope === 'string' ? result.scope.split(/\s+/).filter(Boolean) : [];
+  const expiresAt = result.exp ? Math.min(result.exp * 1000, Date.now() + 30_000) : Date.now() + 30_000;
+  const value = { active: result.active === true, scopes, expiresAt };
+  introspectionCache.set(token, value);
+  return { active: value.active, scopes: value.scopes };
 }

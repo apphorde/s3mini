@@ -43,6 +43,7 @@ remain secondary until the core S3 path is complete and well tested.
 - The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.
 - The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
 - Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is verified with the provider's RS256 JWKS, checked against `/userinfo` with `X-Auth-Audience`, and optionally restricted by email via `S3MINI_OIDC_ADMIN_EMAILS`.
+- Provider-issued opaque API tokens are accepted through bearer authentication; `s3:read`, `s3:write`, `s3:admin`, and `s3:*` scopes are enforced through the provider's `/oauth/introspect` endpoint.
 - OIDC setup is documented in `README.md`: register `/auth/callback`, configure client credentials and audience, and use `S3MINI_OIDC_ADMIN_EMAILS` to restrict administrators.
 - `.env.example` and the production container default wire the OIDC provider URL into the application without including credentials.
 - The live deployment names `AUTH_PROVIDER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` are accepted directly, with `S3MINI_OIDC_*` aliases retained.
@@ -56,7 +57,7 @@ remain secondary until the core S3 path is complete and well tested.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
 - HTTP coverage includes bucket configuration, multipart listing/abort, object copy/batch deletion, authentication-required mutations, and the OIDC callback; opt-in MinIO and Backblaze B2 coverage is available through `src/test/s3-compatibility.test.ts`.
-- The current compatibility checkpoint is tracked in git history with 75 passing tests.
+- The current compatibility checkpoint is tracked in git history with 76 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification

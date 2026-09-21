@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import type { S3Mini } from '../storage/s3mini.js';
 import { S3Error, VALID_STORAGE_CLASSES } from '../types/models.js';
 import { verifyPresignedSigV4, verifySigV4 } from '../auth/sigv4.js';
-import { verifyOidcToken } from '../auth/oidc.js';
+import { introspectOidcToken, verifyOidcToken } from '../auth/oidc.js';
 import type { ReplicationWorker } from '../replication/worker.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, replication?: ReplicationWorker) {
@@ -18,6 +18,18 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   fastify.addHook('preValidation', async (request) => {
     if (request.url === '/admin' || request.url.startsWith('/admin/')) return;
     const authorization = request.headers.authorization;
+    const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    let oidcScopes: string[] = [];
+    if (bearerToken) {
+      if (!oidcConfigured()) throw new S3Error('AccessDenied', 'OIDC bearer tokens are not configured.', 403);
+      try {
+        const introspection = await introspectOidcToken(bearerToken, oidcBaseUrl(), oidcClientId()!, oidcClientSecret()!);
+        if (!introspection.active) throw new Error('The bearer token is inactive.');
+        oidcScopes = introspection.scopes;
+      } catch {
+        throw new S3Error('AccessDenied', 'The bearer token is invalid or expired.', 403);
+      }
+    }
     const hasPresign = new URL(request.raw.url || '/', 'http://localhost').searchParams.has('X-Amz-Algorithm');
     const credentials = await resolveCredentials(s3, request, hasPresign);
     const accessKeyId = credentials?.accessKeyId;
@@ -26,8 +38,11 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     if (hasPresign && (!signingCredentials || !verifyPresignedSigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, signingCredentials))) {
       throw new S3Error('SignatureDoesNotMatch', 'The presigned URL signature does not match.', 403);
     }
-    if (authorization && (!signingCredentials || !verifySigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, signingCredentials))) {
+    if (authorization && !bearerToken && (!signingCredentials || !verifySigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, signingCredentials))) {
       throw new S3Error('SignatureDoesNotMatch', 'The request signature does not match.', 403);
+    }
+    if (bearerToken && !hasOidcScope(oidcScopes, requiredOidcScope(request))) {
+      throw new S3Error('AccessDenied', `The bearer token lacks the required ${requiredOidcScope(request)} scope.`, 403);
     }
     if (credentials && (authorization || hasPresign)) await s3.markAccessKeyUsed(credentials.accessKeyId);
     const params = request.params as { bucket?: string; '*': string };
@@ -104,6 +119,15 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const configuredToken = process.env.S3MINI_ADMIN_TOKEN;
     const suppliedToken = request.headers.authorization?.startsWith('Bearer ') ? request.headers.authorization.slice(7) : undefined;
     if (configuredToken && suppliedToken && timingSafeTokenEqual(suppliedToken, configuredToken)) return;
+    const bearerToken = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (bearerToken && oidcConfigured()) {
+      try {
+        const introspection = await introspectOidcToken(bearerToken, oidcBaseUrl(), oidcClientId()!, oidcClientSecret()!);
+        if (introspection.active && hasOidcScope(introspection.scopes, 's3:admin')) return;
+      } catch {
+        // Fall through to the standard access-denied response.
+      }
+    }
     const oidcToken = getCookie(request, 's3mini_oidc_token');
     if (oidcToken && await isOidcAdmin(oidcToken)) return;
     throw new S3Error('AccessDenied', 'The admin token is invalid.', 403);
@@ -720,6 +744,16 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   fastify.head('/:bucket/*', headObject);
   fastify.delete('/:bucket/*', deleteObject);
   fastify.get('/:bucket', { exposeHeadRoute: false }, listObjectsV2);
+}
+
+function hasOidcScope(scopes: string[], required: string): boolean {
+  return scopes.includes('*') || scopes.includes('s3:*') || scopes.includes(required);
+}
+
+function requiredOidcScope(request: FastifyRequest): string {
+  const query = request.query as Record<string, string | undefined>;
+  if (query.policy !== undefined || query.acl !== undefined || query.encryption !== undefined || query.website !== undefined || query.logging !== undefined || query.notification !== undefined || query.replication !== undefined) return 's3:admin';
+  return ['GET', 'HEAD', 'OPTIONS'].includes(request.method) ? 's3:read' : 's3:write';
 }
 
 function toXml(obj: any): string {

@@ -45,6 +45,19 @@ S3MINI follows the provider's Node client flow: authorization-code PKCE uses
 `/.well-known/jwks.json`, and user identity is loaded from `/userinfo` with
 `X-Auth-Audience`.
 
+Provider API tokens can also call S3MINI directly with an `Authorization:
+Bearer` header. Create them through the provider's `/api-tokens/{clientId}`
+endpoint and grant these scopes as needed:
+
+```text
+s3:read   GET, HEAD, and OPTIONS requests
+s3:write  bucket/object mutations
+s3:admin  bucket policy/ACL/configuration and `/admin` control-plane actions
+```
+
+Use `s3:*` for a full-access token. S3MINI introspects opaque provider tokens
+through `/oauth/introspect` using the configured OIDC client credentials.
+
 Set `S3MINI_REPLICATION_QUORUM` to a positive number to expose a degraded
 state when fewer than that many configured peers are healthy. Current writes
 remain asynchronous; quorum acknowledgement enforcement is intentionally

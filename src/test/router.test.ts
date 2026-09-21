@@ -508,6 +508,29 @@ describe('S3 HTTP routes', () => {
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
   });
 
+  it('authorizes provider API tokens by S3 scope', async () => {
+    process.env.S3MINI_OIDC_CLIENT_ID = 's3mini-dashboard';
+    process.env.S3MINI_OIDC_CLIENT_SECRET = 'secret';
+    const scopes = new Map([
+      ['write-token', 's3:write'],
+      ['read-token', 's3:read'],
+      ['admin-token', 's3:admin'],
+    ]);
+    vi.stubGlobal('fetch', vi.fn((_input: string | URL, init?: RequestInit) => {
+      const token = new URLSearchParams(String(init?.body || '')).get('token') || '';
+      return Promise.resolve(new Response(JSON.stringify({ active: scopes.has(token), scope: scopes.get(token) || '' }), { status: 200 }));
+    }));
+    const writeHeaders = { authorization: 'Bearer write-token', 'content-type': 'text/plain' };
+    expect((await app.inject({ method: 'PUT', url: `/${bucket}`, headers: { authorization: 'Bearer write-token' } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'PUT', url: `/${bucket}/token.txt`, headers: writeHeaders, payload: 'token' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `/${bucket}/token.txt`, headers: { authorization: 'Bearer read-token' } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: `/${bucket}/token.txt`, headers: { authorization: 'Bearer write-token' } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/admin/replication/events', headers: { authorization: 'Bearer admin-token' } })).statusCode).toBe(200);
+    vi.unstubAllGlobals();
+    delete process.env.S3MINI_OIDC_CLIENT_ID;
+    delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+  });
+
   it('clears the OIDC dashboard session on logout', async () => {
     const response = await app.inject({ method: 'POST', url: '/admin/logout' });
     expect(response.statusCode).toBe(204);

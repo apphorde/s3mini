@@ -62,10 +62,14 @@ Authentication, XML error codes, HTTP status codes, ETags, metadata headers,
 path-style addressing, pagination, and conditional requests are part of each
 operation's compatibility requirement.
 
+Provider-issued bearer tokens are supported for API calls. Use `s3:read` for
+reads, `s3:write` for bucket/object mutations, `s3:admin` for administrative
+configuration and control-plane actions, or `s3:*` for full access.
+
 Features outside this core target remain explicitly unsupported until they have
 dedicated behavior and SDK tests.
 
-The current test suite has 75 tests. AWS SDK v3 coverage includes bucket/object
+The current test suite has 76 tests. AWS SDK v3 coverage includes bucket/object
 CRUD, batch deletion, authentication, multipart upload, tagging, and versioning;
 direct HTTP coverage exercises pagination, CopyObject, ranges, checksums, and
 conditional reads. Opt-in MinIO and Backblaze B2 interoperability coverage is
