@@ -35,6 +35,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     .topbar { display: flex; height: 64px; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #e2e8f0; background: white; }
     .workspace { color: #64748b; font-size: 13px; }
     .profile { display: flex; align-items: center; gap: 9px; border-left: 1px solid #e2e8f0; padding-left: 12px; color: #334155; font-size: 12px; }
+    .token { width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e2e8f0; border-radius: 7px; outline: 0; font-size: 11px; }
     .avatar { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: #0f172a; color: white; font-size: 11px; font-weight: 700; }
     .content { width: min(1500px, 100%); margin: 0 auto; padding: 28px 20px 48px; }
     .heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
@@ -110,7 +111,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
       <div class="footer"><div class="health"><span class="dot"></span><strong>Local node</strong><br><span id="health-text">Checking status...</span></div><button data-view="settings">Settings</button></div>
     </aside>
     <section class="main">
-      <header class="topbar"><div class="workspace">Workspace <strong>S3MINI</strong></div><div class="profile"><div class="avatar">S3</div><span>Control plane</span></div></header>
+      <header class="topbar"><div class="workspace">Workspace <strong>S3MINI</strong></div><div class="profile"><input id="admin-token" class="token" type="password" placeholder="Admin token" autocomplete="off"><button id="save-token" class="button">Use token</button><div class="avatar">S3</div><span>Control plane</span></div></header>
       <div class="content">
         <dashboard-status id="status" message=""></dashboard-status>
         <section class="view active" data-panel="overview">
@@ -130,7 +131,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     const state = { buckets: [], keys: [], peers: [], events: [] };
     const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const status = text => { document.querySelector('#status').message = text || ''; };
-    const request = async (url, options = {}) => { const headers = {...(options.headers || {})}; const response = await fetch(url, {...options, credentials: 'same-origin', headers}); if ((response.status === 401 || response.status === 403) && location.pathname !== '/admin/login') location.href = '/admin/login'; return response; };
+    const request = async (url, options = {}) => { const headers = {...(options.headers || {})}; const token = sessionStorage.getItem('s3mini_admin_token'); if (token) headers.Authorization = 'Bearer ' + token; const response = await fetch(url, {...options, credentials: 'same-origin', headers}); if ((response.status === 401 || response.status === 403) && location.pathname !== '/admin/login' && !token) location.href = '/admin/login'; return response; };
     const empty = (message, span) => '<tr><td class="empty" colspan="' + span + '">' + esc(message) + '</td></tr>';
     const bytes = value => value == null ? '-' : value < 1024 ? value + ' B' : value < 1048576 ? (value / 1024).toFixed(1) + ' KB' : value < 1073741824 ? (value / 1048576).toFixed(1) + ' MB' : (value / 1073741824).toFixed(1) + ' GB';
     function show(view) { document.querySelectorAll('[data-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.panel === view)); document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === view)); }
@@ -150,13 +151,19 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     async function load() {
       try {
         const responses = await Promise.all(['/admin/buckets', '/admin/access-keys', '/admin/replication/health', '/admin/replication/events?limit=100'].map(request));
-        if (responses.some(response => !response.ok)) throw new Error('Unable to load control-plane data.');
-        state.buckets = await responses[0].json(); state.keys = await responses[1].json(); state.peers = await responses[2].json(); state.events = await responses[3].json();
+        if (responses[0].ok) state.buckets = await responses[0].json();
+        if (responses[1].ok) state.keys = await responses[1].json();
+        if (responses[2].ok) state.peers = await responses[2].json();
+        if (responses[3].ok) state.events = await responses[3].json();
+        if (!responses[0].ok) throw new Error('Unable to load buckets (' + responses[0].status + ').');
         document.querySelector('#health-text').textContent = state.peers.length && state.peers.some(peer => peer.status !== 'Healthy') ? 'Replication needs attention' : 'API responding normally';
         render(); status('');
+        if (responses.slice(1).some(response => !response.ok)) status('Some control-plane panels are unavailable.');
       } catch (error) { status(error.message); }
     }
     document.querySelector('#date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    document.querySelector('#admin-token').value = sessionStorage.getItem('s3mini_admin_token') || '';
+    document.querySelector('#save-token').onclick = () => { const token = document.querySelector('#admin-token').value.trim(); if (token) sessionStorage.setItem('s3mini_admin_token', token); else sessionStorage.removeItem('s3mini_admin_token'); load(); };
     document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.view)));
     document.querySelector('#refresh').onclick = load;
     document.querySelector('#bucket-search').oninput = render;
