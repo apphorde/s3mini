@@ -186,7 +186,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     const redirectUri = process.env.OIDC_REDIRECT_URI || process.env.S3MINI_OIDC_REDIRECT_URI || `${requestBaseUrl(request)}/auth/callback`;
     const stateCookie = Buffer.from(JSON.stringify({ state, verifier }), 'utf8').toString('base64url');
-    reply.header('Set-Cookie', `s3mini_oidc_state=${stateCookie}; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=600`);
+    reply.header('Set-Cookie', `s3mini_oidc_state=${stateCookie}; HttpOnly; Path=/; SameSite=Lax; Max-Age=600`);
     const url = new URL(`${oidcBaseUrl()}/authorize`);
     url.search = new URLSearchParams({ response_type: 'code', client_id: oidcClientId()!, redirect_uri: redirectUri, state, scope: 'openid profile email', code_challenge: challenge, code_challenge_method: 'S256' }).toString();
     return reply.redirect(url.toString());

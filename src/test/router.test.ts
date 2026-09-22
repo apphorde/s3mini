@@ -450,6 +450,7 @@ describe('S3 HTTP routes', () => {
     expect(login.statusCode).toBe(302);
     expect(login.headers.location).toContain('https://auth.api.apphor.de/authorize');
     expect(login.headers['set-cookie']).toContain('s3mini_oidc_state=');
+    expect(login.headers['set-cookie']).toContain('Path=/;');
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
   });
