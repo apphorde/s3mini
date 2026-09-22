@@ -435,6 +435,9 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.body).toContain('Replication');
     expect(dashboard.body).toContain('/admin/replication/events');
     expect(dashboard.body).toContain('@li3/web');
+    expect(dashboard.body).toContain('data-panel="overview"');
+    expect(dashboard.body).toContain('Storage consumption');
+    expect(dashboard.body).toContain('data-view="buckets"');
   });
 
   it('redirects dashboard access to OIDC when configured', async () => {

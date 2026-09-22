@@ -4,6 +4,7 @@ import type { S3Mini } from '../storage/s3mini.js';
 import { S3Error, VALID_STORAGE_CLASSES } from '../types/models.js';
 import { verifyPresignedSigV4, verifySigV4 } from '../auth/sigv4.js';
 import { introspectOidcToken, verifyOidcToken } from '../auth/oidc.js';
+import { CONTROL_PLANE_HTML } from '../ui/control-plane.js';
 import type { ReplicationWorker } from '../replication/worker.js';
 
 export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, replication?: ReplicationWorker) {
@@ -176,7 +177,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
 
   fastify.get('/admin', async (request, reply) => {
     if (oidcConfigured() && !getCookie(request, 's3mini_oidc_token')) return reply.redirect('/admin/login');
-    return reply.type('text/html').send(ADMIN_HTML);
+    return reply.type('text/html').send(CONTROL_PLANE_HTML);
   });
   fastify.get('/admin/login', async (request, reply) => {
     if (!oidcConfigured()) throw new S3Error('AccessDenied', 'OIDC is not configured.', 403);
