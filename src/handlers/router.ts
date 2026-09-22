@@ -16,7 +16,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     reply.header('x-amz-id-2', request.id);
     return payload;
   });
-  fastify.addHook('preValidation', async (request) => {
+  fastify.addHook('preValidation', async (request, reply) => {
     if (request.url === '/admin' || request.url.startsWith('/admin/')) return;
     const authorization = request.headers.authorization;
     const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -207,6 +207,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     reply.header('Set-Cookie', `s3mini_oidc_token=${encodeURIComponent(token)}; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=3600`);
     return reply.redirect('/admin');
   });
+  const reservedAuthPath = async (request: FastifyRequest, reply: FastifyReply) => reply.type('application/xml').code(404).send(new S3Error('NoSuchKey', 'The authentication path is reserved.', 404).toResponseXml(request.id));
+  fastify.all('/auth', reservedAuthPath);
+  fastify.all('/auth/*', reservedAuthPath);
   fastify.post('/admin/logout', async (_request, reply) => {
     reply.header('Set-Cookie', 's3mini_oidc_token=; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=0');
     return reply.code(204).send();

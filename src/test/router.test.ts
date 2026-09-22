@@ -46,6 +46,12 @@ describe('S3 HTTP routes', () => {
     expect((await app.inject({ method: 'DELETE', url: `/${bucket}/hello.txt` })).statusCode).toBe(204);
   });
 
+  it('reserves authentication paths from bucket routing', async () => {
+    const response = await app.inject({ method: 'GET', url: '/auth/object.txt' });
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toContain('<Code>NoSuchKey</Code>');
+  });
+
   it('covers bucket listing, location, tags, and configuration deletion', async () => {
     await app.inject({ method: 'PUT', url: `/${bucket}?locationConstraint=eu-west-1` });
     const buckets = await app.inject({ method: 'GET', url: '/' });
