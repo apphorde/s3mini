@@ -30,7 +30,7 @@ remain secondary until the core S3 path is complete and well tested.
 - Object storage classes are validated against the supported API enum before persistence.
 - ListObjectsV2 supports AWS `encoding-type=url` responses for reserved characters in keys and prefixes.
 - SQLite metadata now uses `/data/s3mini.sqlite` through Node's built-in `node:sqlite` driver, with legacy `/data/objects/meta.db` migration on first start.
-- Persistent access-key storage, a bearer-token-protected HTTP control plane, and a dependency-free `/admin` dashboard are implemented for listing, issuing, and disabling keys.
+- Persistent access-key storage, a bearer-token-protected HTTP control plane, and a Li3-based `/admin` single-page dashboard are implemented for listing, issuing, and disabling keys.
 - Local durability foundation is implemented: WAL/full-sync SQLite, atomic synced object writes, and a transactional pending replication journal.
 - Durable object renames now sync their parent directories, missing committed version files fail closed, and deleting one key no longer removes other keys' version files.
 - Asynchronous peer delivery is implemented for object writes, deletes, and delete markers using `S3MINI_REPLICATION_PEERS`, `S3MINI_REPLICATION_TOKEN`, and `S3MINI_NODE_ID`; initial geolocated testing can use private VPN endpoints.
@@ -40,7 +40,7 @@ remain secondary until the core S3 path is complete and well tested.
 - Replication quorum configuration and degraded-state reporting are available through `S3MINI_REPLICATION_QUORUM` and the authenticated `/admin/replication/summary` endpoint; writes remain asynchronous until quorum acknowledgement is implemented.
 - Replication events that exhaust eight delivery attempts are persisted as dead letters, listed through the admin API, and can be explicitly requeued.
 - New replication events persist a SHA-256 body digest, include it in delivery headers, validate it at the receiving node, and compare it during inventory repair; legacy events retain ETag fallback behavior.
-- The dependency-free admin dashboard displays peer health, replication event state, dead-letter counts, and a dead-letter retry action.
+- The Li3 admin dashboard displays bucket, access-key, peer-health, replication-event, and dead-letter state, with bucket creation, policy navigation, key issuing, and retry-related API views.
 - The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
 - Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is verified with the provider's RS256 JWKS, checked against `/userinfo` with `X-Auth-Audience`, and optionally restricted by email via `S3MINI_OIDC_ADMIN_EMAILS`.
 - Provider-issued opaque API tokens are accepted through bearer authentication; `s3:read`, `s3:write`, `s3:admin`, and `s3:*` scopes are enforced through the provider's `/oauth/introspect` endpoint.
