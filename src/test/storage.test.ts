@@ -35,6 +35,12 @@ describe('S3Mini', () => {
     expect((await s3.listAccessKeys()).find(key => key.accessKeyId === created.accessKeyId)).not.toHaveProperty('secretAccessKey');
   });
 
+  it('associates the admin token with an authenticated user without storing the token', async () => {
+    await s3.associateAdminToken('admin-secret', { id: 'user-1', email: 'admin@example.com', name: 'Admin User' });
+    expect(await s3.getAdminTokenOwner('admin-secret')).toMatchObject({ userId: 'user-1', email: 'admin@example.com', name: 'Admin User' });
+    expect(JSON.stringify(await s3.getAdminTokenOwner('admin-secret'))).not.toContain('admin-secret');
+  });
+
   it('rejects invalid bucket names, locations, and traversal keys', async () => {
     await expect(s3.createBucket('Bad_Name')).rejects.toMatchObject({ code: 'InvalidBucketName' });
     await expect(s3.createBucket('valid-bucket', 'moon-1')).rejects.toMatchObject({ code: 'InvalidLocationConstraint' });

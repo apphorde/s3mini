@@ -446,7 +446,7 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.body).toContain('data-view="buckets"');
     expect(dashboard.body).toContain('data-copy="secret"');
     expect(dashboard.body).toContain('credential-value secret');
-    expect(dashboard.body).toContain('id="admin-token"');
+    expect(dashboard.body).toContain('id="settings-admin-token"');
     expect(dashboard.body).toContain('sessionStorage');
     expect(dashboard.body).toContain('id="mobile-menu"');
     expect(dashboard.body).toContain('/admin/profile');

@@ -204,6 +204,14 @@ export class S3Mini {
       createdAt INTEGER NOT NULL,
       lastUsedAt INTEGER
     )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS admin_token_owners (
+      tokenHash TEXT PRIMARY KEY,
+      userId TEXT,
+      email TEXT,
+      name TEXT,
+      createdAt INTEGER NOT NULL,
+      lastSeenAt INTEGER NOT NULL
+    )`);
     await this.run(`CREATE TABLE IF NOT EXISTS replication_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       bucket TEXT NOT NULL,
@@ -385,6 +393,20 @@ export class S3Mini {
 
   async setAccessKeyStatus(accessKeyId: string, status: 'Active' | 'Disabled'): Promise<void> {
     await this.run('UPDATE access_keys SET status = ? WHERE accessKeyId = ?', [status, accessKeyId]);
+  }
+
+  async associateAdminToken(token: string, profile: { id?: string; email?: string; name?: string }): Promise<void> {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const now = Date.now();
+    await this.run(`INSERT INTO admin_token_owners (tokenHash, userId, email, name, createdAt, lastSeenAt) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(tokenHash) DO UPDATE SET userId = excluded.userId, email = excluded.email, name = excluded.name, lastSeenAt = excluded.lastSeenAt`,
+      [tokenHash, profile.id || null, profile.email || null, profile.name || null, now, now]);
+  }
+
+  async getAdminTokenOwner(token: string): Promise<{ userId?: string; email?: string; name?: string; lastSeenAt: number } | undefined> {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const row = await this.get('SELECT userId, email, name, lastSeenAt FROM admin_token_owners WHERE tokenHash = ?', [tokenHash]);
+    return row ? { userId: row.userId || undefined, email: row.email || undefined, name: row.name || undefined, lastSeenAt: row.lastSeenAt } : undefined;
   }
 
   async markAccessKeyUsed(accessKeyId: string): Promise<void> {

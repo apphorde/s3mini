@@ -119,12 +119,24 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   async function requireAdmin(request: FastifyRequest): Promise<void> {
     const configuredToken = process.env.S3MINI_ADMIN_TOKEN;
     const suppliedToken = request.headers.authorization?.startsWith('Bearer ') ? request.headers.authorization.slice(7) : undefined;
-    if (configuredToken && suppliedToken && timingSafeTokenEqual(suppliedToken, configuredToken)) return;
+    if (configuredToken && suppliedToken && timingSafeTokenEqual(suppliedToken, configuredToken)) {
+      const oidcToken = getCookie(request, 's3mini_oidc_token');
+      if (oidcToken) {
+        try { const profile = await getOidcProfile(oidcToken); if (profile) await s3.associateAdminToken(configuredToken, profile); } catch { /* Static-token authorization remains valid. */ }
+      }
+      return;
+    }
     const bearerToken = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
     if (bearerToken && oidcConfigured()) {
       try {
         const introspection = await introspectOidcToken(bearerToken, oidcBaseUrl(), oidcClientId()!, oidcClientSecret()!);
-        if (introspection.active && hasOidcScope(introspection.scopes, 's3:admin')) return;
+        if (introspection.active && hasOidcScope(introspection.scopes, 's3:admin')) {
+          const oidcToken = getCookie(request, 's3mini_oidc_token');
+          if (oidcToken) {
+            try { const profile = await getOidcProfile(oidcToken); if (profile) await s3.associateAdminToken(bearerToken, profile); } catch { /* Token authorization remains valid. */ }
+          }
+          return;
+        }
       } catch {
         // Fall through to the standard access-denied response.
       }
@@ -177,12 +189,16 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     return reply.type('text/html').send(CONTROL_PLANE_HTML);
   });
   fastify.get('/admin/profile', { preHandler: requireAdmin }, async (request, reply) => {
-    const token = getCookie(request, 's3mini_oidc_token') || request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-    if (token) {
-      const profile = await getOidcProfile(token);
-      if (profile) return reply.send(profile);
+    const profileToken = getCookie(request, 's3mini_oidc_token') || request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (profileToken) {
+      const profile = await getOidcProfile(profileToken);
+      if (profile) {
+        const adminToken = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1] || process.env.S3MINI_ADMIN_TOKEN;
+        return reply.send({ ...profile, adminTokenOwner: adminToken ? await s3.getAdminTokenOwner(adminToken) : undefined });
+      }
     }
-    return reply.send({ name: 'Administrator', email: '', photo: '' });
+    const token = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1] || process.env.S3MINI_ADMIN_TOKEN;
+    return reply.send({ name: 'Administrator', email: '', photo: '', adminTokenOwner: token ? await s3.getAdminTokenOwner(token) : undefined });
   });
   fastify.get('/admin/login', async (request, reply) => {
     if (!oidcConfigured()) throw new S3Error('AccessDenied', 'OIDC is not configured.', 403);
