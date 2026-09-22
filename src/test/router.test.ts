@@ -449,8 +449,9 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.body).toContain('id="settings-admin-token"');
     expect(dashboard.body).toContain('sessionStorage');
     expect(dashboard.body).toContain('id="mobile-menu"');
+    expect(dashboard.body).toContain('id="sidebar-close"');
     expect(dashboard.body).toContain('/admin/profile');
-    expect(dashboard.body).toContain('id="profile-name"');
+    expect(dashboard.body).toContain('id="sidebar-profile-name"');
   });
 
   it('redirects dashboard access to OIDC when configured', async () => {

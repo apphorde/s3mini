@@ -22,6 +22,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 2; display: none; width: 256px; border-right: 1px solid #e2e8f0; background: white; }
     .sidebar.mobile-open { display: block; box-shadow: 12px 0 30px #0f172a1f; }
     .brand { display: flex; height: 64px; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid #e2e8f0; }
+    .sidebar-close { display: none; margin-left: auto; border: 0; background: transparent; color: #64748b; cursor: pointer; font-size: 20px; }
     .mark { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: #2563eb; color: white; font-weight: 700; }
     .brand strong { display: block; font-size: 14px; letter-spacing: -.02em; }
     .brand small { display: block; margin-top: 2px; color: #64748b; font-size: 11px; }
@@ -30,6 +31,10 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     .nav button, .footer button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: #64748b; cursor: pointer; text-align: left; font-size: 13px; }
     .nav button:hover, .nav button.active, .footer button:hover { background: #eff6ff; color: #1d4ed8; }
     .footer { position: absolute; right: 12px; bottom: 12px; left: 12px; }
+    .user-card { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; padding: 10px; border-radius: 8px; background: #f8fafc; }
+    .user-card strong, .user-card small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .user-card strong { color: #334155; font-size: 12px; }
+    .user-card small { max-width: 175px; margin-top: 2px; color: #64748b; font-size: 10px; }
     .health { margin: 0 0 10px; padding: 12px; border-radius: 8px; background: #f8fafc; color: #475569; font-size: 12px; }
     .dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #10b981; }
     .main { min-width: 0; }
@@ -96,13 +101,14 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     .empty { padding: 28px 18px; color: #94a3b8; text-align: center; }
     @media (min-width: 1024px) { .sidebar { display: block; } .menu { display: none; } .main { margin-left: 256px; } }
     @media (max-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid { grid-template-columns: 1fr; } }
-    @media (max-width: 560px) { .content { padding: 22px 14px 36px; } .heading { align-items: start; flex-direction: column; } .cards { grid-template-columns: 1fr 1fr; gap: 9px; } .card { padding: 13px; } .metric { font-size: 21px; } .topbar { padding: 0 14px; } .profile span { display: none; } }
+    @media (max-width: 1023px) { .sidebar-close { display: block; } }
+    @media (max-width: 560px) { .content { padding: 22px 14px 36px; } .heading { align-items: start; flex-direction: column; } .cards { grid-template-columns: 1fr 1fr; gap: 9px; } .card { padding: 13px; } .metric { font-size: 21px; } .topbar { padding: 0 14px; } }
   </style>
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><div class="mark">S</div><div><strong>S3MINI</strong><small>Object storage control plane</small></div></div>
+      <div class="brand"><div class="mark">S</div><div><strong>S3MINI</strong><small>Object storage control plane</small></div><button id="sidebar-close" class="sidebar-close" aria-label="Close navigation">×</button></div>
       <nav class="nav" aria-label="Primary navigation">
         <div class="nav-label">Workspace</div>
         <button class="active" data-view="overview">Dashboard</button>
@@ -110,10 +116,10 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
         <button data-view="accounts">Accounts</button>
         <button data-view="policies">Policies</button>
       </nav>
-      <div class="footer"><div class="health"><span class="dot"></span><strong>Local node</strong><br><span id="health-text">Checking status...</span></div><button data-view="settings">Settings</button></div>
+      <div class="footer"><div class="user-card"><div id="sidebar-avatar" class="avatar">S3</div><div><strong id="sidebar-profile-name">Administrator</strong><small id="sidebar-profile-email"></small></div></div><div class="health"><span class="dot"></span><strong>Local node</strong><br><span id="health-text">Checking status...</span></div><button data-view="settings">Settings</button></div>
     </aside>
     <section class="main">
-      <header class="topbar"><div class="workspace"><button id="mobile-menu" class="menu" aria-label="Open navigation">☰</button>Workspace <strong>S3MINI</strong></div><div class="profile"><div id="avatar" class="avatar">S3</div><span><strong id="profile-name">Control plane</strong><small id="profile-email"></small></span></div></header>
+      <header class="topbar"><div class="workspace"><button id="mobile-menu" class="menu" aria-label="Open navigation">☰</button>Workspace <strong>S3MINI</strong></div></header>
       <div class="content">
         <dashboard-status id="status" message=""></dashboard-status>
         <section class="view active" data-panel="overview">
@@ -159,7 +165,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
         if (responses[3].ok) state.events = await responses[3].json();
         if (!responses[0].ok) throw new Error('Unable to load buckets (' + responses[0].status + ').');
         const profileResponse = await request('/admin/profile');
-        if (profileResponse.ok) { const profile = await profileResponse.json(); const name = profile.name || profile.email || 'Administrator'; document.querySelector('#profile-name').textContent = name; document.querySelector('#profile-email').textContent = profile.email || ''; document.querySelector('#avatar').textContent = name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase(); document.querySelector('#token-owner').textContent = profile.adminTokenOwner?.email ? 'Associated with ' + profile.adminTokenOwner.email : ''; }
+        if (profileResponse.ok) { const profile = await profileResponse.json(); const name = profile.name || profile.email || 'Administrator'; document.querySelector('#sidebar-profile-name').textContent = name; document.querySelector('#sidebar-profile-email').textContent = profile.email || ''; document.querySelector('#sidebar-avatar').textContent = name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase(); document.querySelector('#token-owner').textContent = profile.adminTokenOwner?.email ? 'Associated with ' + profile.adminTokenOwner.email : ''; }
         document.querySelector('#health-text').textContent = state.peers.length && state.peers.some(peer => peer.status !== 'Healthy') ? 'Replication needs attention' : 'API responding normally';
         render(); status('');
         if (responses.slice(1).some(response => !response.ok)) status('Some control-plane panels are unavailable.');
@@ -170,6 +176,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     document.querySelector('#save-token').onclick = () => { const token = document.querySelector('#settings-admin-token').value.trim(); if (token) sessionStorage.setItem('s3mini_admin_token', token); else sessionStorage.removeItem('s3mini_admin_token'); load(); };
     const closeMobileMenu = () => document.querySelector('.sidebar').classList.remove('mobile-open');
     document.querySelector('#mobile-menu').onclick = () => document.querySelector('.sidebar').classList.toggle('mobile-open');
+    document.querySelector('#sidebar-close').onclick = closeMobileMenu;
     document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => { show(button.dataset.view); closeMobileMenu(); }));
     document.querySelector('#refresh').onclick = load;
     document.querySelector('#bucket-search').oninput = render;
