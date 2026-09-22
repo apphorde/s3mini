@@ -20,6 +20,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     body { margin: 0; }
     .shell { min-height: 100vh; background: #f8fafc; }
     .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 2; display: none; width: 256px; border-right: 1px solid #e2e8f0; background: white; }
+    .sidebar.mobile-open { display: block; box-shadow: 12px 0 30px #0f172a1f; }
     .brand { display: flex; height: 64px; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid #e2e8f0; }
     .mark { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: #2563eb; color: white; font-weight: 700; }
     .brand strong { display: block; font-size: 14px; letter-spacing: -.02em; }
@@ -33,6 +34,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     .dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #10b981; }
     .main { min-width: 0; }
     .topbar { display: flex; height: 64px; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #e2e8f0; background: white; }
+    .menu { display: inline-grid; width: 34px; height: 34px; margin-right: 8px; place-items: center; border: 1px solid #e2e8f0; border-radius: 7px; background: white; color: #334155; cursor: pointer; }
     .workspace { color: #64748b; font-size: 13px; }
     .profile { display: flex; align-items: center; gap: 9px; border-left: 1px solid #e2e8f0; padding-left: 12px; color: #334155; font-size: 12px; }
     .token { width: 150px; height: 30px; padding: 0 8px; border: 1px solid #e2e8f0; border-radius: 7px; outline: 0; font-size: 11px; }
@@ -92,7 +94,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     .view { display: none; }
     .view.active { display: block; }
     .empty { padding: 28px 18px; color: #94a3b8; text-align: center; }
-    @media (min-width: 1024px) { .sidebar { display: block; } .main { margin-left: 256px; } }
+    @media (min-width: 1024px) { .sidebar { display: block; } .menu { display: none; } .main { margin-left: 256px; } }
     @media (max-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid { grid-template-columns: 1fr; } }
     @media (max-width: 560px) { .content { padding: 22px 14px 36px; } .heading { align-items: start; flex-direction: column; } .cards { grid-template-columns: 1fr 1fr; gap: 9px; } .card { padding: 13px; } .metric { font-size: 21px; } .topbar { padding: 0 14px; } .profile span { display: none; } }
   </style>
@@ -111,7 +113,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
       <div class="footer"><div class="health"><span class="dot"></span><strong>Local node</strong><br><span id="health-text">Checking status...</span></div><button data-view="settings">Settings</button></div>
     </aside>
     <section class="main">
-      <header class="topbar"><div class="workspace">Workspace <strong>S3MINI</strong></div><div class="profile"><input id="admin-token" class="token" type="password" placeholder="Admin token" autocomplete="off"><button id="save-token" class="button">Use token</button><div class="avatar">S3</div><span>Control plane</span></div></header>
+      <header class="topbar"><div class="workspace"><button id="mobile-menu" class="menu" aria-label="Open navigation">☰</button>Workspace <strong>S3MINI</strong></div><div class="profile"><input id="admin-token" class="token" type="password" placeholder="Admin token" autocomplete="off"><button id="save-token" class="button">Use token</button><div id="avatar" class="avatar">S3</div><span><strong id="profile-name">Control plane</strong><small id="profile-email"></small></span></div></header>
       <div class="content">
         <dashboard-status id="status" message=""></dashboard-status>
         <section class="view active" data-panel="overview">
@@ -156,6 +158,8 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
         if (responses[2].ok) state.peers = await responses[2].json();
         if (responses[3].ok) state.events = await responses[3].json();
         if (!responses[0].ok) throw new Error('Unable to load buckets (' + responses[0].status + ').');
+        const profileResponse = await request('/admin/profile');
+        if (profileResponse.ok) { const profile = await profileResponse.json(); const name = profile.name || profile.email || 'Administrator'; document.querySelector('#profile-name').textContent = name; document.querySelector('#profile-email').textContent = profile.email || ''; document.querySelector('#avatar').textContent = name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase(); }
         document.querySelector('#health-text').textContent = state.peers.length && state.peers.some(peer => peer.status !== 'Healthy') ? 'Replication needs attention' : 'API responding normally';
         render(); status('');
         if (responses.slice(1).some(response => !response.ok)) status('Some control-plane panels are unavailable.');
@@ -164,7 +168,9 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     document.querySelector('#date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
     document.querySelector('#admin-token').value = sessionStorage.getItem('s3mini_admin_token') || '';
     document.querySelector('#save-token').onclick = () => { const token = document.querySelector('#admin-token').value.trim(); if (token) sessionStorage.setItem('s3mini_admin_token', token); else sessionStorage.removeItem('s3mini_admin_token'); load(); };
-    document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => show(button.dataset.view)));
+    const closeMobileMenu = () => document.querySelector('.sidebar').classList.remove('mobile-open');
+    document.querySelector('#mobile-menu').onclick = () => document.querySelector('.sidebar').classList.toggle('mobile-open');
+    document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => { show(button.dataset.view); closeMobileMenu(); }));
     document.querySelector('#refresh').onclick = load;
     document.querySelector('#bucket-search').oninput = render;
     document.querySelector('#bucket-form').onsubmit = async event => { event.preventDefault(); const response = await request('/admin/buckets', { method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({ name: document.querySelector('#bucket-name').value, locationConstraint: document.querySelector('#bucket-region').value || undefined }) }); if (!response.ok) return status('Unable to create bucket (' + response.status + ').'); event.target.reset(); await load(); show('buckets'); };

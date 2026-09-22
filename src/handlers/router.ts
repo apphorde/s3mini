@@ -163,11 +163,8 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
 
   async function isOidcAdmin(token: string): Promise<boolean> {
     try {
-      const audience = process.env.S3MINI_OIDC_AUDIENCE || oidcClientId()!;
-      await verifyOidcToken(token, oidcBaseUrl(), audience);
-      const response = await fetch(`${oidcBaseUrl()}/userinfo`, { headers: { authorization: `Bearer ${token}`, 'x-auth-audience': audience } });
-      if (!response.ok) return false;
-      const user = await response.json() as { email?: string };
+      const user = await getOidcProfile(token);
+      if (!user) return false;
       const allowed = (process.env.S3MINI_OIDC_ADMIN_EMAILS || '').split(',').map(email => email.trim()).filter(Boolean);
       return !allowed.length || (!!user.email && allowed.includes(user.email));
     } catch {
@@ -178,6 +175,14 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   fastify.get('/admin', async (request, reply) => {
     if (oidcConfigured() && !getCookie(request, 's3mini_oidc_token')) return reply.redirect('/admin/login');
     return reply.type('text/html').send(CONTROL_PLANE_HTML);
+  });
+  fastify.get('/admin/profile', { preHandler: requireAdmin }, async (request, reply) => {
+    const token = getCookie(request, 's3mini_oidc_token') || request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (token) {
+      const profile = await getOidcProfile(token);
+      if (profile) return reply.send(profile);
+    }
+    return reply.send({ name: 'Administrator', email: '', photo: '' });
   });
   fastify.get('/admin/login', async (request, reply) => {
     if (!oidcConfigured()) throw new S3Error('AccessDenied', 'OIDC is not configured.', 403);
@@ -214,6 +219,13 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     reply.header('Set-Cookie', 's3mini_oidc_token=; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=0');
     return reply.code(204).send();
   });
+
+  async function getOidcProfile(token: string): Promise<{ id?: string; name?: string; email?: string; photo?: string } | undefined> {
+    const audience = process.env.S3MINI_OIDC_AUDIENCE || oidcClientId()!;
+    await verifyOidcToken(token, oidcBaseUrl(), audience);
+    const response = await fetch(`${oidcBaseUrl()}/userinfo`, { headers: { authorization: `Bearer ${token}`, 'x-auth-audience': audience } });
+    return response.ok ? await response.json() as { id?: string; name?: string; email?: string; photo?: string } : undefined;
+  }
   fastify.get('/admin/replication/health', { preHandler: requireAdmin }, async (_request, reply) => reply.send(replication?.getPeerHealth() || []));
   fastify.get('/admin/replication/summary', { preHandler: requireAdmin }, async (_request, reply) => {
     const peers = (process.env.S3MINI_REPLICATION_PEERS || '').split(',').map(peer => peer.trim()).filter(Boolean);

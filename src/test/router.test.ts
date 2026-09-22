@@ -448,6 +448,9 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.body).toContain('credential-value secret');
     expect(dashboard.body).toContain('id="admin-token"');
     expect(dashboard.body).toContain('sessionStorage');
+    expect(dashboard.body).toContain('id="mobile-menu"');
+    expect(dashboard.body).toContain('/admin/profile');
+    expect(dashboard.body).toContain('id="profile-name"');
   });
 
   it('redirects dashboard access to OIDC when configured', async () => {
@@ -517,6 +520,9 @@ describe('S3 HTTP routes', () => {
       : Promise.resolve(new Response(JSON.stringify({ email: 'admin@example.com' }), { status: 200 }))));
     const response = await app.inject({ method: 'GET', url: '/admin/replication/events', headers: { cookie: `s3mini_oidc_token=${token}` } });
     expect(response.statusCode).toBe(200);
+    const profile = await app.inject({ method: 'GET', url: '/admin/profile', headers: { cookie: `s3mini_oidc_token=${token}` } });
+    expect(profile.statusCode).toBe(200);
+    expect(profile.json()).toMatchObject({ email: 'admin@example.com' });
     vi.unstubAllGlobals();
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
