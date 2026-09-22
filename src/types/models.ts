@@ -13,7 +13,7 @@ export const VALID_STORAGE_CLASSES: StorageClass[] = [
 ];
 
 export const VALID_LOCATION_CONSTRAINTS: string[] = [
-  'us-east-1', 'us-west-1', 'us-west-2', 'eu-west-1',
+  'local', 'us-east-1', 'us-west-1', 'us-west-2', 'eu-west-1',
   'eu-central-1', 'ap-southeast-1', 'ap-northeast-1', 'sa-east-1'
 ];
 

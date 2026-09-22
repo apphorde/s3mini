@@ -118,7 +118,7 @@ export class S3Mini {
 
     await this.run(`CREATE TABLE IF NOT EXISTS buckets (
       name TEXT PRIMARY KEY,
-      locationConstraint TEXT DEFAULT 'us-east-1',
+      locationConstraint TEXT DEFAULT 'local',
       creationDate INTEGER
     )`);
     await this.run(`CREATE TABLE IF NOT EXISTS objs (
@@ -319,7 +319,7 @@ export class S3Mini {
     if (row.deleteMarker || removeCurrentFile) await fs.rm(path.join(STORAGE_BASE, bucket, row.key), { force: true });
   }
 
-  async createBucket(name: string, locationConstraint: string = 'us-east-1'): Promise<void> {
+  async createBucket(name: string, locationConstraint: string = 'local'): Promise<void> {
     if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(name) || name.includes('..') || name.includes('.-') || name.includes('-.')) {
       throw new S3Error('InvalidBucketName', 'The bucket name is invalid.', 400, name);
     }

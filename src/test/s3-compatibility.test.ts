@@ -33,7 +33,7 @@ describe.skipIf(!targets.length)('S3-compatible provider interoperability', () =
     it(`${target.name} supports core CRUD, metadata, deletion, and multipart`, async () => {
       const client = new S3Client({
         endpoint: target.endpoint,
-        region: 'us-east-1',
+        region: 'local',
         forcePathStyle: true,
         credentials: { accessKeyId: target.accessKeyId, secretAccessKey: target.secretAccessKey },
       });

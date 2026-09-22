@@ -13,6 +13,9 @@ Build from source with `npm run build` and run the test suite with `npm test`.
 
 See the repository documentation for configuration, S3 compatibility, replication, and administration.
 
+New buckets default to the self-hosted `local` location. Explicit S3-compatible
+location values remain supported when a deployment needs a region label.
+
 ## Dashboard OIDC
 
 Set these environment variables to protect `/admin` with the OIDC provider at

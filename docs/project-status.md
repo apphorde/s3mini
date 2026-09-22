@@ -16,6 +16,7 @@ remain secondary until the core S3 path is complete and well tested.
 ## Current Progress
 
 - Core bucket and object CRUD is implemented.
+- New buckets default to the self-hosted `local` location; explicit region labels remain supported for S3 client compatibility.
 - ListObjectsV2 supports prefixes, delimiters, common prefixes, pagination, and continuation tokens.
 - Legacy ListObjects supports marker pagination for clients that do not use ListObjectsV2.
 - Multipart upload lifecycle and UploadPartCopy are implemented.

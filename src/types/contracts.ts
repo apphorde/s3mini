@@ -10,6 +10,7 @@ export type StorageClass =
   | 'DEEP_ARCHIVE'
   | 'GLACIER_IR';
 export type LocationConstraint =
+  | 'local'
   | 'us-east-1'
   | 'us-west-1'
   | 'us-west-2'

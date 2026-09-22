@@ -46,7 +46,7 @@ describe('AWS SDK v3 compatibility', () => {
     endpoint = await app.listen({ host: '127.0.0.1', port: 0 });
     client = new S3Client({
       endpoint,
-      region: 'us-east-1',
+      region: 'local',
       forcePathStyle: true,
       credentials: { accessKeyId: 's3mini', secretAccessKey: 's3mini-secret' },
     });
@@ -108,7 +108,7 @@ describe('AWS SDK v3 compatibility', () => {
     const credentials = await s3.createAccessKey('sdk-persisted');
     delete process.env.S3MINI_ACCESS_KEY;
     delete process.env.S3MINI_SECRET_KEY;
-    const persistedClient = new S3Client({ endpoint, region: 'us-east-1', forcePathStyle: true, credentials });
+    const persistedClient = new S3Client({ endpoint, region: 'local', forcePathStyle: true, credentials });
     await persistedClient.send(new CreateBucketCommand({ Bucket: bucket }));
     await persistedClient.send(new PutObjectCommand({ Bucket: bucket, Key: 'persisted.txt', Body: 'persisted' }));
     persistedClient.destroy();

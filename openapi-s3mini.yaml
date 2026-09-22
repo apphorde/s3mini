@@ -428,7 +428,7 @@ components:
     LocationConstraint:
       name: locationConstraint
       in: query
-      schema: { type: string, default: us-east-1 }
+      schema: { type: string, default: local }
     StorageClass:
       name: x-amz-storage-class
       in: header

@@ -35,7 +35,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
     const credentials = await resolveCredentials(s3, request, hasPresign);
     const accessKeyId = credentials?.accessKeyId;
     const secretAccessKey = credentials?.secretAccessKey;
-    const signingCredentials = credentials ? { ...credentials, region: process.env.S3MINI_REGION || 'us-east-1' } : undefined;
+    const signingCredentials = credentials ? { ...credentials, region: process.env.S3MINI_REGION || 'local' } : undefined;
     if (hasPresign && (!signingCredentials || !verifyPresignedSigV4({ method: request.method, url: request.raw.url || '/', headers: request.headers, body: Buffer.isBuffer(request.body) ? request.body : undefined }, signingCredentials))) {
       throw new S3Error('SignatureDoesNotMatch', 'The presigned URL signature does not match.', 403);
     }

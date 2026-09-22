@@ -12,7 +12,7 @@ duplicating AWS wire types.
 ```ts
 const client = new S3Client({
   endpoint: 'http://localhost:9000',
-  region: 'us-east-1',
+  region: 'local',
   forcePathStyle: true,
   credentials: {
     accessKeyId: 's3mini',
