@@ -444,6 +444,8 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.body).toContain('data-panel="overview"');
     expect(dashboard.body).toContain('Storage consumption');
     expect(dashboard.body).toContain('data-view="buckets"');
+    expect(dashboard.body).toContain('data-copy="secret"');
+    expect(dashboard.body).toContain('credential-value secret');
   });
 
   it('redirects dashboard access to OIDC when configured', async () => {
