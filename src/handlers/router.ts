@@ -178,14 +178,17 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       const user = await getOidcProfile(token);
       if (!user) return false;
       const allowed = (process.env.S3MINI_OIDC_ADMIN_EMAILS || '').split(',').map(email => email.trim()).filter(Boolean);
-      return !allowed.length || (!!user.email && allowed.includes(user.email));
+      return allowed.length > 0 && !!user.email && allowed.includes(user.email);
     } catch {
       return false;
     }
   }
 
   fastify.get('/admin', async (request, reply) => {
-    if (oidcConfigured() && !getCookie(request, 's3mini_oidc_token')) return reply.redirect('/admin/login');
+    if (oidcConfigured()) {
+      const token = getCookie(request, 's3mini_oidc_token');
+      if (!token || !(await isOidcAdmin(token))) return reply.redirect('/admin/login');
+    }
     return reply.type('text/html').send(CONTROL_PLANE_HTML);
   });
   fastify.get('/admin/profile', { preHandler: requireAdmin }, async (request, reply) => {

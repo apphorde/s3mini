@@ -509,6 +509,7 @@ describe('S3 HTTP routes', () => {
   it('authorizes OIDC dashboard API requests with the authenticated user', async () => {
     process.env.S3MINI_OIDC_CLIENT_ID = 's3mini-dashboard';
     process.env.S3MINI_OIDC_CLIENT_SECRET = 'secret';
+    process.env.S3MINI_OIDC_ADMIN_EMAILS = 'admin@example.com';
     const keys = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     const publicJwk = keys.publicKey.export({ format: 'jwk' }) as JsonWebKey;
     const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'test-key' })).toString('base64url');
@@ -527,6 +528,7 @@ describe('S3 HTTP routes', () => {
     vi.unstubAllGlobals();
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+    delete process.env.S3MINI_OIDC_ADMIN_EMAILS;
   });
 
   it('authorizes provider API tokens by S3 scope', async () => {

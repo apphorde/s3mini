@@ -39,9 +39,10 @@ provider origin or the `/api` documentation URL; both are normalized to the
 OIDC endpoint origin.
 
 Register the exact `/auth/callback` redirect URI with the OIDC client. `S3MINI_OIDC_AUTH_URL`
-can override the provider base URL. The admin email allowlist is optional; when
-omitted, any authenticated provider user is accepted. Client secrets and
-allowlists must remain in environment variables or local untracked config.
+can override the provider base URL. An explicit admin email allowlist is
+required for OIDC browser administration; when it is omitted, authenticated
+provider users are not admins. Client secrets and allowlists must remain in
+environment variables or local untracked config.
 
 S3MINI follows the provider's Node client flow: authorization-code PKCE uses
 `/authorize` and `/token`, access tokens are verified as RS256 JWTs using

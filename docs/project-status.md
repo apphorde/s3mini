@@ -43,7 +43,7 @@ remain secondary until the core S3 path is complete and well tested.
 - New replication events persist a SHA-256 body digest, include it in delivery headers, validate it at the receiving node, and compare it during inventory repair; legacy events retain ETag fallback behavior.
 - The Li3 admin dashboard displays bucket, access-key, peer-health, replication-event, and dead-letter state, with bucket creation, policy navigation, key issuing, and retry-related API views.
 - The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
-- Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is verified with the provider's RS256 JWKS, checked against `/userinfo` with `X-Auth-Audience`, and optionally restricted by email via `S3MINI_OIDC_ADMIN_EMAILS`.
+- Dashboard access can use PKCE OIDC login through `auth.api.apphor.de`; the resulting HttpOnly session token is verified with the provider's RS256 JWKS, checked against `/userinfo` with `X-Auth-Audience`, and requires an email listed in `S3MINI_OIDC_ADMIN_EMAILS`.
 - Provider-issued opaque API tokens are accepted through bearer authentication; `s3:read`, `s3:write`, `s3:admin`, and `s3:*` scopes are enforced through the provider's `/oauth/introspect` endpoint.
 - OIDC setup is documented in `README.md`: register `/auth/callback`, configure client credentials and audience, and use `S3MINI_OIDC_ADMIN_EMAILS` to restrict administrators.
 - `.env.example` and the production container default wire the OIDC provider URL into the application without including credentials.
