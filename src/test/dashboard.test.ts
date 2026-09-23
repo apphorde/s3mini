@@ -29,6 +29,7 @@ describe("control-plane dashboard smoke test", () => {
     );
     expect(response.body).toContain('template for="[bucket] of buckets"');
     expect(response.body).toContain("bucket-policy-dialog");
+    expect(response.body).toContain("Policy syntax help");
     expect(response.body).toContain('on-click="openPolicy(bucket.name)"');
     expect(response.body).toContain('on-click="setMenuOpen(true)"');
     expect(response.body).toContain('href="/admin/tailwind.css"');

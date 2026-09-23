@@ -29,7 +29,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
       const submit = event => { event.preventDefault(); save({ bucket: bucket.value, value: value.value }); };
       return { open, bucket, value, update, submit, close, save, noop }; }
     </script>
-    <template if="open"><div class="fixed inset-0 z-30 grid place-items-center bg-slate-950/30 p-4" on-click="close()"><div class="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-2xl" on-click.stop="noop"><div class="flex items-center justify-between border-b border-slate-200 p-5"><div><h2 class="text-sm font-semibold">Bucket policy</h2><p class="mt-1 text-xs text-slate-500">{{ bucket }}</p></div><button class="text-xl text-slate-400" aria-label="Close policy editor" on-click="close()">x</button></div><form class="p-5" on-submit="submit"><textarea class="min-h-72 w-full rounded-lg border border-slate-200 p-3 font-mono text-xs" bind-value="value" on-input="update($event.target.value)"></textarea><div class="mt-4 flex justify-end gap-2"><button type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-sm" on-click="close()">Cancel</button><button class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white">Save</button></div></form></div></div></template>
+    <template if="open"><div class="fixed inset-0 z-30 grid place-items-center bg-slate-950/30 p-4" on-click="close()"><div class="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-2xl" on-click.stop="noop"><div class="flex items-center justify-between border-b border-slate-200 p-5"><div><h2 class="text-sm font-semibold">Bucket policy</h2><p class="mt-1 text-xs text-slate-500">{{ bucket }}</p></div><button class="text-xl text-slate-400" aria-label="Close policy editor" on-click="close()">x</button></div><form class="p-5" on-submit="submit"><textarea class="min-h-72 w-full rounded-lg border border-slate-200 p-3 font-mono text-xs" bind-value="value" on-input="update($event.target.value)"></textarea><details class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"><summary class="cursor-pointer font-medium text-slate-700">Policy syntax help</summary><div class="mt-3 space-y-2"><p>Use JSON statements with <code>effect</code>, <code>principal</code>, <code>action</code>, and <code>resource</code>. Conditions are optional.</p><pre class="overflow-x-auto rounded bg-white p-3 font-mono text-[11px]">{"statements":[{"effect":"Allow","principal":"*","action":"s3:GetObject","resource":"arn:aws:s3:::bucket/*"}]}</pre><p>Use <code>Allow</code> or <code>Deny</code>; wildcard actions and resources are supported.</p></div></details><div class="mt-4 flex justify-end gap-2"><button type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-sm" on-click="close()">Cancel</button><button class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white">Save</button></div></form></div></div></template>
   </template>
   <template component="control-plane-app">
     <script setup>
@@ -169,6 +169,18 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace(
     /<button class="text-red-600" on-click="deleteBucket\(bucket.name\)">Delete<\/button>/,
     '<button class="mr-3 text-blue-600" on-click="openPolicy(bucket.name)">Policy</button><button class="text-red-600" on-click="deleteBucket(bucket.name)">Delete</button>',
+  )
+  .replace(
+    '<button class="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white" on-click="setView(\'buckets\')">+ New bucket</button>',
+    '',
+  )
+  .replace(
+    '<div class="border-b border-slate-200 p-5"><h2 class="text-sm font-semibold">Buckets</h2>',
+    '<div class="flex items-center justify-between border-b border-slate-200 p-5"><div><h2 class="text-sm font-semibold">Buckets</h2>',
+  )
+  .replace(
+    '<p class="mt-1 text-xs text-slate-500">Storage containers managed by this node</p></div><div',
+    '<p class="mt-1 text-xs text-slate-500">Storage containers managed by this node</p></div><button class="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white" on-click="setView(\'buckets\')">+ New bucket</button></div><div',
   )
   .replace(
     /<\/main>/,
