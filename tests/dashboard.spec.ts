@@ -4,10 +4,14 @@ test("dashboard boots, renders, and has no browser errors", async ({
   page,
 }) => {
   const errors: string[] = [];
+  const requests: string[] = [];
+  const failedResponses: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", request => requests.push(request.method() + " " + request.url()));
+  page.on("response", response => { if (response.status() >= 500) failedResponses.push(response.status() + " " + response.url()); });
 
   await page.goto("/admin", { waitUntil: "networkidle" });
   await expect(page.locator("control-plane-app")).toBeAttached();
@@ -18,6 +22,10 @@ test("dashboard boots, renders, and has no browser errors", async ({
   });
   await page.getByRole("button", { name: "Buckets" }).click();
   await expect(page.getByRole("heading", { name: "Buckets" })).toBeVisible();
+  const bucketName = `ui-smoke-${Date.now()}`;
+  await page.getByPlaceholder("Bucket name").fill(bucketName);
+  await page.getByRole("button", { name: "Create bucket" }).click();
+  await expect(page.getByText(bucketName), requests.join("\n")).toBeVisible();
   await page.screenshot({ path: "test-results/dashboard.png", fullPage: true });
-  expect(errors).toEqual([]);
+  expect([...errors, ...failedResponses]).toEqual([]);
 });

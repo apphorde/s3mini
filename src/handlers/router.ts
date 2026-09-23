@@ -388,6 +388,7 @@ export async function registerRoutes(
   }
 
   function oidcProvider(): string | undefined {
+    if (process.env.S3MINI_TEST_DISABLE_OIDC === "1") return undefined;
     return process.env.AUTH_PROVIDER || process.env.S3MINI_OIDC_AUTH_URL;
   }
 
@@ -464,7 +465,7 @@ export async function registerRoutes(
             process.env.S3MINI_ADMIN_TOKEN;
           return reply.send({
             ...profile,
-            meUrl: `${oidcBaseUrl()}/me`,
+            meUrl: oidcProvider() ? `${oidcBaseUrl()}/me` : "",
             adminTokenOwner: adminToken
               ? await s3.getAdminTokenOwner(adminToken)
               : undefined,
@@ -478,7 +479,7 @@ export async function registerRoutes(
         name: "Administrator",
         email: "",
         photo: "",
-        meUrl: `${oidcBaseUrl()}/me`,
+        meUrl: oidcProvider() ? `${oidcBaseUrl()}/me` : "",
         adminTokenOwner: token ? await s3.getAdminTokenOwner(token) : undefined,
       });
     },
