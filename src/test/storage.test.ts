@@ -71,7 +71,7 @@ describe("S3Mini", () => {
       code: "InvalidBucketName",
     });
     await expect(
-      s3.createBucket("valid-bucket", "moon-1"),
+      s3.createBucket("valid-bucket", "Moon_1"),
     ).rejects.toMatchObject({ code: "InvalidLocationConstraint" });
     await s3.createBucket(bucket);
     await expect(
@@ -84,6 +84,11 @@ describe("S3Mini", () => {
     await expect(s3.createBucket(bucket)).rejects.toMatchObject({
       code: "BucketAlreadyExists",
     });
+  });
+
+  it("accepts custom self-hosted location labels", async () => {
+    await s3.createBucket(bucket, "ams");
+    expect(await s3.getBucketLocation(bucket)).toBe("ams");
   });
 
   it("stores, reads, lists, and deletes an object", async () => {

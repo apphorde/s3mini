@@ -15,8 +15,10 @@ token: `npm run test:ui`. It starts an isolated local server automatically.
 
 See the repository documentation for configuration, S3 compatibility, replication, and administration.
 
-New buckets default to the self-hosted `local` location. Explicit S3-compatible
-location values remain supported when a deployment needs a region label.
+New buckets default to the self-hosted `local` location. AWS-compatible and
+custom self-hosted labels such as `ams` and `ind` are accepted. Location is the
+bucket's logical S3 region, not a replica machine name; use `S3MINI_NODE_ID` to
+identify machines.
 
 ## Single-Node Setup
 
@@ -108,7 +110,9 @@ inventory repair, leases, and dead letters are visible in the dashboard.
 
 The current dashboard is node-local. It does not aggregate bucket contents or
 capacity across replicas. Quorum acknowledgement, conflict resolution, and
-failover are not yet enabled.
+failover are not yet enabled. A bucket replicated between nodes should use the
+same logical location label on each node; the label does not need to equal the
+node ID.
 
 ## Dashboard
 

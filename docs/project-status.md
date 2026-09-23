@@ -16,7 +16,7 @@ remain secondary until the core S3 path is complete and well tested.
 ## Current Progress
 
 - Core bucket and object CRUD is implemented.
-- New buckets default to the self-hosted `local` location; explicit region labels remain supported for S3 client compatibility.
+- New buckets default to the self-hosted `local` location; AWS-compatible and custom self-hosted labels such as `ams` and `ind` are supported. Location is a bucket region label, not a node identity.
 - ListObjectsV2 supports prefixes, delimiters, common prefixes, pagination, and continuation tokens.
 - Legacy ListObjects supports marker pagination for clients that do not use ListObjectsV2.
 - Multipart upload lifecycle and UploadPartCopy are implemented.
@@ -58,7 +58,7 @@ remain secondary until the core S3 path is complete and well tested.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
 - HTTP coverage includes bucket configuration, multipart listing/abort, object copy/batch deletion, authentication-required mutations, and the OIDC callback; opt-in MinIO and Backblaze B2 coverage is available through `src/test/s3-compatibility.test.ts`.
-- The current compatibility checkpoint is tracked in git history with 79 passing tests.
+- The current compatibility checkpoint is tracked in git history with 80 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification

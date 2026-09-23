@@ -448,7 +448,10 @@ export class S3Mini {
         name,
       );
     }
-    if (!VALID_LOCATION_CONSTRAINTS.includes(locationConstraint)) {
+    if (
+      !VALID_LOCATION_CONSTRAINTS.includes(locationConstraint) &&
+      !/^[a-z][a-z0-9-]{1,31}$/.test(locationConstraint)
+    ) {
       throw new S3Error(
         "InvalidLocationConstraint",
         "The location constraint is invalid.",
