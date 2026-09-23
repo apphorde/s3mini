@@ -1,20 +1,32 @@
 export type StorageClass =
-  | 'STANDARD'
-  | 'STANDARD_IA'
-  | 'ONEZONE_IA'
-  | 'INTELLIGENT_TIERING'
-  | 'GLACIER'
-  | 'DEEP_ARCHIVE'
-  | 'GLACIER_IR';
+  | "STANDARD"
+  | "STANDARD_IA"
+  | "ONEZONE_IA"
+  | "INTELLIGENT_TIERING"
+  | "GLACIER"
+  | "DEEP_ARCHIVE"
+  | "GLACIER_IR";
 
 export const VALID_STORAGE_CLASSES: StorageClass[] = [
-  'STANDARD', 'STANDARD_IA', 'ONEZONE_IA', 'INTELLIGENT_TIERING',
-  'GLACIER', 'DEEP_ARCHIVE', 'GLACIER_IR',
+  "STANDARD",
+  "STANDARD_IA",
+  "ONEZONE_IA",
+  "INTELLIGENT_TIERING",
+  "GLACIER",
+  "DEEP_ARCHIVE",
+  "GLACIER_IR",
 ];
 
 export const VALID_LOCATION_CONSTRAINTS: string[] = [
-  'local', 'us-east-1', 'us-west-1', 'us-west-2', 'eu-west-1',
-  'eu-central-1', 'ap-southeast-1', 'ap-northeast-1', 'sa-east-1'
+  "local",
+  "us-east-1",
+  "us-west-1",
+  "us-west-2",
+  "eu-west-1",
+  "eu-central-1",
+  "ap-southeast-1",
+  "ap-northeast-1",
+  "sa-east-1",
 ];
 
 export interface Bucket {
@@ -40,9 +52,9 @@ export interface ObjectMetadata {
   ownerId: string;
   ownerDisplayName: string;
   userMetadata: Record<string, string>;
-  serverSideEncryption?: 'AES256' | 'aws:kms';
+  serverSideEncryption?: "AES256" | "aws:kms";
   sseKmsKeyId?: string;
-  objectLockMode?: 'GOVERNANCE' | 'COMPLIANCE';
+  objectLockMode?: "GOVERNANCE" | "COMPLIANCE";
   objectLockRetainUntilDate?: Date;
   objectLockLegalHold?: boolean;
 }
@@ -60,7 +72,7 @@ export interface MultipartUpload {
   initiator: string;
   initiatorDisplayName: string;
   storageClass?: StorageClass;
-  serverSideEncryption?: 'AES256' | 'aws:kms';
+  serverSideEncryption?: "AES256" | "aws:kms";
   initiated: Date;
   parts: Map<number, UploadedPart>;
 }
@@ -91,12 +103,17 @@ export class S3Error extends Error {
     public keyName?: string,
   ) {
     super(message);
-    this.name = 'S3Error';
+    this.name = "S3Error";
   }
 
   toResponseXml(requestId: string): string {
-    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<Error>\n  <Code>${esc(this.code)}</Code>\n  <Message>${esc(this.message)}</Message>\n${this.bucketName ? `  <BucketName>${esc(this.bucketName)}</BucketName>\n` : ''}${this.keyName ? `  <KeyName>${esc(this.keyName)}</KeyName>\n` : ''}  <RequestId>${esc(requestId)}</RequestId>\n</Error>`;
+    const esc = (t: string) =>
+      t
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<Error>\n  <Code>${esc(this.code)}</Code>\n  <Message>${esc(this.message)}</Message>\n${this.bucketName ? `  <BucketName>${esc(this.bucketName)}</BucketName>\n` : ""}${this.keyName ? `  <KeyName>${esc(this.keyName)}</KeyName>\n` : ""}  <RequestId>${esc(requestId)}</RequestId>\n</Error>`;
   }
 }
 
@@ -127,7 +144,7 @@ export interface ListObjectsV2Response {
 }
 
 export interface VersioningConfiguration {
-  Status: 'Enabled' | 'Suspended' | null;
+  Status: "Enabled" | "Suspended" | null;
 }
 
 export interface CreateObjectParams {
@@ -149,16 +166,18 @@ export interface CopyResult {
 }
 
 export function generateETag(body: Buffer): string {
-  return '"' + crypto.createHash('md5').update(body).digest('hex') + '"';
+  return '"' + crypto.createHash("md5").update(body).digest("hex") + '"';
 }
 
 export function generateVersionId(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let r = '';
-  for (let i = 0; i < 32; i++) r += chars[Math.floor(Math.random() * chars.length)];
-  return r + '+';
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let r = "";
+  for (let i = 0; i < 32; i++)
+    r += chars[Math.floor(Math.random() * chars.length)];
+  return r + "+";
 }
 
-export const DEFAULT_OWNER_ID = '000000000000000000000000';
+export const DEFAULT_OWNER_ID = "000000000000000000000000";
 export const COPY_SOURCE_MAX = 5 * 1024 * 1024;
-import crypto from 'node:crypto';
+import crypto from "node:crypto";

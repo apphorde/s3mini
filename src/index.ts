@@ -1,11 +1,11 @@
-import Fastify from 'fastify';
-import { S3Mini } from './storage/s3mini.js';
-import { registerRoutes } from './handlers/router.js';
-import { ReplicationWorker } from './replication/worker.js';
+import Fastify from "fastify";
+import { S3Mini } from "./storage/s3mini.js";
+import { registerRoutes } from "./handlers/router.js";
+import { ReplicationWorker } from "./replication/worker.js";
 
-const fastify = Fastify({ 
+const fastify = Fastify({
   logger: true,
-  bodyLimit: 100 * 1024 * 1024 
+  bodyLimit: 100 * 1024 * 1024,
 });
 
 async function bootstrap() {
@@ -15,14 +15,14 @@ async function bootstrap() {
 
   await registerRoutes(fastify, s3, replication);
   replication.start();
-  fastify.addHook('onClose', async () => {
+  fastify.addHook("onClose", async () => {
     replication.stop();
     await s3.close();
   });
 
   try {
-    await fastify.listen({ port: 9000, host: '0.0.0.0' });
-    console.log('S3MINI server listening on port 9000');
+    await fastify.listen({ port: 9000, host: "0.0.0.0" });
+    console.log("S3MINI server listening on port 9000");
   } catch (err) {
     console.error(err);
     process.exit(1);

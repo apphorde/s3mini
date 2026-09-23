@@ -1,11 +1,17 @@
-import fs from 'node:fs/promises';
-import crypto from 'node:crypto';
-import { REPLICATION_MAX_ATTEMPTS } from '../storage/s3mini.js';
-import type { PeerHealthState, ReplicationEvent, ReplicationInventoryItem, ReplicationPeerEvent, S3Mini } from '../storage/s3mini.js';
+import fs from "node:fs/promises";
+import crypto from "node:crypto";
+import { REPLICATION_MAX_ATTEMPTS } from "../storage/s3mini.js";
+import type {
+  PeerHealthState,
+  ReplicationEvent,
+  ReplicationInventoryItem,
+  ReplicationPeerEvent,
+  S3Mini,
+} from "../storage/s3mini.js";
 
 export interface PeerHealth {
   peer: string;
-  status: 'Healthy' | 'Unhealthy' | 'Unknown';
+  status: "Healthy" | "Unhealthy" | "Unknown";
   consecutiveFailures: number;
   lastSuccessAt?: Date;
   lastFailureAt?: Date;
@@ -17,18 +23,33 @@ export class ReplicationWorker {
   private readonly peers: string[];
   private readonly token?: string;
   private readonly health = new Map<string, PeerHealth>();
-  private readonly leaseOwner = `${process.env.S3MINI_NODE_ID || 'node'}:${process.pid}`;
+  private readonly leaseOwner = `${process.env.S3MINI_NODE_ID || "node"}:${process.pid}`;
 
-  constructor(private readonly s3: S3Mini, options: { peers?: string[]; token?: string } = {}) {
-    this.peers = options.peers || (process.env.S3MINI_REPLICATION_PEERS || '').split(',').map(peer => peer.trim()).filter(Boolean);
+  constructor(
+    private readonly s3: S3Mini,
+    options: { peers?: string[]; token?: string } = {},
+  ) {
+    this.peers =
+      options.peers ||
+      (process.env.S3MINI_REPLICATION_PEERS || "")
+        .split(",")
+        .map((peer) => peer.trim())
+        .filter(Boolean);
     this.token = options.token || process.env.S3MINI_REPLICATION_TOKEN;
-    for (const peer of this.peers) this.health.set(peer, { peer, status: 'Unknown', consecutiveFailures: 0 });
+    for (const peer of this.peers)
+      this.health.set(peer, {
+        peer,
+        status: "Unknown",
+        consecutiveFailures: 0,
+      });
   }
 
   start(intervalMs = 1000): void {
     if (this.timer || !this.peers.length || !this.token) return;
     void this.loadPersistedHealth();
-    this.timer = setInterval(() => { void this.drainOnce(); }, intervalMs);
+    this.timer = setInterval(() => {
+      void this.drainOnce();
+    }, intervalMs);
     this.timer.unref();
   }
 
@@ -38,7 +59,7 @@ export class ReplicationWorker {
   }
 
   getPeerHealth(): PeerHealth[] {
-    return [...this.health.values()].map(item => ({ ...item }));
+    return [...this.health.values()].map((item) => ({ ...item }));
   }
 
   private async loadPersistedHealth(): Promise<void> {
@@ -52,7 +73,11 @@ export class ReplicationWorker {
     this.running = true;
     try {
       await this.s3.ensureReplicationPeerEvents(this.peers);
-      const deliveries = await this.s3.claimReplicationPeerEvents(this.leaseOwner, this.peers, 100);
+      const deliveries = await this.s3.claimReplicationPeerEvents(
+        this.leaseOwner,
+        this.peers,
+        100,
+      );
       for (const delivery of deliveries) await this.deliverToPeer(delivery);
       await this.repairMissingEvents(await this.s3.listReplicationEvents(1000));
     } finally {
@@ -63,18 +88,35 @@ export class ReplicationWorker {
   private async repairMissingEvents(events: ReplicationEvent[]): Promise<void> {
     for (const peer of this.peers) {
       try {
-        const response = await fetch(`${peer.replace(/\/$/, '')}/internal/replication/inventory`, { headers: { 'x-s3mini-replication-token': this.token! } });
+        const response = await fetch(
+          `${peer.replace(/\/$/, "")}/internal/replication/inventory`,
+          { headers: { "x-s3mini-replication-token": this.token! } },
+        );
         if (!response.ok) {
           this.markPeerFailure(peer);
           continue;
         }
         this.markPeerSuccess(peer);
-        const inventory = await response.json() as ReplicationInventoryItem[];
-        const missing = events.filter(event => !inventory.some(item =>
-          item.bucket === event.bucket && item.key === event.key && item.versionId === event.versionId &&
-           item.deleteMarker === event.deleteMarker && (event.operation === 'DeleteObject' || (event.sha256 ? item.sha256 === event.sha256 : item.etag === event.etag))
-        ));
-        for (const event of missing) await this.deliverToPeer({ event, peer, status: 'Pending', attempts: event.attempts }, false);
+        const inventory = (await response.json()) as ReplicationInventoryItem[];
+        const missing = events.filter(
+          (event) =>
+            !inventory.some(
+              (item) =>
+                item.bucket === event.bucket &&
+                item.key === event.key &&
+                item.versionId === event.versionId &&
+                item.deleteMarker === event.deleteMarker &&
+                (event.operation === "DeleteObject" ||
+                  (event.sha256
+                    ? item.sha256 === event.sha256
+                    : item.etag === event.etag)),
+            ),
+        );
+        for (const event of missing)
+          await this.deliverToPeer(
+            { event, peer, status: "Pending", attempts: event.attempts },
+            false,
+          );
       } catch {
         // The regular delivery retry path records failures; inventory is best effort.
         this.markPeerFailure(peer);
@@ -82,46 +124,91 @@ export class ReplicationWorker {
     }
   }
 
-  private async deliverToPeer(delivery: ReplicationPeerEvent, updateStatus = true): Promise<void> {
+  private async deliverToPeer(
+    delivery: ReplicationPeerEvent,
+    updateStatus = true,
+  ): Promise<void> {
     const { event, peer } = delivery;
     const attempts = delivery.attempts + 1;
     try {
-      const body = event.operation === 'PutObject' ? await fs.readFile(event.payloadPath) : undefined;
-      const response = await fetch(`${peer.replace(/\/$/, '')}/internal/replication`, {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/octet-stream',
-          'x-s3mini-replication-token': this.token!,
-          'x-s3mini-source-node': event.sourceNodeId,
-          'x-s3mini-bucket': event.bucket,
-          'x-s3mini-key': event.key,
-          'x-s3mini-version-id': event.versionId,
-          'x-s3mini-operation': event.operation,
-          'x-s3mini-delete-marker': String(event.deleteMarker),
-          'x-s3mini-etag': event.etag,
-          ...(event.operation === 'PutObject' ? { 'x-s3mini-sha256': event.sha256 || crypto.createHash('sha256').update(body!).digest('hex') } : {}),
-          'x-s3mini-last-modified': String(event.createdAt.getTime()),
+      const body =
+        event.operation === "PutObject"
+          ? await fs.readFile(event.payloadPath)
+          : undefined;
+      const response = await fetch(
+        `${peer.replace(/\/$/, "")}/internal/replication`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/octet-stream",
+            "x-s3mini-replication-token": this.token!,
+            "x-s3mini-source-node": event.sourceNodeId,
+            "x-s3mini-bucket": event.bucket,
+            "x-s3mini-key": event.key,
+            "x-s3mini-version-id": event.versionId,
+            "x-s3mini-operation": event.operation,
+            "x-s3mini-delete-marker": String(event.deleteMarker),
+            "x-s3mini-etag": event.etag,
+            ...(event.operation === "PutObject"
+              ? {
+                  "x-s3mini-sha256":
+                    event.sha256 ||
+                    crypto.createHash("sha256").update(body!).digest("hex"),
+                }
+              : {}),
+            "x-s3mini-last-modified": String(event.createdAt.getTime()),
+          },
+          body,
         },
-        body,
-      });
-      if (!response.ok) throw new Error(`Replication peer ${peer} returned HTTP ${response.status}.`);
+      );
+      if (!response.ok)
+        throw new Error(
+          `Replication peer ${peer} returned HTTP ${response.status}.`,
+        );
       this.markPeerSuccess(peer);
-      if (updateStatus) await this.s3.updateReplicationPeerEvent(event.id, peer, 'Delivered', attempts);
+      if (updateStatus)
+        await this.s3.updateReplicationPeerEvent(
+          event.id,
+          peer,
+          "Delivered",
+          attempts,
+        );
     } catch {
       const delay = Math.min(300_000, 1_000 * 2 ** Math.min(attempts, 8));
-      if (updateStatus) await this.s3.updateReplicationPeerEvent(event.id, peer, attempts >= REPLICATION_MAX_ATTEMPTS ? 'DeadLetter' : 'Failed', attempts, attempts >= REPLICATION_MAX_ATTEMPTS ? undefined : new Date(Date.now() + delay));
+      if (updateStatus)
+        await this.s3.updateReplicationPeerEvent(
+          event.id,
+          peer,
+          attempts >= REPLICATION_MAX_ATTEMPTS ? "DeadLetter" : "Failed",
+          attempts,
+          attempts >= REPLICATION_MAX_ATTEMPTS
+            ? undefined
+            : new Date(Date.now() + delay),
+        );
     }
   }
 
   private markPeerSuccess(peer: string): void {
-    const state = { ...this.health.get(peer), peer, status: 'Healthy' as const, consecutiveFailures: 0, lastSuccessAt: new Date() };
+    const state = {
+      ...this.health.get(peer),
+      peer,
+      status: "Healthy" as const,
+      consecutiveFailures: 0,
+      lastSuccessAt: new Date(),
+    };
     this.health.set(peer, state);
     void this.s3.savePeerHealth(state);
   }
 
   private markPeerFailure(peer: string): void {
     const current = this.health.get(peer);
-    const state = { ...current, peer, status: 'Unhealthy' as const, consecutiveFailures: (current?.consecutiveFailures || 0) + 1, lastFailureAt: new Date() };
+    const state = {
+      ...current,
+      peer,
+      status: "Unhealthy" as const,
+      consecutiveFailures: (current?.consecutiveFailures || 0) + 1,
+      lastFailureAt: new Date(),
+    };
     this.health.set(peer, state);
     void this.s3.savePeerHealth(state);
   }

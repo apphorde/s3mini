@@ -2,34 +2,35 @@
 // no runtime values, classes, or implementation helpers.
 
 export type StorageClass =
-  | 'STANDARD'
-  | 'STANDARD_IA'
-  | 'ONEZONE_IA'
-  | 'INTELLIGENT_TIERING'
-  | 'GLACIER'
-  | 'DEEP_ARCHIVE'
-  | 'GLACIER_IR';
+  | "STANDARD"
+  | "STANDARD_IA"
+  | "ONEZONE_IA"
+  | "INTELLIGENT_TIERING"
+  | "GLACIER"
+  | "DEEP_ARCHIVE"
+  | "GLACIER_IR";
 export type LocationConstraint =
-  | 'local'
-  | 'us-east-1'
-  | 'us-west-1'
-  | 'us-west-2'
-  | 'eu-west-1'
-  | 'eu-central-1'
-  | 'ap-southeast-1'
-  | 'ap-northeast-1'
-  | 'sa-east-1';
-export type VersioningStatus = 'Enabled' | 'Suspended';
-export type EncryptionAlgorithm = 'AES256' | 'aws:kms';
-export type ObjectLockMode = 'GOVERNANCE' | 'COMPLIANCE';
+  | "local"
+  | "us-east-1"
+  | "us-west-1"
+  | "us-west-2"
+  | "eu-west-1"
+  | "eu-central-1"
+  | "ap-southeast-1"
+  | "ap-northeast-1"
+  | "sa-east-1";
+export type VersioningStatus = "Enabled" | "Suspended";
+export type EncryptionAlgorithm = "AES256" | "aws:kms";
+export type ObjectLockMode = "GOVERNANCE" | "COMPLIANCE";
 export type CannedACL =
-  | 'private'
-  | 'public-read'
-  | 'public-read-write'
-  | 'authenticated-read'
-  | 'bucket-owner-read'
-  | 'bucket-owner-full-control';
-export type ACLPermission = 'FULL_CONTROL' | 'READ' | 'WRITE' | 'READ_ACP' | 'WRITE_ACP';
+  | "private"
+  | "public-read"
+  | "public-read-write"
+  | "authenticated-read"
+  | "bucket-owner-read"
+  | "bucket-owner-full-control";
+export type ACLPermission =
+  "FULL_CONTROL" | "READ" | "WRITE" | "READ_ACP" | "WRITE_ACP";
 
 export interface Owner {
   id: string;
@@ -89,7 +90,7 @@ export interface ObjectEncryption {
 export interface ObjectLockRetention {
   mode: ObjectLockMode;
   retainUntilDate: Date;
-  legalHold?: 'ON' | 'OFF';
+  legalHold?: "ON" | "OFF";
 }
 
 export interface ListObjectsV2Request {
@@ -99,7 +100,7 @@ export interface ListObjectsV2Request {
   maxKeys?: number;
   continuationToken?: string;
   startAfter?: string;
-  encodingType?: 'url';
+  encodingType?: "url";
 }
 
 export interface ListObjectsV2Result {
@@ -114,7 +115,7 @@ export interface ListObjectsV2Result {
   continuationToken?: string;
   nextContinuationToken?: string;
   startAfter?: string;
-  encodingType?: 'url';
+  encodingType?: "url";
 }
 
 export interface PutObjectRequest {
@@ -135,7 +136,7 @@ export interface CopyObjectRequest {
   sourceVersionId?: string;
   destinationBucket: string;
   destinationKey: string;
-  metadataDirective?: 'COPY' | 'REPLACE';
+  metadataDirective?: "COPY" | "REPLACE";
   metadata?: Partial<ObjectMetadata>;
 }
 
@@ -242,7 +243,7 @@ export interface TagSet {
 
 export interface VersioningConfiguration {
   status?: VersioningStatus;
-  mfaDelete?: 'Enabled' | 'Disabled';
+  mfaDelete?: "Enabled" | "Disabled";
 }
 
 export interface ObjectVersion {
@@ -280,7 +281,7 @@ export interface BucketCORSConfiguration {
 
 export interface LifecycleRule {
   id?: string;
-  status: 'Enabled' | 'Disabled';
+  status: "Enabled" | "Disabled";
   filter?: LifecycleFilter;
   transitions?: LifecycleTransition[];
   expiration?: LifecycleExpiration;
@@ -317,7 +318,7 @@ export interface NoncurrentVersionExpiration {
 
 export interface Grantee {
   id?: string;
-  type: 'CanonicalUser' | 'AmazonCustomerByEmail' | 'Group';
+  type: "CanonicalUser" | "AmazonCustomerByEmail" | "Group";
   uri?: string;
   emailAddress?: string;
 }
@@ -340,7 +341,7 @@ export interface BucketPolicy {
 
 export interface PolicyStatement {
   sid?: string;
-  effect: 'Allow' | 'Deny';
+  effect: "Allow" | "Deny";
   principal: string | string[] | { aws?: string | string[] };
   action: string | string[];
   resource: string | string[];
@@ -388,7 +389,7 @@ export interface NotificationConfiguration {
 }
 
 export interface NotificationFilter {
-  key?: { filterRules: { name: 'prefix' | 'suffix'; value: string }[] };
+  key?: { filterRules: { name: "prefix" | "suffix"; value: string }[] };
 }
 
 export interface NotificationQueueConfiguration {
@@ -420,10 +421,10 @@ export interface ReplicationConfiguration {
 export interface ReplicationRule {
   id?: string;
   priority?: number;
-  status: 'Enabled' | 'Disabled';
+  status: "Enabled" | "Disabled";
   filter?: LifecycleFilter;
   destination: ReplicationDestination;
-  deleteMarkerReplication?: { status: 'Enabled' | 'Disabled' };
+  deleteMarkerReplication?: { status: "Enabled" | "Disabled" };
 }
 
 export interface ReplicationDestination {
@@ -439,15 +440,34 @@ export interface S3StorageContract {
   headBucket(bucket: string): Promise<void>;
   deleteBucket(bucket: string): Promise<void>;
   putObject(request: PutObjectRequest): Promise<ObjectMetadata>;
-  getObject(bucket: string, key: string, versionId?: string): Promise<GetObjectResult>;
-  headObject(bucket: string, key: string, versionId?: string): Promise<ObjectMetadata>;
+  getObject(
+    bucket: string,
+    key: string,
+    versionId?: string,
+  ): Promise<GetObjectResult>;
+  headObject(
+    bucket: string,
+    key: string,
+    versionId?: string,
+  ): Promise<ObjectMetadata>;
   deleteObject(bucket: string, key: string, versionId?: string): Promise<void>;
   listObjectsV2(request: ListObjectsV2Request): Promise<ListObjectsV2Result>;
   copyObject(request: CopyObjectRequest): Promise<CopyObjectResult>;
-  createMultipartUpload(bucket: string, key: string): Promise<CreateMultipartUploadResult>;
+  createMultipartUpload(
+    bucket: string,
+    key: string,
+  ): Promise<CreateMultipartUploadResult>;
   uploadPart(request: UploadPartRequest): Promise<MultipartPart>;
-  completeMultipartUpload(request: CompleteMultipartUploadRequest): Promise<CompleteMultipartUploadResult>;
-  abortMultipartUpload(bucket: string, key: string, uploadId: string): Promise<void>;
+  completeMultipartUpload(
+    request: CompleteMultipartUploadRequest,
+  ): Promise<CompleteMultipartUploadResult>;
+  abortMultipartUpload(
+    bucket: string,
+    key: string,
+    uploadId: string,
+  ): Promise<void>;
   listParts(request: ListPartsRequest): Promise<ListPartsResult>;
-  listMultipartUploads(request: ListMultipartUploadsRequest): Promise<ListMultipartUploadsResult>;
+  listMultipartUploads(
+    request: ListMultipartUploadsRequest,
+  ): Promise<ListMultipartUploadsResult>;
 }

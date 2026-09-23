@@ -28,7 +28,7 @@ export type {
   PutObjectCommandOutput,
   UploadPartCommandInput,
   UploadPartCommandOutput,
-} from '@aws-sdk/client-s3';
+} from "@aws-sdk/client-s3";
 
 export type {
   Bucket,
@@ -41,9 +41,9 @@ export type {
   Owner,
   Part,
   Tag,
-} from '@aws-sdk/client-s3';
+} from "@aws-sdk/client-s3";
 
-export type AwsObject = import('@aws-sdk/client-s3')._Object;
+export type AwsObject = import("@aws-sdk/client-s3")._Object;
 
 export type {
   BucketCannedACL,
@@ -54,4 +54,4 @@ export type {
   ObjectLockMode,
   ServerSideEncryption,
   StorageClass,
-} from '@aws-sdk/client-s3';
+} from "@aws-sdk/client-s3";
