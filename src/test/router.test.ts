@@ -1032,6 +1032,8 @@ describe("S3 HTTP routes", () => {
     expect(dashboard.body).not.toContain("document.querySelector");
     expect(dashboard.body).toContain("issued.secret");
     expect(dashboard.body).toContain("font-bold");
+    expect(dashboard.body).toContain("text-red-700");
+    expect(dashboard.body).toContain("cursor-not-allowed");
     expect(dashboard.body).toContain("bucket-policy-dialog");
     expect(dashboard.body).toContain("saveDialogPolicy");
     expect(dashboard.body).not.toContain("view === 'settings'");

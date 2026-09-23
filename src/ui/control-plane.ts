@@ -174,4 +174,8 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace(
     'value="{{ policies[bucket.name] }}"',
     'bind-value="policies[bucket.name]"',
+  )
+  .replace(
+    '<button on-click="disableKey(key.accessKeyId)">Disable</button>',
+    '<template if="key.status === \'Active\'"><button class="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100" on-click="disableKey(key.accessKeyId)">Disable</button></template><template if="key.status !== \'Active\'"><button class="cursor-not-allowed rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400" disabled>Disabled</button></template>',
   );
