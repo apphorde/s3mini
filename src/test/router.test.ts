@@ -448,6 +448,7 @@ describe('S3 HTTP routes', () => {
     expect(dashboard.body).toContain('credential-value secret');
     expect(dashboard.body).toContain('S3MINI_OIDC_ADMIN_EMAILS');
     expect(dashboard.body).toContain('data-save-policy');
+    expect(dashboard.body).not.toContain('document.querySelector(\'#peer-table\').innerHTML');
     expect(dashboard.body).toContain('id="mobile-menu"');
     expect(dashboard.body).toContain('id="sidebar-close"');
     expect(dashboard.body).toContain('/admin/profile');
