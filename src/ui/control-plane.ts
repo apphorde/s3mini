@@ -38,7 +38,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
       const view = ref('overview');
       const menuOpen = ref(false);
       const status = ref('');
-      const profile = ref({ name: 'Administrator', email: '', initials: 'S3' });
+      const profile = ref({ name: 'Administrator', email: '', initials: 'S3', meUrl: '' });
       const buckets = ref([]);
       const keys = ref([]);
       const peers = ref([]);
@@ -80,7 +80,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
         peers.value = peerData;
         events.value = eventData;
         const profileName = profileData.name || profileData.email || 'Administrator';
-        profile.value = { name: profileName, email: profileData.email || '', initials: profileName.split(/\\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase() };
+        profile.value = { name: profileName, email: profileData.email || '', initials: profileName.split(/\\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase(), meUrl: profileData.meUrl || '' };
         const nextPolicies = {};
         for (const bucket of buckets.value) nextPolicies[bucket.name] = JSON.stringify(await readJson('/admin/buckets/' + encodeURIComponent(bucket.name) + '/policy', {}), null, 2);
         policies.value = nextPolicies;
