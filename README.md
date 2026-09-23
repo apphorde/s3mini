@@ -33,13 +33,13 @@ Configure S3 clients with path-style addressing and `region: local`.
 
 ## Dashboard OIDC
 
-Set these environment variables to protect `/admin` with the OIDC provider at
-`https://auth.api.apphor.de`:
+Set these environment variables to protect `/admin` with your OIDC provider:
 
 Copy `.env.example` as a starting point for local configuration. Do not commit
 the resulting `.env` file or any client secret.
 
 ```sh
+AUTH_PROVIDER=https://auth.example.com
 S3MINI_OIDC_CLIENT_ID=your-client-id
 S3MINI_OIDC_CLIENT_SECRET=your-client-secret
 S3MINI_OIDC_REDIRECT_URI=https://storage.example.com/auth/callback

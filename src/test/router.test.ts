@@ -1047,6 +1047,7 @@ describe("S3 HTTP routes", () => {
   });
 
   it("redirects dashboard access to OIDC when configured", async () => {
+    process.env.AUTH_PROVIDER = "https://auth.example.com";
     process.env.S3MINI_OIDC_CLIENT_ID = "s3mini-dashboard";
     process.env.S3MINI_OIDC_CLIENT_SECRET = "secret";
     const response = await app.inject({ method: "GET", url: "/admin" });
@@ -1055,23 +1056,24 @@ describe("S3 HTTP routes", () => {
     const login = await app.inject({ method: "GET", url: "/admin/login" });
     expect(login.statusCode).toBe(302);
     expect(login.headers.location).toContain(
-      "https://auth.api.apphor.de/authorize",
+      "https://auth.example.com/authorize",
     );
     expect(login.headers["set-cookie"]).toContain("s3mini_oidc_state=");
     expect(login.headers["set-cookie"]).toContain("Path=/;");
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+    delete process.env.AUTH_PROVIDER;
   });
 
   it("accepts the live OIDC environment variable names", async () => {
-    process.env.AUTH_PROVIDER = "https://auth.api.apphor.de/api";
+    process.env.AUTH_PROVIDER = "https://auth.example.com/api";
     process.env.OIDC_CLIENT_ID = "live-client";
     process.env.OIDC_CLIENT_SECRET = "live-secret";
     process.env.OIDC_REDIRECT_URI = "https://storage.example.com/auth/callback";
     const login = await app.inject({ method: "GET", url: "/admin/login" });
     expect(login.statusCode).toBe(302);
     expect(login.headers.location).toContain(
-      "https://auth.api.apphor.de/authorize",
+      "https://auth.example.com/authorize",
     );
     expect(login.headers.location).toContain("client_id=live-client");
     expect(login.headers.location).toContain(
@@ -1084,6 +1086,7 @@ describe("S3 HTTP routes", () => {
   });
 
   it("exchanges an OIDC callback code and creates an admin session", async () => {
+    process.env.AUTH_PROVIDER = "https://auth.example.com";
     process.env.S3MINI_OIDC_CLIENT_ID = "s3mini-dashboard";
     process.env.S3MINI_OIDC_CLIENT_SECRET = "secret";
     const login = await app.inject({ method: "GET", url: "/admin/login" });
@@ -1118,9 +1121,11 @@ describe("S3 HTTP routes", () => {
     vi.unstubAllGlobals();
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+    delete process.env.AUTH_PROVIDER;
   });
 
   it("authorizes OIDC dashboard API requests with the authenticated user", async () => {
+    process.env.AUTH_PROVIDER = "https://auth.example.com";
     process.env.S3MINI_OIDC_CLIENT_ID = "s3mini-dashboard";
     process.env.S3MINI_OIDC_CLIENT_SECRET = "secret";
     process.env.S3MINI_OIDC_ADMIN_EMAILS = "admin@example.com";
@@ -1131,7 +1136,7 @@ describe("S3 HTTP routes", () => {
     ).toString("base64url");
     const payload = Buffer.from(
       JSON.stringify({
-        iss: "https://auth.api.apphor.de",
+        iss: "https://auth.example.com",
         aud: "s3mini-dashboard",
         sub: "user-1",
         exp: Math.floor(Date.now() / 1000) + 300,
@@ -1180,9 +1185,11 @@ describe("S3 HTTP routes", () => {
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
     delete process.env.S3MINI_OIDC_ADMIN_EMAILS;
+    delete process.env.AUTH_PROVIDER;
   });
 
   it("authorizes provider API tokens by S3 scope", async () => {
+    process.env.AUTH_PROVIDER = "https://auth.example.com";
     process.env.S3MINI_OIDC_CLIENT_ID = "s3mini-dashboard";
     process.env.S3MINI_OIDC_CLIENT_SECRET = "secret";
     const scopes = new Map([
@@ -1259,6 +1266,7 @@ describe("S3 HTTP routes", () => {
     vi.unstubAllGlobals();
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+    delete process.env.AUTH_PROVIDER;
   });
 
   it("clears the OIDC dashboard session on logout", async () => {

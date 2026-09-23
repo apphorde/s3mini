@@ -376,17 +376,19 @@ export async function registerRoutes(
   }
 
   function oidcConfigured(): boolean {
-    return Boolean(oidcClientId() && oidcClientSecret());
+    return Boolean(oidcProvider() && oidcClientId() && oidcClientSecret());
   }
 
   function oidcBaseUrl(): string {
-    const provider =
-      process.env.AUTH_PROVIDER ||
-      process.env.S3MINI_OIDC_AUTH_URL ||
-      "https://auth.api.apphor.de";
+    const provider = oidcProvider();
+    if (!provider) throw new Error("AUTH_PROVIDER must be configured for OIDC.");
     return `${provider.startsWith("http://") || provider.startsWith("https://") ? provider : `https://${provider}`}`
       .replace(/\/api\/?$/, "")
       .replace(/\/$/, "");
+  }
+
+  function oidcProvider(): string | undefined {
+    return process.env.AUTH_PROVIDER || process.env.S3MINI_OIDC_AUTH_URL;
   }
 
   function oidcClientId(): string | undefined {
