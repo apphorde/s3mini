@@ -1,5 +1,7 @@
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { S3Mini } from '../storage/s3mini.js';
 import { S3Error, VALID_STORAGE_CLASSES } from '../types/models.js';
 import { verifyPresignedSigV4, verifySigV4 } from '../auth/sigv4.js';
@@ -190,6 +192,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       if (!token || !(await isOidcAdmin(token))) return reply.redirect('/admin/login');
     }
     return reply.type('text/html').send(CONTROL_PLANE_HTML);
+  });
+  fastify.get('/admin/tailwind.css', async (_request, reply) => {
+    return reply.type('text/css').send(await readFile(path.join(process.cwd(), 'dist', 'ui', 'tailwind.css'), 'utf8'));
   });
   fastify.get('/admin/profile', { preHandler: requireAdmin }, async (request, reply) => {
     const profileToken = getCookie(request, 's3mini_oidc_token') || request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
