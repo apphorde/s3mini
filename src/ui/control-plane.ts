@@ -124,6 +124,20 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace('on-click="menuOpen = false"', 'on-click="setMenuOpen(false)"')
   .replace('on-click="menuOpen = true"', 'on-click="setMenuOpen(true)"')
   .replace('message="{{ status }}"', 'bind-message="status"')
+  .replace(/lg:static /g, '')
+  .replace(
+    /<header[\s\S]*?<\/header>/,
+    '<div class="mb-4 lg:hidden"><button class="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600" aria-label="Open navigation" on-click="setMenuOpen(true)">Menu</button></div>',
+  )
+  .replace(/<table class="/g, '<table class="bg-white ')
+  .replace(
+    '<div class="mb-3 flex items-center gap-2 rounded-lg bg-slate-50 p-3">',
+    '<a class="mb-3 flex items-center gap-2 rounded-lg bg-slate-50 p-3 hover:bg-blue-50" bind-href="profile.meUrl" target="_blank" rel="noreferrer">',
+  )
+  .replace(
+    '<small class="block truncate text-[10px] text-slate-500">{{ profile.email }}</small></div></div>',
+    '<small class="block truncate text-[10px] text-slate-500">{{ profile.email }}</small></div></a></div>',
+  )
   .replace(
     /<button[^>]*on-click="setView\('policies'\)"[^>]*>Policies<\/button>/,
     "",

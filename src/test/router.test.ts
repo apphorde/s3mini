@@ -1042,6 +1042,8 @@ describe("S3 HTTP routes", () => {
     expect(dashboard.body).toContain("setMenuOpen(false)");
     expect(dashboard.body).toContain("/admin/profile");
     expect(dashboard.body).toContain("profile.name");
+    expect(dashboard.body).toContain('bind-href="profile.meUrl"');
+    expect(dashboard.body).toContain('target="_blank"');
   });
 
   it("redirects dashboard access to OIDC when configured", async () => {
