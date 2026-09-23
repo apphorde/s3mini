@@ -18,6 +18,19 @@ See the repository documentation for configuration, S3 compatibility, replicatio
 New buckets default to the self-hosted `local` location. Explicit S3-compatible
 location values remain supported when a deployment needs a region label.
 
+## Single-Node Setup
+
+Copy `.env.example`, set the OIDC client values, and run:
+
+```sh
+npm run build
+npm start
+```
+
+The S3 endpoint is `http://localhost:9000`. The default metadata database and
+object files live under `/data`; use a persistent volume for that directory.
+Configure S3 clients with path-style addressing and `region: local`.
+
 ## Dashboard OIDC
 
 Set these environment variables to protect `/admin` with the OIDC provider at
@@ -63,6 +76,46 @@ s3:admin  bucket policy/ACL/configuration and `/admin` control-plane actions
 
 Use `s3:*` for a full-access token. S3MINI introspects opaque provider tokens
 through `/oauth/introspect` using the configured OIDC client credentials.
+
+The dashboard does not require an API token when the browser has an OIDC
+session and its email is listed in `S3MINI_OIDC_ADMIN_EMAILS`. The optional
+`S3MINI_ADMIN_TOKEN` is intended for local/testing or non-OIDC deployments.
+
+## Replica Setup
+
+Run the same S3MINI image or build on every machine. Each machine must have:
+
+- Its own persistent `/data` volume
+- A unique `S3MINI_NODE_ID`
+- The same private `S3MINI_REPLICATION_TOKEN`
+- Peer URLs in `S3MINI_REPLICATION_PEERS`
+- Network reachability over a private network or authenticated TLS proxy
+
+Example for node A:
+
+```env
+S3MINI_REGION=local
+S3MINI_NODE_ID=node-a
+S3MINI_REPLICATION_PEERS=https://node-b.example.internal:9000,https://node-c.example.internal:9000
+S3MINI_REPLICATION_TOKEN=replace-with-a-long-random-secret
+S3MINI_REPLICATION_QUORUM=0
+```
+
+Node B uses the same service and token, but a different `S3MINI_NODE_ID` and
+peer list. Replication is asynchronous: a request is acknowledged after the
+local SQLite transaction and object file are durable. Peer delivery, health,
+inventory repair, leases, and dead letters are visible in the dashboard.
+
+The current dashboard is node-local. It does not aggregate bucket contents or
+capacity across replicas. Quorum acknowledgement, conflict resolution, and
+failover are not yet enabled.
+
+## Dashboard
+
+Open `/admin` after authenticating with OIDC. The dashboard uses Li3 reactive
+components, shows the current OIDC user in the sidebar, lists buckets and
+access keys, and edits bucket policies through a modal on the Buckets page.
+The account and policy actions operate on the current node.
 
 Set `S3MINI_REPLICATION_QUORUM` to a positive number to expose a degraded
 state when fewer than that many configured peers are healthy. Current writes

@@ -49,7 +49,7 @@ remain secondary until the core S3 path is complete and well tested.
 - `.env.example` and the production container default wire the OIDC provider URL into the application without including credentials.
 - The live deployment names `AUTH_PROVIDER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` are accepted directly, with `S3MINI_OIDC_*` aliases retained.
 - The dashboard clears its HttpOnly OIDC token on logout and redirects expired or unauthorized API sessions back to the login flow.
-- The dashboard uses a Li3 custom component for reactive status messaging, loaded from the documented CDN import map.
+- The dashboard is a Li3 component-based single-page UI with local Tailwind v4 output; it uses reactive bindings/templates for buckets, policies, account actions, mobile navigation, and the current OIDC profile without direct DOM manipulation.
 - The distributed-storage replacement roadmap and reliability invariants are documented in `docs/distributed-roadmap.md`.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
 - Lifecycle transitions for current and noncurrent versions, plus noncurrent-version expiration, are implemented with lazy processing during reads and listings.
@@ -79,7 +79,7 @@ database locking during test execution.
 1. Close correctness and error-semantics gaps in the implemented AWS S3 operations.
 2. Expand interoperability tests for AWS SDK v3, MinIO, and Backblaze B2 clients.
 3. Harden single-node durability, recovery, authentication, authorization, and request validation.
-4. Defer dashboard polish, quorum acknowledgement, multi-master behavior, and other scale-oriented work unless it directly protects core S3 correctness.
+4. Keep the dashboard node-local; defer cross-node aggregation, quorum acknowledgement, multi-master behavior, and other scale-oriented work unless a concrete deployment requires them.
 
 ## Next Session Handoff
 

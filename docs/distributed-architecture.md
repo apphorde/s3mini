@@ -9,6 +9,12 @@ This is a secondary scale path, not a prerequisite for the core S3 service.
 Single-node correctness, recovery, and common-client interoperability take
 priority over completing high-availability behavior.
 
+Every replica runs the same S3MINI service with its own `/data` volume and
+SQLite database. `S3MINI_NODE_ID` identifies the source of a version, while
+`S3MINI_REPLICATION_PEERS` and `S3MINI_REPLICATION_TOKEN` configure outbound
+delivery. Bucket location is a logical S3 region label and is not a machine
+placement list.
+
 ## Current Foundation
 
 - SQLite metadata is stored in `/data/s3mini.sqlite` with WAL mode and full synchronous writes.
