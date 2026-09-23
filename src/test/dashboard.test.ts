@@ -25,7 +25,7 @@ describe("control-plane dashboard smoke test", () => {
     expect(response.body).toContain("<control-plane-app></control-plane-app>");
     expect(response.body).toContain('<template component="control-plane-app">');
     expect(response.body).toContain(
-      "import { computed, ref, reactive, onInit } from '@li3/web';",
+      "import { computed, ref, onInit } from '@li3/web';",
     );
     expect(response.body).toContain('template for="[bucket] of buckets"');
     expect(response.body).toContain("bucket-policy-dialog");

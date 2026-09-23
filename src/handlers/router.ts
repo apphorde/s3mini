@@ -453,9 +453,7 @@ export async function registerRoutes(
     "/admin/profile",
     { preHandler: requireAdmin },
     async (request, reply) => {
-      const profileToken =
-        getCookie(request, "s3mini_oidc_token") ||
-        request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+      const profileToken = getCookie(request, "s3mini_oidc_token");
       if (profileToken) {
         const profile = await getOidcProfile(profileToken);
         if (profile) {
@@ -1241,15 +1239,13 @@ export async function registerRoutes(
     }
     if (query.tagging !== undefined) {
       const tags = await s3.getObjectTags(params.bucket, key, query.versionId);
-      return reply
-        .type("application/xml")
-        .send(
-          wrapXml("Tagging", {
-            TagSet: {
-              Tag: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
-            },
-          }),
-        );
+      return reply.type("application/xml").send(
+        wrapXml("Tagging", {
+          TagSet: {
+            Tag: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
+          },
+        }),
+      );
     }
     if (query.acl !== undefined) {
       const acl = await s3.getObjectAcl<Record<string, unknown>>(
@@ -1560,15 +1556,13 @@ export async function registerRoutes(
     }
     if (query.tagging !== undefined) {
       const tags = await s3.getBucketTags(params.bucket);
-      return reply
-        .type("application/xml")
-        .send(
-          wrapXml("Tagging", {
-            TagSet: {
-              Tag: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
-            },
-          }),
-        );
+      return reply.type("application/xml").send(
+        wrapXml("Tagging", {
+          TagSet: {
+            Tag: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
+          },
+        }),
+      );
     }
     const configuration = configurationQuery(query);
     if (configuration) {
@@ -1677,17 +1671,15 @@ export async function registerRoutes(
           params.bucket,
         );
       const result = await s3.deleteObjects(params.bucket, keys);
-      return reply
-        .type("application/xml")
-        .send(
-          wrapXml("DeleteResult", {
-            Deleted: result.deleted.map((Key) => ({ Key })),
-            Errors: result.errors.map((error) => ({
-              Key: error.key,
-              Code: error.code,
-            })),
-          }),
-        );
+      return reply.type("application/xml").send(
+        wrapXml("DeleteResult", {
+          Deleted: result.deleted.map((Key) => ({ Key })),
+          Errors: result.errors.map((error) => ({
+            Key: error.key,
+            Code: error.code,
+          })),
+        }),
+      );
     }
     if (query.restore !== undefined) {
       await s3.restoreObject(params.bucket, key);
@@ -1709,15 +1701,13 @@ export async function registerRoutes(
         key,
         String(request.headers["x-amz-storage-class"] || "STANDARD"),
       );
-      return reply
-        .type("application/xml")
-        .send(
-          wrapXml("InitiateMultipartUploadResult", {
-            Bucket: result.bucket,
-            Key: result.key,
-            UploadId: result.uploadId,
-          }),
-        );
+      return reply.type("application/xml").send(
+        wrapXml("InitiateMultipartUploadResult", {
+          Bucket: result.bucket,
+          Key: result.key,
+          UploadId: result.uploadId,
+        }),
+      );
     }
     if (!query.uploadId)
       throw new S3Error(

@@ -10,6 +10,8 @@ npm start
 ```
 
 Build from source with `npm run build` and run the test suite with `npm test`.
+The dashboard smoke test runs without OIDC by using a test-only static admin
+token: `npm run test:ui`. It starts an isolated local server automatically.
 
 See the repository documentation for configuration, S3 compatibility, replication, and administration.
 
