@@ -1344,4 +1344,15 @@ describe("S3 HTTP routes", () => {
     ).rejects.toMatchObject({ code: "NoSuchKey" });
     delete process.env.S3MINI_REPLICATION_TOKEN;
   });
+
+  it("normalizes replication token whitespace", async () => {
+    process.env.S3MINI_REPLICATION_TOKEN = "replication-token\n";
+    const response = await app.inject({
+      method: "GET",
+      url: "/internal/replication/inventory",
+      headers: { "x-s3mini-replication-token": " replication-token " },
+    });
+    expect(response.statusCode).toBe(200);
+    delete process.env.S3MINI_REPLICATION_TOKEN;
+  });
 });

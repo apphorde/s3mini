@@ -35,7 +35,7 @@ export class ReplicationWorker {
         .split(",")
         .map((peer) => peer.trim())
         .filter(Boolean);
-    this.token = options.token || process.env.S3MINI_REPLICATION_TOKEN;
+    this.token = (options.token || process.env.S3MINI_REPLICATION_TOKEN)?.trim();
     for (const peer of this.peers)
       this.health.set(peer, {
         peer,

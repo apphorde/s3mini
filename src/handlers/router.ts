@@ -219,12 +219,12 @@ export async function registerRoutes(
   });
 
   fastify.put("/internal/replication", async (request, reply) => {
-    const expectedToken = process.env.S3MINI_REPLICATION_TOKEN;
+    const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
     if (
       !expectedToken ||
       !suppliedToken ||
-      !timingSafeTokenEqual(String(suppliedToken), expectedToken)
+      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
     )
       throw new S3Error(
         "AccessDenied",
@@ -287,12 +287,12 @@ export async function registerRoutes(
     return reply.code(204).send();
   });
   fastify.get("/internal/replication/inventory", async (request, reply) => {
-    const expectedToken = process.env.S3MINI_REPLICATION_TOKEN;
+    const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
     if (
       !expectedToken ||
       !suppliedToken ||
-      !timingSafeTokenEqual(String(suppliedToken), expectedToken)
+      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
     )
       throw new S3Error(
         "AccessDenied",
