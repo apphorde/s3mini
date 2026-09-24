@@ -32,6 +32,8 @@ npm start
 The S3 endpoint is `http://localhost:9000`. The default metadata database and
 object files live under `/data`; use a persistent volume for that directory.
 Configure S3 clients with path-style addressing and `region: local`.
+Logging defaults to `error`; set `LOG_LEVEL=info`, `debug`, or another Pino
+level when request logging is needed.
 
 S3MINI binds to `0.0.0.0:9000` by default. Docker still requires explicit port
 publishing, for example:

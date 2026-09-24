@@ -4,7 +4,7 @@ import { registerRoutes } from "./handlers/router.js";
 import { ReplicationWorker } from "./replication/worker.js";
 
 const fastify = Fastify({
-  logger: true,
+  logger: { level: process.env.LOG_LEVEL || "error" },
   bodyLimit: 100 * 1024 * 1024,
 });
 
