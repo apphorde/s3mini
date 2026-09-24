@@ -33,6 +33,18 @@ The S3 endpoint is `http://localhost:9000`. The default metadata database and
 object files live under `/data`; use a persistent volume for that directory.
 Configure S3 clients with path-style addressing and `region: local`.
 
+S3MINI binds to `0.0.0.0:9000` by default. Docker still requires explicit port
+publishing, for example:
+
+```sh
+docker run --rm -p 9000:9000 -v s3mini-data:/data your-s3mini-image
+```
+
+For VPN access, connect to the host address reachable through the VPN and make
+sure the host firewall allows TCP `9000`. `EXPOSE 9000` alone does not publish
+the port. Override the bind address or port with `S3MINI_HOST` and
+`S3MINI_PORT` when needed.
+
 ## Dashboard OIDC
 
 Set these environment variables to protect `/admin` with your OIDC provider:

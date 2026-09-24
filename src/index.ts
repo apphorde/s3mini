@@ -22,8 +22,9 @@ async function bootstrap() {
 
   try {
     const port = Number(process.env.S3MINI_PORT || 9000);
-    await fastify.listen({ port, host: "0.0.0.0" });
-    console.log(`S3MINI server listening on port ${port}`);
+    const host = process.env.S3MINI_HOST || "0.0.0.0";
+    await fastify.listen({ port, host });
+    console.log(`S3MINI server listening on ${host}:${port}`);
   } catch (err) {
     console.error(err);
     process.exit(1);

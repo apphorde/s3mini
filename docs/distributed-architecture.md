@@ -33,6 +33,10 @@ Replication identity is `(bucket, key, versionId, sourceNodeId)`. A peer must ve
 
 Peer communication currently uses the configured internal URL and shared token; production deployments should place it behind authenticated TLS. The journal is the handoff boundary between the S3 request path and that worker.
 
+Container deployments must publish TCP port `9000` to the host or use host
+networking. The service binds to `0.0.0.0` by default; a VPN client should use
+the host's VPN-reachable address, not the container's private bridge address.
+
 ## Current Replication State
 
 - Replication of deletes and delete markers is implemented, including
