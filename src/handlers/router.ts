@@ -346,6 +346,11 @@ export async function registerRoutes(
   );
 
   async function requireAdmin(request: FastifyRequest): Promise<void> {
+    if (
+      process.env.S3MINI_TEST_DISABLE_OIDC === "1" &&
+      getCookie(request, "s3mini_test_admin") === "dev-admin"
+    )
+      return;
     const configuredToken = process.env.S3MINI_ADMIN_TOKEN;
     const suppliedToken = request.headers.authorization?.startsWith("Bearer ")
       ? request.headers.authorization.slice(7)
@@ -461,6 +466,12 @@ export async function registerRoutes(
   }
 
   fastify.get("/admin", async (request, reply) => {
+    if (process.env.S3MINI_TEST_DISABLE_OIDC === "1") {
+      reply.header(
+        "Set-Cookie",
+        "s3mini_test_admin=dev-admin; HttpOnly; Path=/; SameSite=Strict",
+      );
+    }
     if (oidcConfigured()) {
       const token = getCookie(request, "s3mini_oidc_token");
       if (!token) return reply.redirect("/admin/login");

@@ -3,9 +3,9 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
   webServer: {
-    command: "S3MINI_PORT=9100 npm run start:test",
+    command: "node dist/index.js --test-dashboard",
     url: "http://127.0.0.1:9100/admin",
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120000,
   },
   use: {

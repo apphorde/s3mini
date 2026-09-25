@@ -3,6 +3,12 @@ import { S3Mini } from "./storage/s3mini.js";
 import { registerRoutes } from "./handlers/router.js";
 import { ReplicationWorker } from "./replication/worker.js";
 
+if (process.argv.includes("--test-dashboard")) {
+  process.env.S3MINI_TEST_DISABLE_OIDC = "1";
+  process.env.S3MINI_ADMIN_TOKEN = "dev-admin";
+  process.env.S3MINI_PORT = "9100";
+}
+
 const fastify = Fastify({
   logger: { level: process.env.LOG_LEVEL || "error" },
   bodyLimit: 100 * 1024 * 1024,

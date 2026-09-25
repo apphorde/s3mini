@@ -37,7 +37,7 @@
     "build": "npm run build:css && tsc",
     "format": "prettier --write src package.json vitest.config.ts",
     "start": "node dist/index.js",
-    "start:test": "S3MINI_TEST_DISABLE_OIDC=1 S3MINI_ADMIN_TOKEN=dev-admin node dist/index.js",
+    "start:test": "node dist/index.js --test-dashboard",
     "dev": "tsx src/index.ts",
     "test": "vitest run src/test",
     "test:ui": "npm run build && playwright test",

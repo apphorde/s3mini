@@ -35,7 +35,8 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
     <script setup>
       import { computed, ref, onInit } from '@li3/web';
       export default function () {
-      const view = ref('overview');
+      const requestedView = new URL(location.href).searchParams.get('page');
+      const view = ref(['overview', 'buckets', 'accounts'].includes(requestedView) ? requestedView : 'overview');
       const menuOpen = ref(false);
       const status = ref('');
       const profile = ref({ name: 'Administrator', email: '', initials: 'S3', meUrl: '' });
@@ -57,7 +58,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
         return response;
       };
       const readJson = async (url, fallback) => { const response = await request(url); return response.ok ? response.json() : fallback; };
-      const setView = next => { view.value = next; menuOpen.value = false; };
+      const setView = next => { view.value = next; menuOpen.value = false; const url = new URL(location.href); url.searchParams.set('page', next); history.replaceState(null, '', url); };
       const setMenuOpen = value => { menuOpen.value = value; };
       const setStatus = message => { status.value = message || ''; };
       const setBucketName = value => { bucketName.value = value; };
@@ -124,7 +125,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace('on-click="menuOpen = false"', 'on-click="setMenuOpen(false)"')
   .replace('on-click="menuOpen = true"', 'on-click="setMenuOpen(true)"')
   .replace('message="{{ status }}"', 'bind-message="status"')
-  .replace(/lg:static /g, '')
+  .replace(/lg:static /g, "")
   .replace(
     /<header[\s\S]*?<\/header>/,
     '<div class="mb-4 lg:hidden"><button class="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600" aria-label="Open navigation" on-click="setMenuOpen(true)">Menu</button></div>',
@@ -132,15 +133,15 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace(/<table class="/g, '<table class="bg-white ')
   .replace(
     /<button class="block w-full rounded-lg bg-blue-50[^>]*on-click="setView\('overview'\)">/,
-    '<button bind-class="view === \'overview\' ? \'block w-full rounded-lg bg-blue-50 px-3 py-2.5 text-left text-sm font-medium text-blue-700\' : \'block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-600 hover:bg-slate-50\'" on-click="setView(\'overview\')">',
+    "<button bind-class=\"view === 'overview' ? 'block w-full rounded-lg bg-blue-50 px-3 py-2.5 text-left text-sm font-medium text-blue-700' : 'block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-600 hover:bg-slate-50'\" on-click=\"setView('overview')\">",
   )
   .replace(
     /<button class="block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-600 hover:bg-slate-50" on-click="setView\('buckets'\)">/,
-    '<button bind-class="view === \'buckets\' ? \'block w-full rounded-lg bg-blue-50 px-3 py-2.5 text-left text-sm font-medium text-blue-700\' : \'block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-600 hover:bg-slate-50\'" on-click="setView(\'buckets\')">',
+    "<button bind-class=\"view === 'buckets' ? 'block w-full rounded-lg bg-blue-50 px-3 py-2.5 text-left text-sm font-medium text-blue-700' : 'block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-600 hover:bg-slate-50'\" on-click=\"setView('buckets')\">",
   )
   .replace(
     /<button class="block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-600 hover:bg-slate-50" on-click="setView\('accounts'\)">/,
-    '<button bind-class="view === \'accounts\' ? \'block w-full rounded-lg bg-blue-50 px-3 py-2.5 text-left text-sm font-medium text-blue-700\' : \'block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-600 hover:bg-slate-50\'" on-click="setView(\'accounts\')">',
+    "<button bind-class=\"view === 'accounts' ? 'block w-full rounded-lg bg-blue-50 px-3 py-2.5 text-left text-sm font-medium text-blue-700' : 'block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-600 hover:bg-slate-50'\" on-click=\"setView('accounts')\">",
   )
   .replace(
     '<div class="mb-3 flex items-center gap-2 rounded-lg bg-slate-50 p-3">',
@@ -172,7 +173,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   )
   .replace(
     '<button class="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white" on-click="setView(\'buckets\')">+ New bucket</button>',
-    '',
+    "",
   )
   .replace(
     '<div class="border-b border-slate-200 p-5"><h2 class="text-sm font-semibold">Buckets</h2>',
@@ -202,6 +203,10 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace(
     '<button class="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white">Create bucket</button>',
     '<button type="button" class="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white" on-click="createBucket($event)">Create bucket</button>',
+  )
+  .replace(
+    '<button class="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white">Issue access key</button>',
+    '<button type="button" class="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white" on-click="issueKey($event)">Issue access key</button>',
   )
   .replace(
     '<button on-click="disableKey(key.accessKeyId)">Disable</button>',
