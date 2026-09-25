@@ -286,6 +286,31 @@ export async function registerRoutes(
     }
     return reply.code(204).send();
   });
+  fastify.put("/internal/replication/bucket", async (request, reply) => {
+    const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
+    const suppliedToken = request.headers["x-s3mini-replication-token"];
+    if (
+      !expectedToken ||
+      !suppliedToken ||
+      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
+    )
+      throw new S3Error(
+        "AccessDenied",
+        "The replication token is invalid.",
+        403,
+      );
+    const bucket = String(request.headers["x-s3mini-bucket"] || "");
+    const location = String(request.headers["x-s3mini-location"] || "local");
+    if (!bucket)
+      throw new S3Error("InvalidRequest", "Bucket is required.", 400);
+    try {
+      await s3.createBucket(bucket, location);
+    } catch (error) {
+      if (!(error instanceof S3Error) || error.code !== "BucketAlreadyExists")
+        throw error;
+    }
+    return reply.code(204).send();
+  });
   fastify.get("/internal/replication/inventory", async (request, reply) => {
     const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
@@ -381,7 +406,8 @@ export async function registerRoutes(
 
   function oidcBaseUrl(): string {
     const provider = oidcProvider();
-    if (!provider) throw new Error("AUTH_PROVIDER must be configured for OIDC.");
+    if (!provider)
+      throw new Error("AUTH_PROVIDER must be configured for OIDC.");
     return `${provider.startsWith("http://") || provider.startsWith("https://") ? provider : `https://${provider}`}`
       .replace(/\/api\/?$/, "")
       .replace(/\/$/, "");

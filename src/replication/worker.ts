@@ -36,7 +36,9 @@ export class ReplicationWorker {
         .split(",")
         .map((peer) => peer.trim())
         .filter(Boolean);
-    this.token = (options.token || process.env.S3MINI_REPLICATION_TOKEN)?.trim();
+    this.token = (
+      options.token || process.env.S3MINI_REPLICATION_TOKEN
+    )?.trim();
     for (const peer of this.peers)
       this.health.set(peer, {
         peer,
@@ -91,7 +93,9 @@ export class ReplicationWorker {
       );
       for (const delivery of deliveries) await this.deliverToPeer(delivery);
       if (repair)
-        await this.repairMissingEvents(await this.s3.listReplicationEvents(1000));
+        await this.repairMissingEvents(
+          await this.s3.listReplicationEvents(1000),
+        );
     } finally {
       this.running = false;
     }
@@ -105,6 +109,7 @@ export class ReplicationWorker {
   private async repairMissingEvents(events: ReplicationEvent[]): Promise<void> {
     for (const peer of this.peers) {
       try {
+        await this.syncPeerBuckets(peer);
         const response = await fetch(
           `${peer.replace(/\/$/, "")}/internal/replication/inventory`,
           { headers: { "x-s3mini-replication-token": this.token! } },
@@ -141,6 +146,24 @@ export class ReplicationWorker {
     }
   }
 
+  private async syncPeerBuckets(peer: string): Promise<void> {
+    for (const bucket of await this.s3.listBuckets()) {
+      const response = await fetch(
+        `${peer.replace(/\/$/, "")}/internal/replication/bucket`,
+        {
+          method: "PUT",
+          headers: {
+            "x-s3mini-replication-token": this.token!,
+            "x-s3mini-bucket": bucket.name,
+            "x-s3mini-location": bucket.locationConstraint,
+          },
+        },
+      );
+      if (!response.ok)
+        throw new Error(`Bucket synchronization failed: ${response.status}`);
+    }
+  }
+
   private async deliverToPeer(
     delivery: ReplicationPeerEvent,
     updateStatus = true,
@@ -148,6 +171,22 @@ export class ReplicationWorker {
     const { event, peer } = delivery;
     const attempts = delivery.attempts + 1;
     try {
+      const location = await this.s3.getBucketLocation(event.bucket);
+      const bucketResponse = await fetch(
+        `${peer.replace(/\/$/, "")}/internal/replication/bucket`,
+        {
+          method: "PUT",
+          headers: {
+            "x-s3mini-replication-token": this.token!,
+            "x-s3mini-bucket": event.bucket,
+            "x-s3mini-location": location,
+          },
+        },
+      );
+      if (!bucketResponse.ok)
+        throw new Error(
+          `Bucket synchronization failed: ${bucketResponse.status}`,
+        );
       const body =
         event.operation === "PutObject"
           ? await fs.readFile(event.payloadPath)

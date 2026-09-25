@@ -26,29 +26,30 @@ describe("ReplicationWorker", () => {
       Buffer.from("healthy"),
       {},
     );
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              bucket,
-              key: "healthy.txt",
-              versionId: object.versionId,
-              etag: object.etag,
-              sha256: crypto
-                .createHash("sha256")
-                .update("healthy")
-                .digest("hex"),
-              size: object.size,
-              lastModified: object.lastModified,
-              deleteMarker: false,
-            },
-          ]),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      );
+    const fetchMock = vi.fn((input: string | URL, _init?: RequestInit) =>
+      String(input).endsWith("/inventory")
+        ? Promise.resolve(
+            new Response(
+              JSON.stringify([
+                {
+                  bucket,
+                  key: "healthy.txt",
+                  versionId: object.versionId,
+                  etag: object.etag,
+                  sha256: crypto
+                    .createHash("sha256")
+                    .update("healthy")
+                    .digest("hex"),
+                  size: object.size,
+                  lastModified: object.lastModified,
+                  deleteMarker: false,
+                },
+              ]),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          )
+        : Promise.resolve(new Response(null, { status: 204 })),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const worker = new ReplicationWorker(s3, {
@@ -69,7 +70,6 @@ describe("ReplicationWorker", () => {
         consecutiveFailures: 0,
       }),
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("records failed delivery for retry and marks the peer unhealthy", async () => {
@@ -119,15 +119,16 @@ describe("ReplicationWorker", () => {
       1,
     );
     await s3.updateReplicationEvent(event!.id, "Delivered", 1);
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const fetchMock = vi.fn((input: string | URL, _init?: RequestInit) =>
+      String(input).endsWith("/inventory")
+        ? Promise.resolve(
+            new Response(JSON.stringify([]), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          )
+        : Promise.resolve(new Response(null, { status: 204 })),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const worker = new ReplicationWorker(s3, {
@@ -136,13 +137,15 @@ describe("ReplicationWorker", () => {
     });
     await worker.drainOnce();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1][0]).toBe(
-      "http://peer.test/internal/replication",
+    const deliveryCall = fetchMock.mock.calls.find((call) =>
+      String(call[0]).endsWith("/internal/replication"),
     );
-    expect(fetchMock.mock.calls[1][1].headers["x-s3mini-sha256"]).toMatch(
-      /^[a-f0-9]{64}$/,
-    );
+    expect(deliveryCall?.[0]).toBe("http://peer.test/internal/replication");
+    expect(
+      (deliveryCall?.[1]?.headers as Record<string, string>)?.[
+        "x-s3mini-sha256"
+      ],
+    ).toMatch(/^[a-f0-9]{64}$/);
     expect(object.versionId).toBeTruthy();
   });
 });

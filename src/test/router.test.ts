@@ -1345,6 +1345,35 @@ describe("S3 HTTP routes", () => {
     delete process.env.S3MINI_REPLICATION_TOKEN;
   });
 
+  it("replicates bucket metadata idempotently", async () => {
+    process.env.S3MINI_REPLICATION_TOKEN = "replication-token";
+    const created = await app.inject({
+      method: "PUT",
+      url: "/internal/replication/bucket",
+      headers: {
+        "x-s3mini-replication-token": "replication-token",
+        "x-s3mini-bucket": bucket,
+        "x-s3mini-location": "ams",
+      },
+    });
+    expect(created.statusCode).toBe(204);
+    expect(await s3.getBucketLocation(bucket)).toBe("ams");
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/internal/replication/bucket",
+          headers: {
+            "x-s3mini-replication-token": "replication-token",
+            "x-s3mini-bucket": bucket,
+            "x-s3mini-location": "ams",
+          },
+        })
+      ).statusCode,
+    ).toBe(204);
+    delete process.env.S3MINI_REPLICATION_TOKEN;
+  });
+
   it("normalizes replication token whitespace", async () => {
     process.env.S3MINI_REPLICATION_TOKEN = "replication-token\n";
     const response = await app.inject({

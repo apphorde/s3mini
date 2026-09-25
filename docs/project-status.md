@@ -35,6 +35,7 @@ remain secondary until the core S3 path is complete and well tested.
 - Local durability foundation is implemented: WAL/full-sync SQLite, atomic synced object writes, and a transactional pending replication journal.
 - Durable object renames now sync their parent directories, missing committed version files fail closed, and deleting one key no longer removes other keys' version files.
 - Asynchronous peer delivery is implemented for object writes, deletes, and delete markers using `S3MINI_REPLICATION_PEERS`, `S3MINI_REPLICATION_TOKEN`, and `S3MINI_NODE_ID`; initial geolocated testing can use private VPN endpoints.
+- Replication synchronizes bucket creation and logical location metadata before object delivery and during anti-entropy repair; bucket metadata still must not be treated as a full multi-node control-plane consensus record.
 - The replication worker compares authenticated peer inventories and replays missing local journal events.
 - Configured peer health is persisted in SQLite and exposed through the authenticated control plane; replicated PUTs validate their MD5 ETag and inventory repair compares ETags.
 - Replication workers claim per-peer pending events with expiring SQLite leases, preventing duplicate concurrent delivery while allowing crash recovery and independent retry of only failed peers.
@@ -58,7 +59,7 @@ remain secondary until the core S3 path is complete and well tested.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
 - HTTP coverage includes bucket configuration, multipart listing/abort, object copy/batch deletion, authentication-required mutations, and the OIDC callback; opt-in MinIO and Backblaze B2 coverage is available through `src/test/s3-compatibility.test.ts`.
-- The current compatibility checkpoint is tracked in git history with 81 passing tests.
+- The current compatibility checkpoint is tracked in git history with 82 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
