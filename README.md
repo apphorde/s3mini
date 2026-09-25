@@ -70,10 +70,19 @@ provider origin or the `/api` documentation URL; both are normalized to the
 OIDC endpoint origin.
 
 Register the exact `/auth/callback` redirect URI with the OIDC client. `S3MINI_OIDC_AUTH_URL`
-can override the provider base URL. An explicit admin email allowlist is
-required for OIDC browser administration; when it is omitted, authenticated
-provider users are not admins. Client secrets and allowlists must remain in
-environment variables or local untracked config.
+can override the provider base URL. `S3MINI_OIDC_ADMIN_EMAILS` grants the listed
+users the `admin` role. An unset or empty allowlist grants no configuration-based
+admin role; authenticated users without an explicitly assigned role receive
+HTTP 403 from `/admin`. Client secrets and allowlists must remain in environment
+variables or local untracked config.
+
+Administrators can assign OIDC users `viewer`, `operator`, or `admin` roles from
+the dashboard's Users page. Roles are keyed by the OIDC subject (`sub`), stored
+in SQLite metadata, and synchronized asynchronously to configured replication
+peers. A revoked role is retained as a replication tombstone. Viewers can inspect
+dashboard data; operators can manage buckets, policies, access keys, and retry
+replication events; admins can also manage user roles. The email allowlist is an
+admin override, so remove an email from it before relying on a lower stored role.
 
 S3MINI follows the provider's Node client flow: authorization-code PKCE uses
 `/authorize` and `/token`, access tokens are verified as RS256 JWTs using
@@ -81,8 +90,9 @@ S3MINI follows the provider's Node client flow: authorization-code PKCE uses
 `X-Auth-Audience`.
 
 Provider API tokens can also call S3MINI directly with an `Authorization:
-Bearer` header. Create them through the provider's `/api-tokens/{clientId}`
-endpoint and grant these scopes as needed:
+Bearer` header. They are authorized independently of browser roles. Create them
+through the provider's `/api-tokens/{clientId}` endpoint and grant these scopes
+as needed:
 
 ```text
 s3:read   GET, HEAD, and OPTIONS requests
@@ -94,8 +104,10 @@ Use `s3:*` for a full-access token. S3MINI introspects opaque provider tokens
 through `/oauth/introspect` using the configured OIDC client credentials.
 
 The dashboard does not require an API token when the browser has an OIDC
-session and its email is listed in `S3MINI_OIDC_ADMIN_EMAILS`. The optional
-`S3MINI_ADMIN_TOKEN` is intended for local/testing or non-OIDC deployments.
+session and the user has an assigned role or is listed in
+`S3MINI_OIDC_ADMIN_EMAILS`. A provider token with `s3:admin` retains full control
+plane access for API clients. The optional `S3MINI_ADMIN_TOKEN` is intended for
+local/testing or non-OIDC deployments.
 
 ## Replica Setup
 
@@ -139,8 +151,10 @@ not needed.
 
 Open `/admin` after authenticating with OIDC. The dashboard uses Li3 reactive
 components, shows the current OIDC user in the sidebar, lists buckets and
-access keys, and edits bucket policies through a modal on the Buckets page.
-The account and policy actions operate on the current node.
+access keys, edits bucket policies through a modal on the Buckets page, and lets
+admins assign OIDC subject IDs to dashboard roles on the Users page. Bucket,
+policy, and access-key actions operate on the current node; user roles converge
+asynchronously across configured replicas and do not provide cluster consensus.
 
 Set `S3MINI_REPLICATION_QUORUM` to a positive number to expose a degraded
 state when fewer than that many configured peers are healthy. Current writes

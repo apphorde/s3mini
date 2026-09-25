@@ -44,12 +44,13 @@ remain secondary until the core S3 path is complete and well tested.
 - New replication events persist a SHA-256 body digest, include it in delivery headers, validate it at the receiving node, and compare it during inventory repair; legacy events retain ETag fallback behavior.
 - The Li3 admin dashboard displays bucket, access-key, peer-health, replication-event, and dead-letter state, with bucket creation, policy navigation, key issuing, and retry-related API views.
 - The authenticated control plane now supports bucket create/list/delete and bucket policy get/update/delete operations, surfaced in the dashboard.
-- Dashboard access can use PKCE OIDC login through the configured `AUTH_PROVIDER`; the resulting HttpOnly session token is verified with the provider's RS256 JWKS, checked against `/userinfo` with `X-Auth-Audience`, and requires an email listed in `S3MINI_OIDC_ADMIN_EMAILS`.
+- Dashboard access can use PKCE OIDC login through the configured `AUTH_PROVIDER`; the resulting HttpOnly session token is verified with the provider's RS256 JWKS and `/userinfo` with `X-Auth-Audience`. Explicitly assigned per-user viewer/operator/admin roles are stored in SQLite and replicated asynchronously; `S3MINI_OIDC_ADMIN_EMAILS` remains an admin override, and an empty allowlist grants no implicit role.
+- OIDC dashboard authorization enforces viewer read-only access, operator control-plane mutations, and admin user-role management. Revocations replicate as tombstones; timestamp/source-node ordering is deterministic but is not cluster consensus.
 - Provider-issued opaque API tokens are accepted through bearer authentication; `s3:read`, `s3:write`, `s3:admin`, and `s3:*` scopes are enforced through the provider's `/oauth/introspect` endpoint.
-- OIDC setup is documented in `README.md`: register `/auth/callback`, configure client credentials and audience, and use `S3MINI_OIDC_ADMIN_EMAILS` to restrict administrators.
+- OIDC setup and role behavior are documented in `README.md`: register `/auth/callback`, configure client credentials and audience, and use the Users page or `S3MINI_OIDC_ADMIN_EMAILS` to assign administrator access.
 - `.env.example` and the production container default wire the OIDC provider URL into the application without including credentials.
 - The live deployment names `AUTH_PROVIDER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` are accepted directly, with `S3MINI_OIDC_*` aliases retained.
-- The dashboard clears its HttpOnly OIDC token on logout and redirects expired or unauthorized API sessions back to the login flow.
+- The dashboard clears its HttpOnly OIDC token on logout and redirects authentication failures (401) to OIDC login while role-denied (403) actions remain in the dashboard.
 - The dashboard is a Li3 component-based single-page UI with local Tailwind v4 output; it uses reactive bindings/templates for buckets, policies, account actions, mobile navigation, and the current OIDC profile without direct DOM manipulation.
 - The distributed-storage replacement roadmap and reliability invariants are documented in `docs/distributed-roadmap.md`.
 - CORS configuration, preflight behavior, object copy, ranges, conditionals, checksums, encryption metadata, and object lock are implemented.
@@ -59,7 +60,7 @@ remain secondary until the core S3 path is complete and well tested.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
 - HTTP coverage includes bucket configuration, multipart listing/abort, object copy/batch deletion, authentication-required mutations, and the OIDC callback; opt-in MinIO and Backblaze B2 coverage is available through `src/test/s3-compatibility.test.ts`.
-- The current compatibility checkpoint is tracked in git history with 83 passing tests.
+- The current checkpoint passes 86 tests plus the Playwright dashboard smoke test.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification
@@ -80,7 +81,7 @@ database locking during test execution.
 1. Close correctness and error-semantics gaps in the implemented AWS S3 operations.
 2. Expand interoperability tests for AWS SDK v3, MinIO, and Backblaze B2 clients.
 3. Harden single-node durability, recovery, authentication, authorization, and request validation.
-4. Keep the dashboard node-local; defer cross-node aggregation, quorum acknowledgement, multi-master behavior, and other scale-oriented work unless a concrete deployment requires them.
+4. Keep the dashboard node-local; defer cross-node aggregation, quorum acknowledgement, multi-master behavior, and cluster-wide role consensus unless a concrete deployment requires them.
 
 ## Next Session Handoff
 

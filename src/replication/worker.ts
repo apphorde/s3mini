@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { REPLICATION_MAX_ATTEMPTS } from "../storage/s3mini.js";
 import type {
   PeerHealthState,
+  AdminUserRoleRecord,
   ReplicationEvent,
   ReplicationInventoryItem,
   ReplicationPeerEvent,
@@ -110,6 +111,7 @@ export class ReplicationWorker {
     for (const peer of this.peers) {
       try {
         await this.syncPeerBuckets(peer);
+        await this.syncPeerUserRoles(peer);
         const response = await fetch(
           `${peer.replace(/\/$/, "")}/internal/replication/inventory`,
           { headers: { "x-s3mini-replication-token": this.token! } },
@@ -161,6 +163,24 @@ export class ReplicationWorker {
       );
       if (!response.ok)
         throw new Error(`Bucket synchronization failed: ${response.status}`);
+    }
+  }
+
+  private async syncPeerUserRoles(peer: string): Promise<void> {
+    for (const role of await this.s3.listReplicatedAdminUserRoles()) {
+      const response = await fetch(
+        `${peer.replace(/\/$/, "")}/internal/replication/user-role`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+            "x-s3mini-replication-token": this.token!,
+          },
+          body: JSON.stringify(role satisfies AdminUserRoleRecord),
+        },
+      );
+      if (!response.ok)
+        throw new Error(`User-role synchronization failed: ${response.status}`);
     }
   }
 

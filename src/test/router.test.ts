@@ -1079,7 +1079,7 @@ describe("S3 HTTP routes", () => {
     });
     expect(response.statusCode).toBe(403);
     expect(response.headers.location).toBeUndefined();
-    expect(response.body).toContain("S3MINI_OIDC_ADMIN_EMAILS");
+    expect(response.body).toContain("dashboard role assigned");
     delete process.env.AUTH_PROVIDER;
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
@@ -1154,39 +1154,52 @@ describe("S3 HTTP routes", () => {
     const header = Buffer.from(
       JSON.stringify({ alg: "RS256", kid: "test-key" }),
     ).toString("base64url");
-    const payload = Buffer.from(
-      JSON.stringify({
-        iss: "https://auth.example.com",
-        aud: "s3mini-dashboard",
-        sub: "user-1",
-        exp: Math.floor(Date.now() / 1000) + 300,
-      }),
-    ).toString("base64url");
-    const signed = `${header}.${payload}`;
-    const signature = crypto
-      .createSign("RSA-SHA256")
-      .update(signed)
-      .sign(keys.privateKey)
-      .toString("base64url");
-    const token = `${signed}.${signature}`;
+    const issueToken = (sub: string) => {
+      const payload = Buffer.from(
+        JSON.stringify({
+          iss: "https://auth.example.com",
+          aud: "s3mini-dashboard",
+          sub,
+          exp: Math.floor(Date.now() / 1000) + 300,
+        }),
+      ).toString("base64url");
+      const signed = `${header}.${payload}`;
+      const signature = crypto
+        .createSign("RSA-SHA256")
+        .update(signed)
+        .sign(keys.privateKey)
+        .toString("base64url");
+      return `${signed}.${signature}`;
+    };
+    const token = issueToken("user-1");
+    const roleUserId = `role-user-${Date.now()}`;
+    const roleToken = issueToken(roleUserId);
+    const unassignedToken = issueToken(`unassigned-${Date.now()}`);
+    const tokenProfiles = new Map([
+      [token, { sub: "user-1", email: "admin@example.com" }],
+      [roleToken, { sub: roleUserId, email: "role-user@example.com" }],
+      [unassignedToken, { sub: "unassigned", email: "unassigned@example.com" }],
+    ]);
     vi.stubGlobal(
       "fetch",
-      vi.fn((input: string | URL) =>
-        String(input).endsWith("/jwks.json")
-          ? Promise.resolve(
-              new Response(
-                JSON.stringify({
-                  keys: [{ ...publicJwk, kid: "test-key", kty: "RSA" }],
-                }),
-                { status: 200 },
-              ),
-            )
-          : Promise.resolve(
-              new Response(JSON.stringify({ email: "admin@example.com" }), {
-                status: 200,
+      vi.fn((input: string | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/jwks.json"))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                keys: [{ ...publicJwk, kid: "test-key", kty: "RSA" }],
               }),
+              { status: 200 },
             ),
-      ),
+          );
+        const authorization = (init?.headers as Record<string, string>)
+          ?.authorization;
+        const profile = tokenProfiles.get(authorization?.slice(7) || "");
+        return Promise.resolve(
+          new Response(JSON.stringify(profile), { status: 200 }),
+        );
+      }),
     );
     const response = await app.inject({
       method: "GET",
@@ -1201,6 +1214,137 @@ describe("S3 HTTP routes", () => {
     });
     expect(profile.statusCode).toBe(200);
     expect(profile.json()).toMatchObject({ email: "admin@example.com" });
+
+    const assigned = await app.inject({
+      method: "PUT",
+      url: `/admin/users/${encodeURIComponent(roleUserId)}`,
+      headers: {
+        cookie: `s3mini_oidc_token=${token}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({
+        email: "role-user@example.com",
+        name: "Role User",
+        role: "viewer",
+      }),
+    });
+    expect(assigned.statusCode).toBe(200);
+    expect(assigned.json()).toMatchObject({
+      userId: roleUserId,
+      role: "viewer",
+    });
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/admin",
+          headers: { cookie: `s3mini_oidc_token=${roleToken}` },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/admin/access-keys",
+          headers: { cookie: `s3mini_oidc_token=${roleToken}` },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/admin/access-keys",
+          headers: {
+            cookie: `s3mini_oidc_token=${roleToken}`,
+            "content-type": "application/json",
+          },
+          payload: JSON.stringify({ displayName: "viewer-denied" }),
+        })
+      ).statusCode,
+    ).toBe(403);
+
+    const operatorRole = await app.inject({
+      method: "PUT",
+      url: `/admin/users/${encodeURIComponent(roleUserId)}`,
+      headers: {
+        cookie: `s3mini_oidc_token=${token}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ role: "operator" }),
+    });
+    expect(operatorRole.statusCode).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/admin/access-keys",
+          headers: {
+            cookie: `s3mini_oidc_token=${roleToken}`,
+            "content-type": "application/json",
+          },
+          payload: JSON.stringify({ displayName: "operator-allowed" }),
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    const adminRole = await app.inject({
+      method: "PUT",
+      url: `/admin/users/${encodeURIComponent(roleUserId)}`,
+      headers: {
+        cookie: `s3mini_oidc_token=${token}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ role: "admin" }),
+    });
+    expect(adminRole.statusCode).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/admin/users",
+          headers: { cookie: `s3mini_oidc_token=${roleToken}` },
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    delete process.env.S3MINI_OIDC_ADMIN_EMAILS;
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/admin",
+          headers: { cookie: `s3mini_oidc_token=${unassignedToken}` },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/admin",
+          headers: { cookie: `s3mini_oidc_token=${roleToken}` },
+        })
+      ).statusCode,
+    ).toBe(200);
+    process.env.S3MINI_OIDC_ADMIN_EMAILS = "admin@example.com";
+
+    const removed = await app.inject({
+      method: "DELETE",
+      url: `/admin/users/${encodeURIComponent(roleUserId)}`,
+      headers: { cookie: `s3mini_oidc_token=${token}` },
+    });
+    expect(removed.statusCode).toBe(204);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/admin",
+          headers: { cookie: `s3mini_oidc_token=${roleToken}` },
+        })
+      ).statusCode,
+    ).toBe(403);
     vi.unstubAllGlobals();
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
@@ -1279,6 +1423,15 @@ describe("S3 HTTP routes", () => {
         await app.inject({
           method: "GET",
           url: "/admin/replication/events",
+          headers: { authorization: "Bearer admin-token" },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/admin/users",
           headers: { authorization: "Bearer admin-token" },
         })
       ).statusCode,
@@ -1388,6 +1541,55 @@ describe("S3 HTTP routes", () => {
         })
       ).statusCode,
     ).toBe(204);
+    delete process.env.S3MINI_REPLICATION_TOKEN;
+  });
+
+  it("accepts authenticated and idempotent replicated user-role updates", async () => {
+    process.env.S3MINI_REPLICATION_TOKEN = "replication-token";
+    const role = {
+      userId: `replica-user-${Date.now()}`,
+      email: "replica@example.com",
+      name: "Replica User",
+      role: "operator",
+      updatedAt: Date.now(),
+      sourceNodeId: "node-a",
+    };
+    const headers = {
+      "x-s3mini-replication-token": "replication-token",
+      "content-type": "application/json",
+    };
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/internal/replication/user-role",
+          headers,
+          payload: JSON.stringify(role),
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect(
+      (
+        await app.inject({
+          method: "PUT",
+          url: "/internal/replication/user-role",
+          headers,
+          payload: JSON.stringify(role),
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect(await s3.getAdminUserRole(role.userId)).toMatchObject({
+      email: role.email,
+      role: role.role,
+      sourceNodeId: role.sourceNodeId,
+    });
+    const denied = await app.inject({
+      method: "PUT",
+      url: "/internal/replication/user-role",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify(role),
+    });
+    expect(denied.statusCode).toBe(403);
     delete process.env.S3MINI_REPLICATION_TOKEN;
   });
 

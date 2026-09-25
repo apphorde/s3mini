@@ -66,6 +66,47 @@ describe("S3Mini", () => {
     ).not.toContain("admin-secret");
   });
 
+  it("persists replicated user roles with conflict ordering and revocation tombstones", async () => {
+    const userId = `role-${Date.now()}`;
+    const viewer = await s3.setAdminUserRole(
+      userId,
+      "viewer@example.com",
+      "Viewer",
+      "viewer",
+    );
+    await s3.acceptReplicatedAdminUserRole({
+      ...viewer,
+      role: "admin",
+      updatedAt: viewer.updatedAt + 10,
+      sourceNodeId: "node-b",
+    });
+    await s3.acceptReplicatedAdminUserRole({
+      ...viewer,
+      role: "operator",
+      updatedAt: viewer.updatedAt + 5,
+      sourceNodeId: "node-c",
+    });
+    expect(await s3.getAdminUserRole(userId)).toMatchObject({ role: "admin" });
+    expect(await s3.listAdminUserRoles()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ userId, role: "admin" }),
+      ]),
+    );
+
+    await s3.revokeAdminUserRole(userId);
+    expect(await s3.getAdminUserRole(userId)).toMatchObject({
+      role: "revoked",
+    });
+    expect(await s3.listAdminUserRoles()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ userId })]),
+    );
+    expect(await s3.listReplicatedAdminUserRoles()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ userId, role: "revoked" }),
+      ]),
+    );
+  });
+
   it("rejects invalid bucket names, locations, and traversal keys", async () => {
     await expect(s3.createBucket("Bad_Name")).rejects.toMatchObject({
       code: "InvalidBucketName",

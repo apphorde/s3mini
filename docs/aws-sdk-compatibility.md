@@ -52,7 +52,7 @@ const client = new S3Client({
 | List encoding | ListObjectsV2 `encoding-type=url` response mode | Implemented |
 | Persistence | Node `node:sqlite` metadata database and access-key primitives | Implemented |
 | Access-key control plane | Bearer-protected list, issue, and disable endpoints | Implemented |
-| Admin dashboard | Li3 single-page `/admin` key, bucket, and replication-health view | Implemented |
+| Admin dashboard | Li3 single-page `/admin` key, bucket, replication-health, and OIDC role-management view | Implemented |
 | XML error safety | Escaped error and response values for AWS-compatible XML clients | Implemented |
 | AWS request identifiers | `x-amz-request-id` and `x-amz-id-2` response headers | Implemented |
 | Replication durability | Atomic local writes and transactional replication intent journal | Partial |

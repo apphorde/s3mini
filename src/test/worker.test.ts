@@ -148,4 +148,48 @@ describe("ReplicationWorker", () => {
     ).toMatch(/^[a-f0-9]{64}$/);
     expect(object.versionId).toBeTruthy();
   });
+
+  it("replicates current user-role records during anti-entropy repair", async () => {
+    const userId = `replicated-role-${Date.now()}`;
+    await s3.setAdminUserRole(
+      userId,
+      "replicated@example.com",
+      "Replicated",
+      "operator",
+    );
+    const fetchMock = vi.fn((input: string | URL, _init?: RequestInit) =>
+      String(input).endsWith("/inventory")
+        ? Promise.resolve(
+            new Response(JSON.stringify([]), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          )
+        : Promise.resolve(new Response(null, { status: 204 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const worker = new ReplicationWorker(s3, {
+      peers: ["http://peer.test"],
+      token: "token",
+    });
+    await worker.drainOnce();
+
+    const roleDelivery = fetchMock.mock.calls.find(
+      (call) =>
+        String(call[0]).endsWith("/internal/replication/user-role") &&
+        JSON.parse(String(call[1]?.body)).userId === userId,
+    );
+    expect(roleDelivery?.[1]?.method).toBe("PUT");
+    expect(JSON.parse(String(roleDelivery?.[1]?.body))).toMatchObject({
+      userId,
+      role: "operator",
+      email: "replicated@example.com",
+    });
+    expect(
+      (roleDelivery?.[1]?.headers as Record<string, string>)[
+        "x-s3mini-replication-token"
+      ],
+    ).toBe("token");
+  });
 });

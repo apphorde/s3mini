@@ -37,10 +37,10 @@ self-hosted clients such as MinIO clients and compatible tooling.
 ## Current Handoff
 
 - Latest pushed checkpoint: inspect the most recent commit on `main`.
-- Verification baseline: 83 tests passing and `npm run build` passing.
+- Verification baseline: 86 tests passing and `npm run build` passing.
 - AWS SDK v3 coverage includes CRUD, pagination, multipart uploads, CopyObject,
   DeleteObjects, tagging, versioning, ranges, checksums, metadata, and conditionals.
-- Next implementation slice: close core S3 correctness gaps and add compatibility coverage for remaining MinIO and Backblaze B2 edge cases. OIDC dashboard polish and distributed-storage enhancements are deferred unless required by a concrete deployment need. Keep all credentials, allowlists, and private test-node configuration in environment variables.
+- Next implementation slice: close core S3 correctness gaps and add compatibility coverage for remaining MinIO and Backblaze B2 edge cases. OIDC browser roles are stored in SQLite and asynchronously replicated; do not treat them as consensus-backed cluster policy. Keep all credentials, allowlists, and private test-node configuration in environment variables.
 - OIDC configuration reference: live names `AUTH_PROVIDER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`; optional `S3MINI_OIDC_REDIRECT_URI`, `S3MINI_OIDC_AUDIENCE`, and `S3MINI_OIDC_ADMIN_EMAILS`. The `S3MINI_OIDC_*` client/provider names remain aliases.
 - Distributed-storage design constraints and implementation phases are tracked in `docs/distributed-roadmap.md`; do not weaken its durability, convergence, or rolling-upgrade invariants.
 - Replication delivery has a per-peer SQLite journal; do not prioritize quorum policy or other distributed-storage slices ahead of core S3 compatibility and single-node recovery.

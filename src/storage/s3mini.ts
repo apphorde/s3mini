@@ -37,6 +37,17 @@ export interface AccessKeyRecord {
   lastUsedAt?: Date;
 }
 
+export type AdminUserRole = "viewer" | "operator" | "admin" | "revoked";
+
+export interface AdminUserRoleRecord {
+  userId: string;
+  email?: string;
+  name?: string;
+  role: AdminUserRole;
+  updatedAt: number;
+  sourceNodeId: string;
+}
+
 export interface ReplicationEvent {
   id: number;
   bucket: string;
@@ -95,6 +106,7 @@ export interface ReplicatedObject {
 export class S3Mini {
   private db?: DatabaseSync;
   private initialized = false;
+  private lastAdminRoleTimestamp = 0;
 
   constructor() {}
 
@@ -245,6 +257,14 @@ export class S3Mini {
       name TEXT,
       createdAt INTEGER NOT NULL,
       lastSeenAt INTEGER NOT NULL
+    )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS admin_user_roles (
+      userId TEXT PRIMARY KEY,
+      email TEXT,
+      name TEXT,
+      role TEXT NOT NULL CHECK(role IN ('viewer', 'operator', 'admin', 'revoked')),
+      updatedAt INTEGER NOT NULL,
+      sourceNodeId TEXT NOT NULL
     )`);
     await this.run(`CREATE TABLE IF NOT EXISTS replication_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -550,9 +570,7 @@ export class S3Mini {
     }));
   }
 
-  async getAccessKey(
-    accessKeyId: string,
-  ): Promise<
+  async getAccessKey(accessKeyId: string): Promise<
     | {
         accessKeyId: string;
         secretAccessKey: string;
@@ -622,6 +640,118 @@ export class S3Mini {
           lastSeenAt: row.lastSeenAt,
         }
       : undefined;
+  }
+
+  async listAdminUserRoles(): Promise<AdminUserRoleRecord[]> {
+    const rows = await this.all(
+      "SELECT userId, email, name, role, updatedAt, sourceNodeId FROM admin_user_roles WHERE role != 'revoked' ORDER BY email, userId",
+    );
+    return rows.map((row) => ({
+      userId: row.userId,
+      email: row.email || undefined,
+      name: row.name || undefined,
+      role: row.role,
+      updatedAt: row.updatedAt,
+      sourceNodeId: row.sourceNodeId,
+    }));
+  }
+
+  async getAdminUserRole(
+    userId: string,
+  ): Promise<AdminUserRoleRecord | undefined> {
+    const row = await this.get(
+      "SELECT userId, email, name, role, updatedAt, sourceNodeId FROM admin_user_roles WHERE userId = ?",
+      [userId],
+    );
+    return row
+      ? {
+          userId: row.userId,
+          email: row.email || undefined,
+          name: row.name || undefined,
+          role: row.role,
+          updatedAt: row.updatedAt,
+          sourceNodeId: row.sourceNodeId,
+        }
+      : undefined;
+  }
+
+  async setAdminUserRole(
+    userId: string,
+    email: string | undefined,
+    name: string | undefined,
+    role: Exclude<AdminUserRole, "revoked">,
+  ): Promise<AdminUserRoleRecord> {
+    const existing = await this.getAdminUserRole(userId);
+    const updatedAt = Math.max(
+      Date.now(),
+      this.lastAdminRoleTimestamp + 1,
+      (existing?.updatedAt || 0) + 1,
+    );
+    this.lastAdminRoleTimestamp = updatedAt;
+    const record: AdminUserRoleRecord = {
+      userId,
+      email,
+      name,
+      role,
+      updatedAt,
+      sourceNodeId: NODE_ID,
+    };
+    await this.applyAdminUserRole(record);
+    return record;
+  }
+
+  async revokeAdminUserRole(userId: string): Promise<void> {
+    const existing = await this.getAdminUserRole(userId);
+    const updatedAt = Math.max(
+      Date.now(),
+      this.lastAdminRoleTimestamp + 1,
+      (existing?.updatedAt || 0) + 1,
+    );
+    this.lastAdminRoleTimestamp = updatedAt;
+    await this.applyAdminUserRole({
+      userId,
+      email: existing?.email,
+      name: existing?.name,
+      role: "revoked",
+      updatedAt,
+      sourceNodeId: NODE_ID,
+    });
+  }
+
+  async listReplicatedAdminUserRoles(): Promise<AdminUserRoleRecord[]> {
+    const rows = await this.all(
+      "SELECT userId, email, name, role, updatedAt, sourceNodeId FROM admin_user_roles ORDER BY userId",
+    );
+    return rows.map((row) => ({
+      userId: row.userId,
+      email: row.email || undefined,
+      name: row.name || undefined,
+      role: row.role,
+      updatedAt: row.updatedAt,
+      sourceNodeId: row.sourceNodeId,
+    }));
+  }
+
+  async acceptReplicatedAdminUserRole(
+    record: AdminUserRoleRecord,
+  ): Promise<void> {
+    await this.applyAdminUserRole(record);
+  }
+
+  private async applyAdminUserRole(record: AdminUserRoleRecord): Promise<void> {
+    await this.run(
+      `INSERT INTO admin_user_roles (userId, email, name, role, updatedAt, sourceNodeId) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(userId) DO UPDATE SET email = excluded.email, name = excluded.name, role = excluded.role, updatedAt = excluded.updatedAt, sourceNodeId = excluded.sourceNodeId
+       WHERE excluded.updatedAt > admin_user_roles.updatedAt OR (excluded.updatedAt = admin_user_roles.updatedAt AND excluded.sourceNodeId > admin_user_roles.sourceNodeId)`,
+      [
+        record.userId,
+        record.email || null,
+        record.name || null,
+        record.role,
+        record.updatedAt,
+        record.sourceNodeId,
+      ],
+    );
   }
 
   async markAccessKeyUsed(accessKeyId: string): Promise<void> {

@@ -37,6 +37,37 @@ test("dashboard boots, renders, and has no browser errors", async ({
   await page.getByRole("button", { name: "Issue access key" }).click();
   await expect(page.getByText("Secret key")).toBeVisible();
   expect(new URL(page.url()).searchParams.get("page")).toBe("accounts");
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page).toHaveURL(/page=accounts/);
+  await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await page.getByRole("button", { name: "Users" }).click();
+  const userId = `ui-smoke-role-${Date.now()}`;
+  await page.getByPlaceholder("User subject ID").fill(userId);
+  await page.getByPlaceholder("user@example.com").fill("ui-role@example.com");
+  await page.getByPlaceholder("Display name").fill("UI Role User");
+  await page.getByRole("combobox").selectOption("operator");
+  await page.getByRole("button", { name: "Save role" }).click();
+  await expect(page.getByText(userId)).toBeVisible();
+  const removal = page.waitForResponse(
+    (response) =>
+      response.request().method() === "DELETE" &&
+      response.url().endsWith(`/admin/users/${userId}`),
+  );
+  await page
+    .getByRole("row", { name: new RegExp(userId) })
+    .getByRole("button", { name: "Remove" })
+    .click();
+  expect((await removal).status()).toBe(204);
+  expect(
+    await (
+      await page.request.get("/admin/users", {
+        headers: { Authorization: "Bearer dev-admin" },
+      })
+    ).json(),
+  ).not.toEqual(expect.arrayContaining([expect.objectContaining({ userId })]));
+  await expect(page).toHaveURL(/page=users/);
+  await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
+  await expect(page.getByText(userId)).toHaveCount(0);
   await page.screenshot({ path: "test-results/dashboard.png", fullPage: true });
   expect([...errors, ...failedResponses]).toEqual([]);
 });

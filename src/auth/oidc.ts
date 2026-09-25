@@ -17,7 +17,7 @@ export async function verifyOidcToken(
   token: string,
   issuer: string,
   audience: string,
-): Promise<void> {
+): Promise<{ sub: string }> {
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("Invalid JWT");
 
@@ -81,6 +81,7 @@ export async function verifyOidcToken(
     throw new Error("Expired JWT");
   if (typeof payload.nbf === "number" && payload.nbf > now)
     throw new Error("JWT is not active");
+  return { sub: payload.sub! };
 }
 
 export async function introspectOidcToken(

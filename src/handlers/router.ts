@@ -12,6 +12,7 @@ import { verifyPresignedSigV4, verifySigV4 } from "../auth/sigv4.js";
 import { introspectOidcToken, verifyOidcToken } from "../auth/oidc.js";
 import { CONTROL_PLANE_HTML } from "../ui/control-plane.js";
 import type { ReplicationWorker } from "../replication/worker.js";
+import type { AdminUserRole } from "../storage/s3mini.js";
 
 export async function registerRoutes(
   fastify: FastifyInstance,
@@ -31,7 +32,8 @@ export async function registerRoutes(
     return payload;
   });
   fastify.addHook("preValidation", async (request, reply) => {
-    if (request.url === "/admin" || request.url.startsWith("/admin/")) return;
+    const pathname = new URL(request.url, "http://localhost").pathname;
+    if (pathname === "/admin" || pathname.startsWith("/admin/")) return;
     const authorization = request.headers.authorization;
     const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
     let oidcScopes: string[] = [];
@@ -311,6 +313,59 @@ export async function registerRoutes(
     }
     return reply.code(204).send();
   });
+  fastify.put("/internal/replication/user-role", async (request, reply) => {
+    const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
+    const suppliedToken = request.headers["x-s3mini-replication-token"];
+    if (
+      !expectedToken ||
+      !suppliedToken ||
+      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
+    )
+      throw new S3Error(
+        "AccessDenied",
+        "The replication token is invalid.",
+        403,
+      );
+    const body = request.body as Partial<{
+      userId: string;
+      email: string;
+      name: string;
+      role: AdminUserRole;
+      updatedAt: number;
+      sourceNodeId: string;
+    }>;
+    if (
+      typeof body?.userId !== "string" ||
+      !body.userId.trim() ||
+      body.userId !== body.userId.trim() ||
+      body.userId.length > 256 ||
+      !["viewer", "operator", "admin", "revoked"].includes(body.role || "") ||
+      !Number.isSafeInteger(body.updatedAt) ||
+      body.updatedAt! < 0 ||
+      typeof body.sourceNodeId !== "string" ||
+      !body.sourceNodeId.trim() ||
+      body.sourceNodeId !== body.sourceNodeId.trim() ||
+      body.sourceNodeId.length > 256 ||
+      (body.email !== undefined &&
+        (typeof body.email !== "string" || body.email.length > 320)) ||
+      (body.name !== undefined &&
+        (typeof body.name !== "string" || body.name.length > 256))
+    )
+      throw new S3Error(
+        "InvalidRequest",
+        "The replicated user role is invalid.",
+        400,
+      );
+    await s3.acceptReplicatedAdminUserRole({
+      userId: body.userId,
+      email: body.email,
+      name: body.name,
+      role: body.role!,
+      updatedAt: body.updatedAt!,
+      sourceNodeId: body.sourceNodeId,
+    });
+    return reply.code(204).send();
+  });
   fastify.get("/internal/replication/inventory", async (request, reply) => {
     const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
@@ -345,7 +400,36 @@ export async function registerRoutes(
     },
   );
 
-  async function requireAdmin(request: FastifyRequest): Promise<void> {
+  type DashboardRole = Exclude<AdminUserRole, "revoked">;
+  const roleRank: Record<DashboardRole, number> = {
+    viewer: 1,
+    operator: 2,
+    admin: 3,
+  };
+
+  function meetsRole(role: DashboardRole, required: DashboardRole): boolean {
+    return roleRank[role] >= roleRank[required];
+  }
+
+  async function getOidcRole(profile: {
+    id?: string;
+    email?: string;
+  }): Promise<DashboardRole | undefined> {
+    const allowedAdmins = (process.env.S3MINI_OIDC_ADMIN_EMAILS || "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    if (profile.email && allowedAdmins.includes(profile.email.toLowerCase()))
+      return "admin";
+    if (!profile.id) return undefined;
+    const record = await s3.getAdminUserRole(profile.id);
+    return record && record.role !== "revoked" ? record.role : undefined;
+  }
+
+  async function authorizeAdmin(
+    request: FastifyRequest,
+    requiredRole: DashboardRole,
+  ): Promise<void> {
     if (
       process.env.S3MINI_TEST_DISABLE_OIDC === "1" &&
       getCookie(request, "s3mini_test_admin") === "dev-admin"
@@ -401,9 +485,25 @@ export async function registerRoutes(
       }
     }
     const oidcToken = getCookie(request, "s3mini_oidc_token");
-    if (oidcToken && (await isOidcAdmin(oidcToken))) return;
+    if (oidcToken && oidcConfigured()) {
+      try {
+        const profile = await getOidcProfile(oidcToken);
+        const role = profile && (await getOidcRole(profile));
+        if (role && meetsRole(role, requiredRole)) return;
+      } catch {
+        // An invalid or expired browser session is not authorized.
+      }
+    }
     throw new S3Error("AccessDenied", "The admin token is invalid.", 403);
   }
+
+  const requireRole =
+    (role: DashboardRole) =>
+    async (request: FastifyRequest): Promise<void> =>
+      authorizeAdmin(request, role);
+  const requireAdmin = requireRole("admin");
+  const requireOperator = requireRole("operator");
+  const requireViewer = requireRole("viewer");
 
   function oidcConfigured(): boolean {
     return Boolean(oidcProvider() && oidcClientId() && oidcClientSecret());
@@ -451,20 +551,6 @@ export async function registerRoutes(
     return value ? decodeURIComponent(value.slice(name.length + 1)) : undefined;
   }
 
-  async function isOidcAdmin(token: string): Promise<boolean> {
-    try {
-      const user = await getOidcProfile(token);
-      if (!user) return false;
-      const allowed = (process.env.S3MINI_OIDC_ADMIN_EMAILS || "")
-        .split(",")
-        .map((email) => email.trim())
-        .filter(Boolean);
-      return allowed.length > 0 && !!user.email && allowed.includes(user.email);
-    } catch {
-      return false;
-    }
-  }
-
   fastify.get("/admin", async (request, reply) => {
     if (process.env.S3MINI_TEST_DISABLE_OIDC === "1") {
       reply.header(
@@ -475,11 +561,18 @@ export async function registerRoutes(
     if (oidcConfigured()) {
       const token = getCookie(request, "s3mini_oidc_token");
       if (!token) return reply.redirect("/admin/login");
-      if (!(await isOidcAdmin(token))) {
+      let role: DashboardRole | undefined;
+      try {
+        const profile = await getOidcProfile(token);
+        role = profile && (await getOidcRole(profile));
+      } catch {
+        role = undefined;
+      }
+      if (!role) {
         return reply
           .type("text/plain")
           .code(403)
-          .send("Your OIDC account is not listed in S3MINI_OIDC_ADMIN_EMAILS.");
+          .send("Your OIDC account does not have a dashboard role assigned.");
       }
     }
     return reply.type("text/html").send(CONTROL_PLANE_HTML);
@@ -496,7 +589,7 @@ export async function registerRoutes(
   });
   fastify.get(
     "/admin/profile",
-    { preHandler: requireAdmin },
+    { preHandler: requireViewer },
     async (request, reply) => {
       const profileToken = getCookie(request, "s3mini_oidc_token");
       if (profileToken) {
@@ -508,6 +601,7 @@ export async function registerRoutes(
           return reply.send({
             ...profile,
             meUrl: oidcProvider() ? `${oidcBaseUrl()}/me` : "",
+            role: (await getOidcRole(profile)) || "viewer",
             adminTokenOwner: adminToken
               ? await s3.getAdminTokenOwner(adminToken)
               : undefined,
@@ -522,8 +616,64 @@ export async function registerRoutes(
         email: "",
         photo: "",
         meUrl: oidcProvider() ? `${oidcBaseUrl()}/me` : "",
+        role: "admin",
         adminTokenOwner: token ? await s3.getAdminTokenOwner(token) : undefined,
       });
+    },
+  );
+  fastify.get(
+    "/admin/users",
+    { preHandler: requireAdmin },
+    async (_request, reply) => reply.send(await s3.listAdminUserRoles()),
+  );
+  fastify.put(
+    "/admin/users/:userId",
+    { preHandler: requireAdmin },
+    async (request, reply) => {
+      const { userId } = request.params as { userId: string };
+      const body = request.body as {
+        role?: string;
+        email?: string;
+        name?: string;
+      };
+      if (
+        !userId.trim() ||
+        userId !== userId.trim() ||
+        userId.length > 256 ||
+        !["viewer", "operator", "admin"].includes(body?.role || "") ||
+        (body.email !== undefined && typeof body.email !== "string") ||
+        (body.name !== undefined && typeof body.name !== "string")
+      )
+        throw new S3Error(
+          "InvalidRequest",
+          "A valid user ID and dashboard role are required.",
+          400,
+        );
+      return reply
+        .code(200)
+        .send(
+          await s3.setAdminUserRole(
+            userId,
+            body.email?.trim().slice(0, 320),
+            body.name?.trim().slice(0, 256),
+            body.role as Exclude<AdminUserRole, "revoked">,
+          ),
+        );
+    },
+  );
+  fastify.delete(
+    "/admin/users/:userId",
+    { preHandler: requireAdmin },
+    async (request, reply) => {
+      const { userId } = request.params as { userId: string };
+      if (!userId.trim() || userId !== userId.trim() || userId.length > 256)
+        throw new S3Error(
+          "InvalidRequest",
+          "A valid user ID is required.",
+          400,
+        );
+      await s3.revokeAdminUserRole(userId);
+      return reply.code(204).send();
     },
   );
   fastify.get("/admin/login", async (request, reply) => {
@@ -644,30 +794,30 @@ export async function registerRoutes(
     { id?: string; name?: string; email?: string; photo?: string } | undefined
   > {
     const audience = process.env.S3MINI_OIDC_AUDIENCE || oidcClientId()!;
-    await verifyOidcToken(token, oidcBaseUrl(), audience);
+    const claims = await verifyOidcToken(token, oidcBaseUrl(), audience);
     const response = await fetch(`${oidcBaseUrl()}/userinfo`, {
       headers: {
         authorization: `Bearer ${token}`,
         "x-auth-audience": audience,
       },
     });
-    return response.ok
-      ? ((await response.json()) as {
-          id?: string;
-          name?: string;
-          email?: string;
-          photo?: string;
-        })
-      : undefined;
+    if (!response.ok) return undefined;
+    const profile = (await response.json()) as {
+      id?: string;
+      name?: string;
+      email?: string;
+      photo?: string;
+    };
+    return { ...profile, id: claims.sub };
   }
   fastify.get(
     "/admin/replication/health",
-    { preHandler: requireAdmin },
+    { preHandler: requireViewer },
     async (_request, reply) => reply.send(replication?.getPeerHealth() || []),
   );
   fastify.get(
     "/admin/replication/summary",
-    { preHandler: requireAdmin },
+    { preHandler: requireViewer },
     async (_request, reply) => {
       const peers = (process.env.S3MINI_REPLICATION_PEERS || "")
         .split(",")
@@ -685,7 +835,7 @@ export async function registerRoutes(
   );
   fastify.get(
     "/admin/replication/events",
-    { preHandler: requireAdmin },
+    { preHandler: requireViewer },
     async (request, reply) => {
       const query = request.query as { status?: string; limit?: string };
       const statuses = [
@@ -706,7 +856,7 @@ export async function registerRoutes(
   );
   fastify.post(
     "/admin/replication/events/:id/retry",
-    { preHandler: requireAdmin },
+    { preHandler: requireOperator },
     async (request, reply) => {
       await s3.retryReplicationEvent(
         Number((request.params as { id: string }).id),
@@ -716,14 +866,14 @@ export async function registerRoutes(
   );
   fastify.get(
     "/admin/access-keys",
-    { preHandler: requireAdmin },
+    { preHandler: requireViewer },
     async (_request, reply) => {
       return reply.send(await s3.listAccessKeys());
     },
   );
   fastify.post(
     "/admin/access-keys",
-    { preHandler: requireAdmin },
+    { preHandler: requireOperator },
     async (request, reply) => {
       const body =
         request.body && typeof request.body === "object"
@@ -736,7 +886,7 @@ export async function registerRoutes(
   );
   fastify.delete(
     "/admin/access-keys/:accessKeyId",
-    { preHandler: requireAdmin },
+    { preHandler: requireOperator },
     async (request, reply) => {
       const { accessKeyId } = request.params as { accessKeyId: string };
       await s3.setAccessKeyStatus(accessKeyId, "Disabled");
@@ -745,12 +895,12 @@ export async function registerRoutes(
   );
   fastify.get(
     "/admin/buckets",
-    { preHandler: requireAdmin },
+    { preHandler: requireViewer },
     async (_request, reply) => reply.send(await s3.listBuckets()),
   );
   fastify.post(
     "/admin/buckets",
-    { preHandler: requireAdmin },
+    { preHandler: requireOperator },
     async (request, reply) => {
       const body =
         request.body && typeof request.body === "object"
@@ -768,7 +918,7 @@ export async function registerRoutes(
   );
   fastify.delete(
     "/admin/buckets/:bucket",
-    { preHandler: requireAdmin },
+    { preHandler: requireOperator },
     async (request, reply) => {
       await s3.deleteBucket((request.params as { bucket: string }).bucket);
       return reply.code(204).send();
@@ -776,7 +926,7 @@ export async function registerRoutes(
   );
   fastify.get(
     "/admin/buckets/:bucket/policy",
-    { preHandler: requireAdmin },
+    { preHandler: requireViewer },
     async (request, reply) => {
       const bucket = (request.params as { bucket: string }).bucket;
       return reply.send(
@@ -786,7 +936,7 @@ export async function registerRoutes(
   );
   fastify.put(
     "/admin/buckets/:bucket/policy",
-    { preHandler: requireAdmin },
+    { preHandler: requireOperator },
     async (request, reply) => {
       const bucket = (request.params as { bucket: string }).bucket;
       if (!request.body || typeof request.body !== "object")
@@ -802,7 +952,7 @@ export async function registerRoutes(
   );
   fastify.delete(
     "/admin/buckets/:bucket/policy",
-    { preHandler: requireAdmin },
+    { preHandler: requireOperator },
     async (request, reply) => {
       await s3.deleteBucketConfiguration(
         (request.params as { bucket: string }).bucket,

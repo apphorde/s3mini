@@ -37,7 +37,8 @@ recovery behavior has known gaps.
 - [x] S3-style XML errors for implemented operations
 - [x] Basic object metadata: content type, disposition, encoding, cache control, expires, storage class
 - [x] Persistent hybrid storage: SQLite metadata in `/data/s3mini.sqlite` and binary files under `/data/objects`
-- [x] Persistent access-key storage, authenticated HTTP control plane, and lightweight `/admin` dashboard
+- [x] Persistent access-key storage, role-authorized HTTP control plane, and lightweight `/admin` dashboard
+- [x] Replicated OIDC `viewer`, `operator`, and `admin` roles with revocation tombstones and admin management UI
 - [x] Local durability journal for asynchronous replication
 - [x] Asynchronous authenticated peer delivery for object writes, deletes, and delete markers (anti-entropy repair and quorum pending)
 - [x] Docker image exposing port `9000` with the Node SQLite-compatible base image
@@ -113,7 +114,7 @@ recovery behavior has known gaps.
 - [x] Lifecycle metadata transitions between supported storage classes
 - [ ] Glacier, Deep Archive, and Intelligent-Tiering backends
 - [ ] Replication to external regions or storage systems
-- [ ] A web UI; S3MINI provides an API only
+- [ ] A standalone general-purpose web UI; the embedded `/admin` dashboard is limited to control-plane operations
 - [ ] Large-scale storage optimization, high-volume throughput tuning, and
   multi-region/high-availability guarantees
 
