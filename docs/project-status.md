@@ -59,7 +59,7 @@ remain secondary until the core S3 path is complete and well tested.
 - AWS SDK v3 tests cover bucket/object CRUD, pagination, and multipart upload.
 - AWS SDK v3 tests also cover CopyObject, tagging, versioning, ranges, checksums, and conditional reads.
 - HTTP coverage includes bucket configuration, multipart listing/abort, object copy/batch deletion, authentication-required mutations, and the OIDC callback; opt-in MinIO and Backblaze B2 coverage is available through `src/test/s3-compatibility.test.ts`.
-- The current compatibility checkpoint is tracked in git history with 82 passing tests.
+- The current compatibility checkpoint is tracked in git history with 83 passing tests.
 - The deployed service has been smoke-tested through its public reverse-proxied endpoint.
 
 ## Verification

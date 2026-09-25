@@ -1068,6 +1068,23 @@ describe("S3 HTTP routes", () => {
     delete process.env.AUTH_PROVIDER;
   });
 
+  it("does not loop when an authenticated OIDC user is not an admin", async () => {
+    process.env.AUTH_PROVIDER = "https://auth.example.com";
+    process.env.S3MINI_OIDC_CLIENT_ID = "s3mini-dashboard";
+    process.env.S3MINI_OIDC_CLIENT_SECRET = "secret";
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin",
+      headers: { cookie: "s3mini_oidc_token=authenticated-user-token" },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.headers.location).toBeUndefined();
+    expect(response.body).toContain("S3MINI_OIDC_ADMIN_EMAILS");
+    delete process.env.AUTH_PROVIDER;
+    delete process.env.S3MINI_OIDC_CLIENT_ID;
+    delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+  });
+
   it("accepts the live OIDC environment variable names", async () => {
     process.env.AUTH_PROVIDER = "https://auth.example.com/api";
     process.env.OIDC_CLIENT_ID = "live-client";

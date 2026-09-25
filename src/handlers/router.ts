@@ -463,8 +463,13 @@ export async function registerRoutes(
   fastify.get("/admin", async (request, reply) => {
     if (oidcConfigured()) {
       const token = getCookie(request, "s3mini_oidc_token");
-      if (!token || !(await isOidcAdmin(token)))
-        return reply.redirect("/admin/login");
+      if (!token) return reply.redirect("/admin/login");
+      if (!(await isOidcAdmin(token))) {
+        return reply
+          .type("text/plain")
+          .code(403)
+          .send("Your OIDC account is not listed in S3MINI_OIDC_ADMIN_EMAILS.");
+      }
     }
     return reply.type("text/html").send(CONTROL_PLANE_HTML);
   });
