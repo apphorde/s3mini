@@ -19,6 +19,7 @@ export interface PeerHealth {
 
 export class ReplicationWorker {
   private timer?: NodeJS.Timeout;
+  private inventoryTimer?: NodeJS.Timeout;
   private running = false;
   private readonly peers: string[];
   private readonly token?: string;
@@ -46,16 +47,26 @@ export class ReplicationWorker {
 
   start(intervalMs = 1000): void {
     if (this.timer || !this.peers.length || !this.token) return;
+    const inventoryIntervalMs = Math.max(
+      1000,
+      Number(process.env.S3MINI_REPLICATION_INVENTORY_INTERVAL_MS) || 60000,
+    );
     void this.loadPersistedHealth();
     this.timer = setInterval(() => {
-      void this.drainOnce();
+      void this.drainOnce(false);
     }, intervalMs);
     this.timer.unref();
+    this.inventoryTimer = setInterval(() => {
+      void this.repairInventory();
+    }, inventoryIntervalMs);
+    this.inventoryTimer.unref();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    if (this.inventoryTimer) clearInterval(this.inventoryTimer);
     this.timer = undefined;
+    this.inventoryTimer = undefined;
   }
 
   getPeerHealth(): PeerHealth[] {
@@ -68,7 +79,7 @@ export class ReplicationWorker {
     }
   }
 
-  async drainOnce(): Promise<void> {
+  async drainOnce(repair = true): Promise<void> {
     if (this.running || !this.peers.length || !this.token) return;
     this.running = true;
     try {
@@ -79,10 +90,16 @@ export class ReplicationWorker {
         100,
       );
       for (const delivery of deliveries) await this.deliverToPeer(delivery);
-      await this.repairMissingEvents(await this.s3.listReplicationEvents(1000));
+      if (repair)
+        await this.repairMissingEvents(await this.s3.listReplicationEvents(1000));
     } finally {
       this.running = false;
     }
+  }
+
+  private async repairInventory(): Promise<void> {
+    if (this.running || !this.peers.length || !this.token) return;
+    await this.repairMissingEvents(await this.s3.listReplicationEvents(1000));
   }
 
   private async repairMissingEvents(events: ReplicationEvent[]): Promise<void> {

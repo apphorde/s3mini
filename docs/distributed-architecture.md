@@ -23,6 +23,7 @@ placement list.
 - Events contain the bucket, key, immutable version ID, ETag, size, source node ID, and payload path.
 - Events are initially `Pending` and expose explicit delivery status, attempt count, and retry time for the background worker.
 - When `S3MINI_REPLICATION_PEERS` and `S3MINI_REPLICATION_TOKEN` are configured, a background worker sends pending object writes to each peer with exponential retry backoff.
+- Object and delete-event delivery runs on the short worker interval; anti-entropy inventory checks run separately and default to once per minute through `S3MINI_REPLICATION_INVENTORY_INTERVAL_MS`.
 - Peers accept writes only through the authenticated internal replication endpoint and do not create another outbound event.
 
 ## Replication Contract

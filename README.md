@@ -114,6 +114,7 @@ S3MINI_REGION=local
 S3MINI_NODE_ID=node-a
 S3MINI_REPLICATION_PEERS=https://node-b.example.internal:9000,https://node-c.example.internal:9000
 S3MINI_REPLICATION_TOKEN=replace-with-a-long-random-secret
+S3MINI_REPLICATION_INVENTORY_INTERVAL_MS=60000
 S3MINI_REPLICATION_QUORUM=0
 ```
 
@@ -127,6 +128,12 @@ capacity across replicas. Quorum acknowledgement, conflict resolution, and
 failover are not yet enabled. A bucket replicated between nodes should use the
 same logical location label on each node; the label does not need to equal the
 node ID.
+
+Object-write delivery and delete delivery are event-driven. Inventory polling is
+only anti-entropy repair and defaults to once per minute; tune it with
+`S3MINI_REPLICATION_INVENTORY_INTERVAL_MS`. Reverse proxies should also exclude
+`/internal/replication/inventory` from ordinary access logs if those logs are
+not needed.
 
 ## Dashboard
 
