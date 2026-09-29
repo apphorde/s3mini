@@ -84,6 +84,10 @@ dashboard data; operators can manage buckets, policies, access keys, and retry
 replication events; admins can also manage user roles. The email allowlist is an
 admin override, so remove an email from it before relying on a lower stored role.
 
+The S3MINI server publishes the OpenAPI 3.0.3 specification for its implemented
+S3, dashboard, OIDC, and replication APIs at `GET /api` as YAML. The source
+document is `openapi-s3mini.yaml`.
+
 S3MINI follows the provider's Node client flow: authorization-code PKCE uses
 `/authorize` and `/token`, access tokens are verified as RS256 JWTs using
 `/.well-known/jwks.json`, and user identity is loaded from `/userinfo` with
