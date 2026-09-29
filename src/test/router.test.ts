@@ -47,10 +47,14 @@ describe("S3 HTTP routes", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.headers["content-type"]).toContain("application/yaml");
-      expect(response.body).toContain("openapi: 3.0.3");
-      expect(response.body).toContain("/internal/replication/user-role:");
-      expect(response.body).toContain("/admin/users/{userId}:");
+      expect(response.headers["content-type"]).toContain("application/json");
+      expect(response.json()).toMatchObject({
+        openapi: "3.0.3",
+        paths: expect.objectContaining({
+          "/internal/replication/user-role": expect.any(Object),
+          "/admin/users/{userId}": expect.any(Object),
+        }),
+      });
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();

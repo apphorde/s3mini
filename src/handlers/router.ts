@@ -150,8 +150,8 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   });
 
   fastify.get("/api", async (_request, reply) => {
-    const specification = await readFile(new URL("../../openapi-s3mini.yaml", import.meta.url), "utf8");
-    return reply.type("application/yaml; charset=utf-8").send(specification);
+    const specification = await readFile(new URL("../../openapi-s3mini.json", import.meta.url), "utf8");
+    return reply.type("application/json; charset=utf-8").send(specification);
   });
 
   fastify.put("/internal/replication", async (request, reply) => {

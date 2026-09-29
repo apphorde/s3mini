@@ -23,7 +23,7 @@
   },
   "files": [
     "dist",
-    "openapi-s3mini.yaml",
+    "openapi-s3mini.json",
     "README.md",
     "LICENSE"
   ],
