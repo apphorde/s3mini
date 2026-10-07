@@ -8,4 +8,4 @@
 - [x] Add account/bucket quota APIs and enforce limits atomically for object writes, multipart part reservations, copies, and replicated object writes.
 - [x] Update the OpenAPI contract, user/admin documentation, account allocation UI, and authorization/isolation/quota tests.
 - [x] Verify formatting, lint/type checks, tests, and package/build locally.
-- [ ] Verify CI and deployment behavior after push.
+- [x] Verify CI and deployment behavior after push; the latest Docker/NPM jobs passed and the deployed `/api` endpoint returned HTTP 200.
