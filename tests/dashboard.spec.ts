@@ -102,4 +102,29 @@ test("dashboard boots, renders, and has no browser errors", async ({
   await expect(page.getByText(userId)).toHaveCount(0);
   await page.screenshot({ path: "test-results/dashboard.png", fullPage: true });
   expect([...errors, ...failedResponses]).toEqual([]);
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  for (const [pageName, heading] of [
+    ["accounts", "Accounts"],
+    ["allocations", "Storage allocations"],
+    ["users", "Users"],
+    ["tokens", "Issue OIDC API token"],
+  ]) {
+    await page.goto(`/admin?page=${pageName}`, { waitUntil: "networkidle" });
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    if (pageName === "accounts") {
+      await page.screenshot({
+        path: "test-results/dashboard-mobile-accounts.png",
+        fullPage: true,
+      });
+    }
+    const width = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }));
+    expect(
+      width.content,
+      `${pageName} overflows the mobile viewport`,
+    ).toBeLessThanOrEqual(width.viewport);
+  }
 });
