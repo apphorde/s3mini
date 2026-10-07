@@ -2691,6 +2691,112 @@
           }
         }
       }
+    },
+    "/admin/oidc/api-tokens": {
+      "post": {
+        "operationId": "IssueOidcApiToken",
+        "tags": ["Admin"],
+        "summary": "Issue a downstream API token for the S3MINI OIDC client",
+        "description": "Requires an explicitly designated OIDC admin and a configured server-side OIDC_API_TOKEN. The server-side credential is never returned. The OIDC provider only permits tokens for this client and validates requested scopes against its configured client scopes. The generated opaque token is returned once.",
+        "security": [
+          {
+            "DashboardCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["label", "scopes"],
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "s3:read",
+                        "s3:write",
+                        "s3:admin",
+                        "s3:provision"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Generated one-time opaque token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["token", "label", "scopes"],
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "writeOnly": true
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "expiresAt": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "integer"
+                        }
+                      ]
+                    },
+                    "expiresIn": {
+                      "oneOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid token label/scopes or scopes not enabled for the client"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          },
+          "502": {
+            "description": "OIDC token service unavailable or returned an invalid response"
+          },
+          "503": {
+            "description": "OIDC_API_TOKEN or OIDC client settings are not configured"
+          }
+        }
+      }
     }
   },
   "components": {

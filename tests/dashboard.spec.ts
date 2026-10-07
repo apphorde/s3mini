@@ -49,6 +49,29 @@ test("dashboard boots, renders, and has no browser errors", async ({
   await expect(
     page.getByRole("heading", { name: "Storage allocations" }),
   ).toBeVisible();
+  await page.route("**/admin/oidc/api-tokens", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      label: "ui-smoke-token",
+      scopes: ["s3:provision"],
+    });
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        token: "one-time-ui-token",
+        label: "ui-smoke-token",
+        scopes: ["s3:provision"],
+        expiresAt: "2030-01-01T00:00:00.000Z",
+      }),
+    });
+  });
+  await page.getByRole("button", { name: "OIDC tokens" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Issue OIDC API token" }),
+  ).toBeVisible();
+  await page.getByPlaceholder("Filebin provisioning").fill("ui-smoke-token");
+  await page.getByRole("button", { name: "Generate token" }).click();
+  await expect(page.getByText("one-time-ui-token")).toBeVisible();
   await page.getByRole("button", { name: "Users" }).click();
   const userId = `ui-smoke-role-${Date.now()}`;
   await page.getByPlaceholder("User subject ID").fill(userId);

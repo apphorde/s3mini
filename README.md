@@ -135,6 +135,16 @@ The dashboard requires an OIDC session with an explicit admin grant whenever
 OIDC is configured. `S3MINI_ADMIN_TOKEN` remains available only for deployments
 without OIDC and local testing.
 
+OIDC admins can issue downstream API tokens from the dashboard's **OIDC tokens**
+page. Configure `OIDC_API_TOKEN` on the S3MINI server with the OIDC provider's
+client-bound token-minting API token for the S3MINI OIDC client. S3MINI sends it
+only to the provider's `POST /api-tokens/{clientId}/issue` endpoint; it is never
+sent to the browser or returned by S3MINI. The provider restricts minting to
+that client and validates the requested scopes against its configured allowed
+scopes. S3MINI limits requests to `s3:read`, `s3:write`, `s3:admin`, and
+`s3:provision`. Generated opaque tokens are displayed once to the admin, so
+copy and store them securely.
+
 ## Replica Setup
 
 Run the same S3MINI image or build on every machine. Each machine must have:

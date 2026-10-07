@@ -1151,6 +1151,129 @@ export async function registerRoutes(
       return reply.code(204).send();
     },
   );
+  fastify.post(
+    "/admin/oidc/api-tokens",
+    { preHandler: requireAdmin },
+    async (request, reply) => {
+      const apiToken = process.env.OIDC_API_TOKEN?.trim();
+      const clientId = oidcClientId();
+      if (!apiToken || !clientId || !oidcProvider()) {
+        return reply.code(503).send({
+          error:
+            "OIDC token issuance is not configured. Set OIDC_API_TOKEN and the OIDC client settings.",
+        });
+      }
+
+      const body = request.body as {
+        label?: unknown;
+        scopes?: unknown;
+      };
+      const label = typeof body?.label === "string" ? body.label.trim() : "";
+      const scopes = body?.scopes;
+      const allowedScopes = new Set([
+        "s3:read",
+        "s3:write",
+        "s3:admin",
+        "s3:provision",
+      ]);
+      if (
+        !label ||
+        label.length > 128 ||
+        !Array.isArray(scopes) ||
+        scopes.length === 0 ||
+        scopes.length > allowedScopes.size ||
+        scopes.some(
+          (scope) => typeof scope !== "string" || !allowedScopes.has(scope),
+        ) ||
+        new Set(scopes).size !== scopes.length
+      ) {
+        return reply.code(400).send({
+          error:
+            "A label and one or more distinct supported S3 scopes are required.",
+        });
+      }
+
+      let upstream: Response;
+      try {
+        upstream = await fetch(
+          new URL(
+            `/api-tokens/${encodeURIComponent(clientId)}/issue`,
+            oidcBaseUrl(),
+          ),
+          {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${apiToken}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ label, scopes }),
+          },
+        );
+      } catch {
+        return reply
+          .code(502)
+          .send({ error: "The OIDC token service could not be reached." });
+      }
+
+      if (upstream.status === 400) {
+        return reply.code(400).send({
+          error:
+            "The OIDC provider rejected the requested scopes. Check the scopes allowed for this client.",
+        });
+      }
+      if (!upstream.ok) {
+        return reply.code(502).send({
+          error:
+            upstream.status === 401
+              ? "The OIDC provider rejected OIDC_API_TOKEN."
+              : "The OIDC provider could not issue a token.",
+        });
+      }
+
+      let result: Record<string, unknown>;
+      try {
+        const parsed: unknown = await upstream.json();
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Invalid token response shape");
+        }
+        result = parsed as Record<string, unknown>;
+      } catch {
+        return reply.code(502).send({
+          error: "The OIDC provider returned an invalid token response.",
+        });
+      }
+      const token = [
+        result.token,
+        result.access_token,
+        result.api_token,
+        result.apiToken,
+        result.value,
+      ].find(
+        (value): value is string =>
+          typeof value === "string" && value.length > 0,
+      );
+      if (!token) {
+        return reply
+          .code(502)
+          .send({ error: "The OIDC provider returned no token value." });
+      }
+      const expiry =
+        result.expiresAt ?? result.expires_at ?? result.expiration ?? null;
+      const expiresIn = result.expiresIn ?? result.expires_in ?? null;
+
+      return reply.code(201).send({
+        token,
+        label,
+        scopes,
+        ...(typeof expiry === "string" || typeof expiry === "number"
+          ? { expiresAt: expiry }
+          : {}),
+        ...(typeof expiresIn === "string" || typeof expiresIn === "number"
+          ? { expiresIn }
+          : {}),
+      });
+    },
+  );
   fastify.put(
     "/admin/buckets/:bucket/quota",
     { preHandler: requireAdmin },

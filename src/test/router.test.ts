@@ -906,6 +906,142 @@ describe("S3 HTTP routes", () => {
     delete process.env.S3MINI_ADMIN_TOKEN;
   });
 
+  it("issues downstream OIDC tokens only through the admin route and server API token", async () => {
+    const originalEnvironment = new Map(
+      [
+        "AUTH_PROVIDER",
+        "OIDC_API_TOKEN",
+        "S3MINI_OIDC_AUTH_URL",
+        "S3MINI_OIDC_CLIENT_ID",
+        "S3MINI_OIDC_CLIENT_SECRET",
+        "S3MINI_ADMIN_TOKEN",
+        "S3MINI_TEST_DISABLE_OIDC",
+      ].map((name) => [name, process.env[name]]),
+    );
+    process.env.S3MINI_OIDC_AUTH_URL = "https://auth.example.com";
+    process.env.S3MINI_OIDC_CLIENT_ID = "s3mini-dashboard";
+    delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+    process.env.OIDC_API_TOKEN = "private-oidc-api-token";
+    process.env.S3MINI_ADMIN_TOKEN = "test-admin-token";
+    delete process.env.S3MINI_TEST_DISABLE_OIDC;
+
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            token: "generated-opaque-token",
+            expires_at: "2030-01-01T00:00:00.000Z",
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const denied = await app.inject({
+        method: "POST",
+        url: "/admin/oidc/api-tokens",
+        headers: { "content-type": "application/json" },
+        payload: JSON.stringify({ label: "Filebin", scopes: ["s3:provision"] }),
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const invalidScope = await app.inject({
+        method: "POST",
+        url: "/admin/oidc/api-tokens",
+        headers: {
+          authorization: "Bearer test-admin-token",
+          "content-type": "application/json",
+        },
+        payload: JSON.stringify({ label: "Too broad", scopes: ["s3:*"] }),
+      });
+      expect(invalidScope.statusCode).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      const issued = await app.inject({
+        method: "POST",
+        url: "/admin/oidc/api-tokens",
+        headers: {
+          authorization: "Bearer test-admin-token",
+          "content-type": "application/json",
+        },
+        payload: JSON.stringify({
+          label: "Filebin provisioning",
+          scopes: ["s3:provision"],
+        }),
+      });
+      expect(issued.statusCode).toBe(201);
+      expect(issued.json()).toEqual({
+        token: "generated-opaque-token",
+        label: "Filebin provisioning",
+        scopes: ["s3:provision"],
+        expiresAt: "2030-01-01T00:00:00.000Z",
+      });
+      expect(issued.body).not.toContain("private-oidc-api-token");
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const [url, options] = fetchMock.mock.calls[0] as unknown as [
+        URL,
+        RequestInit,
+      ];
+      expect(url.toString()).toBe(
+        "https://auth.example.com/api-tokens/s3mini-dashboard/issue",
+      );
+      expect(options.headers).toMatchObject({
+        authorization: "Bearer private-oidc-api-token",
+        "content-type": "application/json",
+      });
+      expect(JSON.parse(String(options.body))).toEqual({
+        label: "Filebin provisioning",
+        scopes: ["s3:provision"],
+      });
+
+      fetchMock.mockImplementationOnce(
+        async () => new Response("secret details", { status: 401 }),
+      );
+      const rejectedApiToken = await app.inject({
+        method: "POST",
+        url: "/admin/oidc/api-tokens",
+        headers: {
+          authorization: "Bearer test-admin-token",
+          "content-type": "application/json",
+        },
+        payload: JSON.stringify({
+          label: "Filebin provisioning",
+          scopes: ["s3:provision"],
+        }),
+      });
+      expect(rejectedApiToken.statusCode).toBe(502);
+      expect(rejectedApiToken.json().error).toContain("OIDC_API_TOKEN.");
+      expect(rejectedApiToken.body).not.toContain("secret details");
+
+      delete process.env.OIDC_API_TOKEN;
+      const missingApiToken = await app.inject({
+        method: "POST",
+        url: "/admin/oidc/api-tokens",
+        headers: {
+          authorization: "Bearer test-admin-token",
+          "content-type": "application/json",
+        },
+        payload: JSON.stringify({
+          label: "Filebin provisioning",
+          scopes: ["s3:provision"],
+        }),
+      });
+      expect(missingApiToken.statusCode).toBe(503);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+      for (const [name, value] of originalEnvironment) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  });
+
   it("requires authentication for mutating S3 requests when static credentials are configured", async () => {
     process.env.S3MINI_ACCESS_KEY = "s3mini";
     process.env.S3MINI_SECRET_KEY = "s3mini-secret";

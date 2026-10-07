@@ -12,6 +12,7 @@ const runId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 const clientId = `s3mini-smoke-${runId}`;
 const image = `s3mini-auth-lab:${runId}`;
 const container = `s3mini-auth-lab-${runId}`;
+const issuerContainer = `${container}-issuer`;
 const port =
   19000 + (Number.parseInt(crypto.randomBytes(2).toString("hex"), 16) % 1000);
 const dataDir = `/tmp/opencode/s3mini-auth-lab-${runId}`;
@@ -30,7 +31,10 @@ let cookie;
 let createdClient = false;
 let builtImage = false;
 let startedContainer = false;
+let startedIssuerContainer = false;
 let clientSecret;
+let authApiToken;
+let authApiTokenId;
 let failures = 0;
 
 async function authRequest(path, options = {}) {
@@ -62,7 +66,11 @@ async function createApiToken(label, tokenScopes) {
   );
   const result = await responseJson(response, `issue ${label} token`);
   const value =
-    result.token || result.access_token || result.apiToken || result.value;
+    result.token ||
+    result.access_token ||
+    result.api_token ||
+    result.apiToken ||
+    result.value;
   if (typeof value !== "string" || !value) {
     throw new Error(
       `Auth Lab's ${label} token response did not contain a token value.`,
@@ -124,8 +132,31 @@ async function issueClientAndTokens() {
     configured,
     "allow all S3MINI scopes on the temporary client",
   );
-  for (const scope of ["s3:read", "s3:write", "s3:admin", "s3:provision"]) {
+  for (const scope of ["s3:read", "s3:write", "s3:admin"]) {
     await createApiToken(`scope-${scope}`, [scope]);
+  }
+
+  const createdApiToken = await authRequest(
+    `/auth-api-tokens/${encodeURIComponent(clientId)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "S3MINI Auth Lab smoke" }),
+    },
+  );
+  const apiToken = await responseJson(
+    createdApiToken,
+    "create temporary client-bound Auth API token",
+  );
+  authApiToken =
+    apiToken.token ||
+    apiToken.access_token ||
+    apiToken.api_token ||
+    apiToken.apiToken ||
+    apiToken.value;
+  authApiTokenId = apiToken.id || apiToken.tokenId;
+  if (typeof authApiToken !== "string" || !authApiToken) {
+    throw new Error("Auth Lab did not return the temporary Auth API token.");
   }
 }
 
@@ -211,6 +242,119 @@ async function startLocalContainer() {
     );
   }
   return base;
+}
+
+async function startIssuerContainer() {
+  const childEnv = { ...process.env };
+  delete childEnv.AUTH_LAB_KEY;
+  const fs = await import("node:fs/promises");
+  const issuerDataDir = `${dataDir}/issuer`;
+  await fs.mkdir(`${issuerDataDir}/objects`, { recursive: true });
+  await fs.chmod(issuerDataDir, 0o777).catch(() => {});
+  await fs.chmod(`${issuerDataDir}/objects`, 0o777);
+  startedIssuerContainer = true;
+  const args = [
+    "run",
+    "-d",
+    "--name",
+    issuerContainer,
+    "-v",
+    `${issuerDataDir}:/data`,
+    "-e",
+    "AUTH_PROVIDER",
+    "-e",
+    "OIDC_CLIENT_ID",
+    "-e",
+    "OIDC_API_TOKEN",
+    "-e",
+    "S3MINI_ADMIN_TOKEN",
+    image,
+  ];
+  runDocker(args, {
+    ...childEnv,
+    AUTH_PROVIDER: authBase,
+    OIDC_CLIENT_ID: clientId,
+    OIDC_API_TOKEN: authApiToken,
+    S3MINI_ADMIN_TOKEN: "auth-lab-local-admin",
+  });
+
+  let ready = false;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      const status = execFileSync(
+        "docker",
+        [
+          "exec",
+          issuerContainer,
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:9000/api').then(r => process.stdout.write(String(r.status))).catch(() => process.exit(1))",
+        ],
+        {
+          env: childEnv,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      ).trim();
+      if (status === "200") {
+        ready = true;
+        break;
+      }
+    } catch {
+      // The application may still be starting.
+    }
+    await delay(500);
+  }
+  if (!ready) {
+    runDocker(["logs", issuerContainer], childEnv);
+    throw new Error(
+      "S3MINI OIDC token-issuer test container did not become ready.",
+    );
+  }
+}
+
+const issuerSmokeCode = String.raw`let input = "";
+for await (const chunk of process.stdin) input += chunk;
+const data = JSON.parse(input);
+const response = await fetch("http://127.0.0.1:9000/admin/oidc/api-tokens", {
+  method: "POST",
+  headers: {
+    authorization: "Bearer " + data.adminToken,
+    "content-type": "application/json",
+  },
+  body: JSON.stringify({ label: "Auth Lab S3MINI integration", scopes: ["s3:provision"] }),
+});
+if (!response.ok) throw new Error("S3MINI token issuance returned HTTP " + response.status);
+const result = await response.json();
+if (typeof result.token !== "string" || !result.token) throw new Error("S3MINI returned no issued token");
+process.stdout.write(JSON.stringify(result));
+`;
+
+async function issueProvisionTokenThroughS3mini() {
+  const childEnv = { ...process.env };
+  delete childEnv.AUTH_LAB_KEY;
+  const output = execFileSync(
+    "docker",
+    [
+      "exec",
+      "-i",
+      issuerContainer,
+      "node",
+      "--input-type=module",
+      "-e",
+      issuerSmokeCode,
+    ],
+    {
+      env: childEnv,
+      input: JSON.stringify({ adminToken: "auth-lab-local-admin" }),
+      encoding: "utf8",
+    },
+  );
+  const issued = JSON.parse(output);
+  tokens.set("scope-s3:provision", { value: issued.token });
+  console.log(
+    "PASS S3MINI used OIDC_API_TOKEN to issue a client-bound scoped token",
+  );
 }
 
 const localSmokeCode = String.raw`import crypto from "node:crypto";
@@ -353,6 +497,19 @@ async function cleanup() {
         failures += 1;
       }
     }
+    if (authApiTokenId) {
+      try {
+        const response = await authRequest(
+          `/auth-api-tokens/${encodeURIComponent(clientId)}/${encodeURIComponent(authApiTokenId)}`,
+          { method: "DELETE" },
+        );
+        if (!response.ok && response.status !== 404) {
+          failures += 1;
+        }
+      } catch {
+        failures += 1;
+      }
+    }
     try {
       const response = await authRequest(
         `/oidc/clients/${encodeURIComponent(clientId)}`,
@@ -369,6 +526,13 @@ async function cleanup() {
   }
   const childEnv = { ...process.env };
   delete childEnv.AUTH_LAB_KEY;
+  if (startedIssuerContainer) {
+    try {
+      runDocker(["rm", "-f", issuerContainer], childEnv);
+    } catch {
+      failures += 1;
+    }
+  }
   if (startedContainer) {
     try {
       runDocker(["rm", "-f", container], childEnv);
@@ -390,6 +554,8 @@ async function cleanup() {
 try {
   await issueClientAndTokens();
   await startLocalContainer();
+  await startIssuerContainer();
+  await issueProvisionTokenThroughS3mini();
   await exerciseApis();
 } catch (error) {
   failures += 1;
