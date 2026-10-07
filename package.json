@@ -41,6 +41,7 @@
     "start:test": "node dist/index.js --test-dashboard",
     "dev": "tsx src/index.ts",
     "test": "vitest run src/test",
+    "test:auth-lab": "node scripts/auth-lab-smoke.mjs",
     "test:ui": "npm run build && playwright test",
     "test:watch": "vitest"
   },

@@ -40,16 +40,19 @@ export class ReplicationWorker {
     this.token = (
       options.token || process.env.S3MINI_REPLICATION_TOKEN
     )?.trim();
-    for (const peer of this.peers)
+    for (const peer of this.peers) {
       this.health.set(peer, {
         peer,
         status: "Unknown",
         consecutiveFailures: 0,
       });
+    }
   }
 
   start(intervalMs = 1000): void {
-    if (this.timer || !this.peers.length || !this.token) return;
+    if (this.timer || !this.peers.length || !this.token) {
+      return;
+    }
     const inventoryIntervalMs = Math.max(
       1000,
       Number(process.env.S3MINI_REPLICATION_INVENTORY_INTERVAL_MS) || 60000,
@@ -66,8 +69,12 @@ export class ReplicationWorker {
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
-    if (this.inventoryTimer) clearInterval(this.inventoryTimer);
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
+    if (this.inventoryTimer) {
+      clearInterval(this.inventoryTimer);
+    }
     this.timer = undefined;
     this.inventoryTimer = undefined;
   }
@@ -78,12 +85,16 @@ export class ReplicationWorker {
 
   private async loadPersistedHealth(): Promise<void> {
     for (const state of await this.s3.listPeerHealth()) {
-      if (this.health.has(state.peer)) this.health.set(state.peer, state);
+      if (this.health.has(state.peer)) {
+        this.health.set(state.peer, state);
+      }
     }
   }
 
   async drainOnce(repair = true): Promise<void> {
-    if (this.running || !this.peers.length || !this.token) return;
+    if (this.running || !this.peers.length || !this.token) {
+      return;
+    }
     this.running = true;
     try {
       await this.s3.ensureReplicationPeerEvents(this.peers);
@@ -92,18 +103,23 @@ export class ReplicationWorker {
         this.peers,
         100,
       );
-      for (const delivery of deliveries) await this.deliverToPeer(delivery);
-      if (repair)
+      for (const delivery of deliveries) {
+        await this.deliverToPeer(delivery);
+      }
+      if (repair) {
         await this.repairMissingEvents(
           await this.s3.listReplicationEvents(1000),
         );
+      }
     } finally {
       this.running = false;
     }
   }
 
   private async repairInventory(): Promise<void> {
-    if (this.running || !this.peers.length || !this.token) return;
+    if (this.running || !this.peers.length || !this.token) {
+      return;
+    }
     await this.repairMissingEvents(await this.s3.listReplicationEvents(1000));
   }
 
@@ -136,11 +152,12 @@ export class ReplicationWorker {
                     : item.etag === event.etag)),
             ),
         );
-        for (const event of missing)
+        for (const event of missing) {
           await this.deliverToPeer(
             { event, peer, status: "Pending", attempts: event.attempts },
             false,
           );
+        }
       } catch {
         // The regular delivery retry path records failures; inventory is best effort.
         this.markPeerFailure(peer);
@@ -149,7 +166,67 @@ export class ReplicationWorker {
   }
 
   private async syncPeerBuckets(peer: string): Promise<void> {
+    const accounts = await this.s3.listStorageAccounts();
+    for (const account of accounts) {
+      const response = await fetch(
+        `${peer.replace(/\/$/, "")}/internal/replication/account`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+            "x-s3mini-replication-token": this.token!,
+          },
+          body: JSON.stringify(account),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(
+          `Storage account synchronization failed: ${response.status}`,
+        );
+      }
+    }
+    for (const key of await this.s3.listReplicatedAccessKeys()) {
+      const response = await fetch(
+        `${peer.replace(/\/$/, "")}/internal/replication/access-key`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+            "x-s3mini-replication-token": this.token!,
+          },
+          body: JSON.stringify(key),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(
+          `Access-key synchronization failed: ${response.status}`,
+        );
+      }
+    }
+    const accountById = new Map(
+      accounts.map((account) => [account.accountId, account]),
+    );
     for (const bucket of await this.s3.listBuckets()) {
+      const accountId = bucket.accountId || "legacy";
+      const account = accountById.get(accountId);
+      if (account) {
+        const accountResponse = await fetch(
+          `${peer.replace(/\/$/, "")}/internal/replication/account`,
+          {
+            method: "PUT",
+            headers: {
+              "content-type": "application/json",
+              "x-s3mini-replication-token": this.token!,
+            },
+            body: JSON.stringify(account),
+          },
+        );
+        if (!accountResponse.ok) {
+          throw new Error(
+            `Storage account synchronization failed: ${accountResponse.status}`,
+          );
+        }
+      }
       const response = await fetch(
         `${peer.replace(/\/$/, "")}/internal/replication/bucket`,
         {
@@ -158,11 +235,14 @@ export class ReplicationWorker {
             "x-s3mini-replication-token": this.token!,
             "x-s3mini-bucket": bucket.name,
             "x-s3mini-location": bucket.locationConstraint,
+            "x-s3mini-account-id": accountId,
+            "x-s3mini-quota-bytes": String(bucket.quotaBytes || 0),
           },
         },
       );
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(`Bucket synchronization failed: ${response.status}`);
+      }
     }
   }
 
@@ -179,8 +259,9 @@ export class ReplicationWorker {
           body: JSON.stringify(role satisfies AdminUserRoleRecord),
         },
       );
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(`User-role synchronization failed: ${response.status}`);
+      }
     }
   }
 
@@ -192,6 +273,30 @@ export class ReplicationWorker {
     const attempts = delivery.attempts + 1;
     try {
       const location = await this.s3.getBucketLocation(event.bucket);
+      const accountId =
+        (await this.s3.getBucketAccountId(event.bucket)) || "legacy";
+      const account =
+        accountId === "legacy"
+          ? undefined
+          : await this.s3.getStorageAccount(accountId);
+      if (account) {
+        const accountResponse = await fetch(
+          `${peer.replace(/\/$/, "")}/internal/replication/account`,
+          {
+            method: "PUT",
+            headers: {
+              "content-type": "application/json",
+              "x-s3mini-replication-token": this.token!,
+            },
+            body: JSON.stringify(account),
+          },
+        );
+        if (!accountResponse.ok) {
+          throw new Error(
+            `Storage account synchronization failed: ${accountResponse.status}`,
+          );
+        }
+      }
       const bucketResponse = await fetch(
         `${peer.replace(/\/$/, "")}/internal/replication/bucket`,
         {
@@ -200,13 +305,18 @@ export class ReplicationWorker {
             "x-s3mini-replication-token": this.token!,
             "x-s3mini-bucket": event.bucket,
             "x-s3mini-location": location,
+            "x-s3mini-account-id": accountId,
+            "x-s3mini-quota-bytes": String(
+              (await this.s3.getBucketQuota(event.bucket)) || 0,
+            ),
           },
         },
       );
-      if (!bucketResponse.ok)
+      if (!bucketResponse.ok) {
         throw new Error(
           `Bucket synchronization failed: ${bucketResponse.status}`,
         );
+      }
       const body =
         event.operation === "PutObject"
           ? await fs.readFile(event.payloadPath)
@@ -237,21 +347,23 @@ export class ReplicationWorker {
           body,
         },
       );
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(
           `Replication peer ${peer} returned HTTP ${response.status}.`,
         );
+      }
       this.markPeerSuccess(peer);
-      if (updateStatus)
+      if (updateStatus) {
         await this.s3.updateReplicationPeerEvent(
           event.id,
           peer,
           "Delivered",
           attempts,
         );
+      }
     } catch {
       const delay = Math.min(300_000, 1_000 * 2 ** Math.min(attempts, 8));
-      if (updateStatus)
+      if (updateStatus) {
         await this.s3.updateReplicationPeerEvent(
           event.id,
           peer,
@@ -261,6 +373,7 @@ export class ReplicationWorker {
             ? undefined
             : new Date(Date.now() + delay),
         );
+      }
     }
   }
 

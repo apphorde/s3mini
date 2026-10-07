@@ -7,15 +7,18 @@ test("dashboard boots, renders, and has no browser errors", async ({
   const requests: string[] = [];
   const failedResponses: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    if (message.type() === "error") {
+      errors.push(message.text());
+    }
   });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) =>
     requests.push(request.method() + " " + request.url()),
   );
   page.on("response", (response) => {
-    if (response.status() >= 500)
+    if (response.status() >= 500) {
       failedResponses.push(response.status() + " " + response.url());
+    }
   });
 
   await page.goto("/admin", { waitUntil: "networkidle" });
@@ -39,7 +42,13 @@ test("dashboard boots, renders, and has no browser errors", async ({
   expect(new URL(page.url()).searchParams.get("page")).toBe("accounts");
   await page.reload({ waitUntil: "networkidle" });
   await expect(page).toHaveURL(/page=accounts/);
-  await expect(page.getByRole("heading", { name: "Accounts" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Accounts", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Allocations" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Storage allocations" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Users" }).click();
   const userId = `ui-smoke-role-${Date.now()}`;
   await page.getByPlaceholder("User subject ID").fill(userId);

@@ -12,6 +12,10 @@ npm start
 Build from source with `npm run build` and run the test suite with `npm test`.
 The dashboard smoke test runs without OIDC by using a test-only static admin
 token: `npm run test:ui`. It starts an isolated local server automatically.
+`npm run test:auth-lab` is an opt-in integration smoke test requiring
+`AUTH_LAB_KEY`, Docker, and Auth Lab access. It creates a temporary OIDC client,
+issues scoped tokens, tests a disposable local container, and removes the
+temporary client, container, image, and data directory in its cleanup path.
 
 See the repository documentation for configuration, S3 compatibility, replication, and administration.
 
@@ -76,13 +80,14 @@ admin role; authenticated users without an explicitly assigned role receive
 HTTP 403 from `/admin`. Client secrets and allowlists must remain in environment
 variables or local untracked config.
 
-Administrators can assign OIDC users `viewer`, `operator`, or `admin` roles from
-the dashboard's Users page. Roles are keyed by the OIDC subject (`sub`), stored
-in SQLite metadata, and synchronized asynchronously to configured replication
-peers. A revoked role is retained as a replication tombstone. Viewers can inspect
-dashboard data; operators can manage buckets, policies, access keys, and retry
-replication events; admins can also manage user roles. The email allowlist is an
-admin override, so remove an email from it before relying on a lower stored role.
+Only OIDC users explicitly assigned the `admin` role, or listed in
+`S3MINI_OIDC_ADMIN_EMAILS`, can open `/admin` or call its management APIs.
+Dashboard API tokens and the `s3:admin` scope do not substitute for this OIDC
+admin designation. Roles are keyed by OIDC subject (`sub`), stored in SQLite,
+and synchronized to configured replication peers. The legacy `viewer` and
+`operator` labels are retained in stored records but do not grant dashboard
+access. The email allowlist is an explicit admin grant; remove an email before
+expecting its stored role to take effect.
 
 The S3MINI server publishes the OpenAPI 3.0.3 specification for its implemented
 S3, dashboard, OIDC, and replication APIs at `GET /api` as JSON. The source
@@ -93,25 +98,42 @@ S3MINI follows the provider's Node client flow: authorization-code PKCE uses
 `/.well-known/jwks.json`, and user identity is loaded from `/userinfo` with
 `X-Auth-Audience`.
 
-Provider API tokens can also call S3MINI directly with an `Authorization:
-Bearer` header. They are authorized independently of browser roles. Create them
-through the provider's `/api-tokens/{clientId}` endpoint and grant these scopes
-as needed:
+Provider API tokens can call S3MINI with an `Authorization: Bearer` header.
+Create them through the provider's `/api-tokens/{clientId}` endpoint and grant
+only the scopes the integration needs:
 
 ```text
 s3:read   GET, HEAD, and OPTIONS requests
 s3:write  bucket/object mutations
-s3:admin  bucket policy/ACL/configuration and `/admin` control-plane actions
+s3:admin  S3 bucket policy/ACL/configuration operations (not `/admin`)
+s3:provision account, S3-key, bucket, bucket-policy, and bucket-quota APIs only
 ```
 
-Use `s3:*` for a full-access token. S3MINI introspects opaque provider tokens
-through `/oauth/introspect` using the configured OIDC client credentials.
+`s3:provision` must be explicitly allowed for the S3MINI OIDC client at the
+provider. It never grants dashboard, object-data, or replication access.
+Provisioning is intended for a trusted service such as Filebin; that service
+maintains the mapping from its OIDC users to S3MINI account IDs. Provisioned
+accounts start with the `S3MINI_DEFAULT_ACCOUNT_QUOTA_BYTES` aggregate allocation
+(default 10 GiB). Provisioning tokens can create accounts, issue/revoke
+account-scoped S3 access keys, create/list/delete buckets, set policies on
+account-owned buckets, and allocate per-bucket quotas. Bucket quota values are
+bounded by the admin-controlled aggregate account quota. Existing buckets and
+keys migrate to the isolated `legacy` account. S3MINI currently associates each
+bucket and key with one account and enforces that mapping for data-plane
+requests; the customer-facing bucket ownership and access-policy model remains
+under design review.
 
-The dashboard does not require an API token when the browser has an OIDC
-session and the user has an assigned role or is listed in
-`S3MINI_OIDC_ADMIN_EMAILS`. A provider token with `s3:admin` retains full control
-plane access for API clients. The optional `S3MINI_ADMIN_TOKEN` is intended for
-local/testing or non-OIDC deployments.
+S3MINI introspects opaque provider tokens through `/oauth/introspect`. Once
+provisioned accounts exist, OIDC bearer tokens are not accepted for S3 object
+data; use the account-scoped S3 keys returned by provisioning. Admins allocate
+aggregate account quotas through `/admin/accounts/{accountId}/quota`; Filebin
+allocates per-bucket quotas through its `s3:provision` endpoint (admins can also
+set them through `/admin/buckets/{bucket}/quota`). Quota checks include stored object versions,
+multipart part reservations, copies, and replicated object writes.
+
+The dashboard requires an OIDC session with an explicit admin grant whenever
+OIDC is configured. `S3MINI_ADMIN_TOKEN` remains available only for deployments
+without OIDC and local testing.
 
 ## Replica Setup
 

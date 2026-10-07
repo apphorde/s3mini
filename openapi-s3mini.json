@@ -43,6 +43,10 @@
     {
       "name": "Replication",
       "description": "Internal authenticated peer replication APIs."
+    },
+    {
+      "name": "Provisioning",
+      "description": "Trusted integration API requiring the dedicated s3:provision scope."
     }
   ],
   "paths": {
@@ -193,7 +197,7 @@
         "operationId": "GetDashboardProfile",
         "summary": "Get current dashboard profile",
         "tags": ["Dashboard"],
-        "description": "Requires at least the viewer role, an accepted admin bearer token, or a test-only dashboard cookie.",
+        "description": "Requires an explicitly designated OIDC admin and a valid OIDC browser session. s3:admin tokens do not grant dashboard access.",
         "security": [
           {
             "DashboardCookie": []
@@ -336,7 +340,7 @@
         "operationId": "ListAccessKeys",
         "summary": "List S3 access keys",
         "tags": ["Admin"],
-        "description": "Requires viewer role. Secret access keys are never returned by this operation.",
+        "description": "Requires an explicitly designated OIDC admin. Secret access keys are never returned by this operation.",
         "security": [
           {
             "DashboardCookie": []
@@ -368,7 +372,7 @@
         "operationId": "CreateAccessKey",
         "summary": "Issue an S3 access key",
         "tags": ["Admin"],
-        "description": "Requires operator role. The secret is returned only at creation time.",
+        "description": "Requires an explicitly designated OIDC admin. The secret is returned only at creation time.",
         "security": [
           {
             "DashboardCookie": []
@@ -415,7 +419,7 @@
         "operationId": "DisableAccessKey",
         "summary": "Disable an S3 access key",
         "tags": ["Admin"],
-        "description": "Requires operator role. Disabling an access key is irreversible through this API.",
+        "description": "Requires an explicitly designated OIDC admin. Disabling an access key is irreversible through this API.",
         "security": [
           {
             "DashboardCookie": []
@@ -449,7 +453,7 @@
         "operationId": "ListAdminBuckets",
         "summary": "List managed buckets",
         "tags": ["Admin"],
-        "description": "Requires viewer role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -481,7 +485,7 @@
         "operationId": "CreateAdminBucket",
         "summary": "Create a bucket",
         "tags": ["Admin"],
-        "description": "Requires operator role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -522,7 +526,7 @@
         "operationId": "DeleteAdminBucket",
         "summary": "Delete a bucket",
         "tags": ["Admin"],
-        "description": "Requires operator role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -556,7 +560,7 @@
         "operationId": "GetAdminBucketPolicy",
         "summary": "Get a bucket policy",
         "tags": ["Admin"],
-        "description": "Requires viewer role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -586,7 +590,7 @@
         "operationId": "PutAdminBucketPolicy",
         "summary": "Set a bucket policy",
         "tags": ["Admin"],
-        "description": "Requires operator role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -619,7 +623,7 @@
         "operationId": "DeleteAdminBucketPolicy",
         "summary": "Delete a bucket policy",
         "tags": ["Admin"],
-        "description": "Requires operator role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -643,7 +647,7 @@
         "operationId": "GetReplicationHealth",
         "summary": "Get replication peer health",
         "tags": ["Admin"],
-        "description": "Requires viewer role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -677,7 +681,7 @@
         "operationId": "GetReplicationSummary",
         "summary": "Get replication summary",
         "tags": ["Admin"],
-        "description": "Requires viewer role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -708,7 +712,7 @@
         "operationId": "ListReplicationEvents",
         "summary": "List replication events",
         "tags": ["Admin"],
-        "description": "Requires viewer role.",
+        "description": "Requires an explicitly designated OIDC admin.",
         "security": [
           {
             "DashboardCookie": []
@@ -762,7 +766,7 @@
         "operationId": "RetryReplicationEvent",
         "summary": "Retry a replication event",
         "tags": ["Admin"],
-        "description": "Requires operator role; requeues the specified event.",
+        "description": "Requires an explicitly designated OIDC admin; requeues the specified event.",
         "security": [
           {
             "DashboardCookie": []
@@ -923,6 +927,25 @@
             "schema": {
               "type": "string",
               "default": "local"
+            }
+          },
+          {
+            "name": "x-s3mini-account-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "legacy"
+            }
+          },
+          {
+            "name": "x-s3mini-quota-bytes",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
             }
           }
         ],
@@ -2037,6 +2060,637 @@
           }
         }
       }
+    },
+    "/provisioning/accounts": {
+      "get": {
+        "operationId": "ListProvisioningAccounts",
+        "tags": ["Provisioning"],
+        "summary": "List storage accounts",
+        "description": "Requires exactly s3:provision.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageAccount"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      },
+      "post": {
+        "operationId": "CreateProvisioningAccount",
+        "tags": ["Provisioning"],
+        "summary": "Create or get a storage account",
+        "description": "Requires exactly s3:provision. externalId is the integration service\u2019s stable identity mapping. New accounts receive the configured default quota.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["externalId"],
+                "properties": {
+                  "externalId": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageAccount"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/provisioning/accounts/{accountId}/access-keys": {
+      "parameters": [
+        {
+          "name": "accountId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "ListProvisioningAccessKeys",
+        "tags": ["Provisioning"],
+        "summary": "List account S3 keys",
+        "description": "Requires exactly s3:provision. Secrets are never returned.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Access keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccessKey"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      },
+      "post": {
+        "operationId": "CreateProvisioningAccessKey",
+        "tags": ["Provisioning"],
+        "summary": "Issue an account-scoped S3 key",
+        "description": "Requires exactly s3:provision. The secret is returned once.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "displayName": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Credentials returned once"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/provisioning/accounts/{accountId}/access-keys/{accessKeyId}": {
+      "parameters": [
+        {
+          "name": "accountId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "accessKeyId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "operationId": "RevokeProvisioningAccessKey",
+        "tags": ["Provisioning"],
+        "summary": "Revoke an account S3 key",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/provisioning/accounts/{accountId}/buckets": {
+      "parameters": [
+        {
+          "name": "accountId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "ListProvisioningBuckets",
+        "tags": ["Provisioning"],
+        "summary": "List account buckets",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Buckets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Bucket"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      },
+      "post": {
+        "operationId": "CreateProvisioningBucket",
+        "tags": ["Provisioning"],
+        "summary": "Create an account-owned bucket",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "locationConstraint": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/provisioning/accounts/{accountId}/buckets/{bucket}": {
+      "parameters": [
+        {
+          "name": "accountId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "bucket",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "operationId": "DeleteProvisioningBucket",
+        "tags": ["Provisioning"],
+        "summary": "Delete an empty account-owned bucket",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/admin/accounts": {
+      "get": {
+        "operationId": "ListStorageAccounts",
+        "tags": ["Admin"],
+        "summary": "List provisioned accounts",
+        "description": "Requires an explicitly designated OIDC admin.",
+        "security": [
+          {
+            "DashboardCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageAccount"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/admin/accounts/{accountId}/quota": {
+      "parameters": [
+        {
+          "name": "accountId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "SetStorageAccountQuota",
+        "tags": ["Admin"],
+        "summary": "Set aggregate account quota",
+        "description": "Requires an explicitly designated OIDC admin. Quota is bytes; zero disables the limit. Lowering quota below current use blocks subsequent writes.",
+        "security": [
+          {
+            "DashboardCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["quotaBytes"],
+                "properties": {
+                  "quotaBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/admin/buckets/{bucket}/quota": {
+      "parameters": [
+        {
+          "name": "bucket",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "SetBucketQuota",
+        "tags": ["Admin"],
+        "summary": "Set bucket quota",
+        "description": "Requires an explicitly designated OIDC admin. Quota is bytes; zero disables the limit.",
+        "security": [
+          {
+            "DashboardCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["quotaBytes"],
+                "properties": {
+                  "quotaBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/internal/replication/account": {
+      "put": {
+        "operationId": "ReplicateStorageAccount",
+        "tags": ["Replication"],
+        "summary": "Synchronize account allocation metadata with a peer",
+        "description": "Authenticated with the cluster replication token. This endpoint carries only account identity and quota metadata, never object contents or user credentials.",
+        "security": [
+          {
+            "ReplicationToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageAccount"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Account metadata accepted"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/internal/replication/access-key": {
+      "put": {
+        "operationId": "ReplicateAccessKey",
+        "tags": ["Replication"],
+        "summary": "Synchronize account-scoped S3 key state to a peer",
+        "description": "Authenticated with the cluster replication token. The request contains key material and must only be used across trusted replication transport.",
+        "security": [
+          {
+            "ReplicationToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "accessKeyId",
+                  "accountId",
+                  "secretAccessKey",
+                  "displayName",
+                  "status",
+                  "createdAt"
+                ],
+                "properties": {
+                  "accessKeyId": {
+                    "type": "string"
+                  },
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "secretAccessKey": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["Active", "Disabled"]
+                  },
+                  "createdAt": {
+                    "type": "integer"
+                  },
+                  "lastUsedAt": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Key metadata accepted"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/provisioning/accounts/{accountId}/buckets/{bucket}/policy": {
+      "parameters": [
+        {
+          "name": "accountId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "bucket",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "SetProvisioningBucketPolicy",
+        "summary": "Set policy on an account-owned bucket",
+        "description": "Requires exactly s3:provision. The specified account must own the bucket.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "tags": ["Provisioning"],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
+    },
+    "/provisioning/accounts/{accountId}/buckets/{bucket}/quota": {
+      "parameters": [
+        {
+          "name": "accountId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "bucket",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "SetProvisioningBucketQuota",
+        "summary": "Set quota on an account-owned bucket",
+        "description": "Requires exactly s3:provision. The specified account must own the bucket. Per-bucket quota is in bytes; zero means unlimited, subject to the aggregate account quota.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["quotaBytes"],
+                "properties": {
+                  "quotaBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Provisioning"],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "403": {
+            "$ref": "#/components/responses/AccessDenied"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2051,18 +2705,18 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "OIDC provider token. S3 operations require s3:read, s3:write, or s3:admin scopes; s3:* and * grant all scopes."
+        "description": "OIDC provider token. Provisioning endpoints require exactly s3:provision. S3 data operations require s3:read, s3:write, or s3:admin; wildcard scopes do not authorize provisioning."
       },
       "AdminBearer": {
         "type": "http",
         "scheme": "bearer",
-        "description": "S3MINI_ADMIN_TOKEN or an active OIDC bearer token with s3:admin scope. Dashboard authorization also accepts configured OIDC roles."
+        "description": "Accepted only when OIDC is not configured, for local/testing deployments. OIDC-protected dashboard APIs require the explicitly designated admin role."
       },
       "DashboardCookie": {
         "type": "apiKey",
         "in": "cookie",
         "name": "s3mini_oidc_token",
-        "description": "HttpOnly browser session cookie established by the OIDC login flow; role must satisfy the operation's minimum role."
+        "description": "HttpOnly browser session cookie established by the OIDC login flow. Dashboard control-plane operations require the explicitly designated admin role."
       },
       "ReplicationToken": {
         "type": "apiKey",
@@ -2405,6 +3059,34 @@
             "additionalProperties": {
               "type": "integer"
             }
+          }
+        }
+      },
+      "StorageAccount": {
+        "type": "object",
+        "required": [
+          "accountId",
+          "externalId",
+          "displayName",
+          "quotaBytes",
+          "createdAt"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "quotaBytes": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

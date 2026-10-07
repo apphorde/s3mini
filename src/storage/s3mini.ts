@@ -24,17 +24,27 @@ import type {
   UploadPartRequest,
 } from "../types/contracts.js";
 
-export const STORAGE_BASE = "/data/objects";
-export const DATABASE_PATH = "/data/s3mini.sqlite";
+export const STORAGE_BASE = process.env.S3MINI_STORAGE_BASE || "/data/objects";
+export const DATABASE_PATH =
+  process.env.S3MINI_DATABASE_PATH || "/data/s3mini.sqlite";
 export const NODE_ID = process.env.S3MINI_NODE_ID || "node-local";
 export const REPLICATION_MAX_ATTEMPTS = 8;
 
 export interface AccessKeyRecord {
   accessKeyId: string;
+  accountId: string;
   displayName: string;
   status: "Active" | "Disabled";
   createdAt: Date;
   lastUsedAt?: Date;
+}
+
+export interface StorageAccountRecord {
+  accountId: string;
+  externalId: string;
+  displayName: string;
+  quotaBytes: number;
+  createdAt: Date;
 }
 
 export type AdminUserRole = "viewer" | "operator" | "admin" | "revoked";
@@ -131,7 +141,9 @@ export class S3Mini {
   }
 
   async init(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized) {
+      return;
+    }
     await fs.mkdir(STORAGE_BASE, { recursive: true });
     try {
       await fs.access(DATABASE_PATH);
@@ -145,11 +157,34 @@ export class S3Mini {
     this.db = new DatabaseSync(DATABASE_PATH);
     this.db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL");
 
+    await this.run(`CREATE TABLE IF NOT EXISTS storage_accounts (
+      accountId TEXT PRIMARY KEY,
+      externalId TEXT NOT NULL UNIQUE,
+      displayName TEXT NOT NULL DEFAULT '',
+      quotaBytes INTEGER NOT NULL DEFAULT 0,
+      createdAt INTEGER NOT NULL
+    )`);
+    await this.run(
+      "INSERT OR IGNORE INTO storage_accounts (accountId, externalId, displayName, quotaBytes, createdAt) VALUES ('legacy', 'legacy', 'Legacy storage', 0, ?)",
+      [Date.now()],
+    );
     await this.run(`CREATE TABLE IF NOT EXISTS buckets (
       name TEXT PRIMARY KEY,
       locationConstraint TEXT DEFAULT 'local',
-      creationDate INTEGER
+      creationDate INTEGER,
+      accountId TEXT NOT NULL DEFAULT 'legacy',
+      quotaBytes INTEGER NOT NULL DEFAULT 0
     )`);
+    for (const column of [
+      "accountId TEXT NOT NULL DEFAULT 'legacy'",
+      "quotaBytes INTEGER NOT NULL DEFAULT 0",
+    ]) {
+      try {
+        await this.run(`ALTER TABLE buckets ADD COLUMN ${column}`);
+      } catch {
+        /* Existing databases already have the column. */
+      }
+    }
     await this.run(`CREATE TABLE IF NOT EXISTS objs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       bucket TEXT NOT NULL,
@@ -248,8 +283,24 @@ export class S3Mini {
       displayName TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'Active',
       createdAt INTEGER NOT NULL,
-      lastUsedAt INTEGER
+      lastUsedAt INTEGER,
+      accountId TEXT NOT NULL DEFAULT 'legacy',
+      updatedAt INTEGER NOT NULL DEFAULT 0
     )`);
+    try {
+      await this.run(
+        "ALTER TABLE access_keys ADD COLUMN accountId TEXT NOT NULL DEFAULT 'legacy'",
+      );
+    } catch {
+      /* Existing databases already have the column. */
+    }
+    try {
+      await this.run(
+        "ALTER TABLE access_keys ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0",
+      );
+    } catch {
+      /* Existing databases already have the column. */
+    }
     await this.run(`CREATE TABLE IF NOT EXISTS admin_token_owners (
       tokenHash TEXT PRIMARY KEY,
       userId TEXT,
@@ -346,20 +397,349 @@ export class S3Mini {
     return (this.db?.prepare(sql).all(...params) || []) as any[];
   }
 
-  async listBuckets(): Promise<Bucket[]> {
-    const rows = await this.all("SELECT * FROM buckets");
+  async listBuckets(accountId?: string): Promise<Bucket[]> {
+    const rows = accountId
+      ? await this.all("SELECT * FROM buckets WHERE accountId = ?", [accountId])
+      : await this.all("SELECT * FROM buckets");
     return rows.map((r: any) => ({
       name: r.name,
       locationConstraint: r.locationConstraint,
       creationDate: new Date(r.creationDate),
+      accountId: r.accountId,
+      quotaBytes: r.quotaBytes,
     }));
+  }
+
+  async createStorageAccount(
+    externalId: string,
+    displayName = "",
+    quotaBytes = 0,
+  ): Promise<StorageAccountRecord> {
+    const normalizedExternalId = externalId.trim();
+    if (
+      !normalizedExternalId ||
+      normalizedExternalId.length > 256 ||
+      !Number.isSafeInteger(quotaBytes) ||
+      quotaBytes < 0
+    ) {
+      throw new S3Error(
+        "InvalidRequest",
+        "A valid external ID and non-negative quota are required.",
+        400,
+      );
+    }
+    const existing =
+      await this.getStorageAccountByExternalId(normalizedExternalId);
+    if (existing) {
+      return existing;
+    }
+    const accountId = `acct-${crypto
+      .createHash("sha256")
+      .update(normalizedExternalId)
+      .digest("hex")
+      .slice(0, 32)}`;
+    const createdAt = Date.now();
+    try {
+      await this.run(
+        "INSERT INTO storage_accounts (accountId, externalId, displayName, quotaBytes, createdAt) VALUES (?, ?, ?, ?, ?)",
+        [
+          accountId,
+          normalizedExternalId,
+          displayName.trim().slice(0, 256),
+          quotaBytes,
+          createdAt,
+        ],
+      );
+    } catch {
+      const raced =
+        await this.getStorageAccountByExternalId(normalizedExternalId);
+      if (raced) {
+        return raced;
+      }
+      throw new S3Error(
+        "InternalError",
+        "Storage account could not be created.",
+        500,
+      );
+    }
+    return {
+      accountId,
+      externalId: normalizedExternalId,
+      displayName: displayName.trim().slice(0, 256),
+      quotaBytes,
+      createdAt: new Date(createdAt),
+    };
+  }
+
+  async getStorageAccount(
+    accountId: string,
+  ): Promise<StorageAccountRecord | undefined> {
+    const row = await this.get(
+      "SELECT * FROM storage_accounts WHERE accountId = ?",
+      [accountId],
+    );
+    return row
+      ? {
+          accountId: row.accountId,
+          externalId: row.externalId,
+          displayName: row.displayName,
+          quotaBytes: row.quotaBytes,
+          createdAt: new Date(row.createdAt),
+        }
+      : undefined;
+  }
+
+  async getStorageAccountByExternalId(
+    externalId: string,
+  ): Promise<StorageAccountRecord | undefined> {
+    const row = await this.get(
+      "SELECT * FROM storage_accounts WHERE externalId = ?",
+      [externalId],
+    );
+    return row
+      ? {
+          accountId: row.accountId,
+          externalId: row.externalId,
+          displayName: row.displayName,
+          quotaBytes: row.quotaBytes,
+          createdAt: new Date(row.createdAt),
+        }
+      : undefined;
+  }
+
+  async listStorageAccounts(): Promise<StorageAccountRecord[]> {
+    const rows = await this.all(
+      "SELECT * FROM storage_accounts WHERE accountId != 'legacy' ORDER BY createdAt",
+    );
+    return rows.map((row) => ({
+      accountId: row.accountId,
+      externalId: row.externalId,
+      displayName: row.displayName,
+      quotaBytes: row.quotaBytes,
+      createdAt: new Date(row.createdAt),
+    }));
+  }
+
+  async acceptReplicatedStorageAccount(
+    account: StorageAccountRecord,
+  ): Promise<void> {
+    if (
+      !account.accountId ||
+      account.accountId === "legacy" ||
+      !account.externalId ||
+      account.externalId.length > 256 ||
+      typeof account.displayName !== "string" ||
+      !Number.isSafeInteger(account.quotaBytes) ||
+      account.quotaBytes < 0
+    ) {
+      throw new S3Error(
+        "InvalidRequest",
+        "Replicated storage account metadata is invalid.",
+        400,
+      );
+    }
+    const byId = await this.getStorageAccount(account.accountId);
+    const byExternalId = await this.getStorageAccountByExternalId(
+      account.externalId,
+    );
+    if (
+      (byId && byId.externalId !== account.externalId) ||
+      (byExternalId && byExternalId.accountId !== account.accountId)
+    ) {
+      throw new S3Error(
+        "Conflict",
+        "Replicated storage account identity conflicts with local metadata.",
+        409,
+      );
+    }
+    const createdAt = new Date(account.createdAt).getTime();
+    if (!Number.isFinite(createdAt)) {
+      throw new S3Error(
+        "InvalidRequest",
+        "Replicated storage account timestamp is invalid.",
+        400,
+      );
+    }
+    await this.run(
+      `INSERT INTO storage_accounts (accountId, externalId, displayName, quotaBytes, createdAt)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(accountId) DO UPDATE SET displayName = excluded.displayName, quotaBytes = excluded.quotaBytes`,
+      [
+        account.accountId,
+        account.externalId,
+        account.displayName.slice(0, 256),
+        account.quotaBytes,
+        createdAt,
+      ],
+    );
+  }
+
+  async setStorageAccountQuota(
+    accountId: string,
+    quotaBytes: number,
+  ): Promise<void> {
+    if (!Number.isSafeInteger(quotaBytes) || quotaBytes < 0) {
+      throw new S3Error(
+        "InvalidRequest",
+        "Quota must be a non-negative safe integer.",
+        400,
+      );
+    }
+    const result = this.db
+      ?.prepare(
+        "UPDATE storage_accounts SET quotaBytes = ? WHERE accountId = ? AND accountId != 'legacy'",
+      )
+      .run(quotaBytes, accountId);
+    if (!result?.changes) {
+      throw new S3Error("NoSuchAccount", "Storage account not found.", 404);
+    }
+  }
+
+  async deleteStorageAccount(accountId: string): Promise<void> {
+    if (accountId === "legacy") {
+      throw new S3Error(
+        "AccessDenied",
+        "The legacy account cannot be deleted.",
+        403,
+      );
+    }
+    const resources = await this.get(
+      "SELECT (SELECT COUNT(*) FROM buckets WHERE accountId = ?) + (SELECT COUNT(*) FROM access_keys WHERE accountId = ?) AS count",
+      [accountId, accountId],
+    );
+    if (!resources || resources.count > 0) {
+      throw new S3Error(
+        "Conflict",
+        "Storage accounts with buckets or keys cannot be deleted.",
+        409,
+      );
+    }
+    const result = this.db
+      ?.prepare("DELETE FROM storage_accounts WHERE accountId = ?")
+      .run(accountId);
+    if (!result?.changes) {
+      throw new S3Error("NoSuchAccount", "Storage account not found.", 404);
+    }
+  }
+
+  async setBucketQuota(bucket: string, quotaBytes: number): Promise<void> {
+    if (!Number.isSafeInteger(quotaBytes) || quotaBytes < 0) {
+      throw new S3Error(
+        "InvalidRequest",
+        "Quota must be a non-negative safe integer.",
+        400,
+        bucket,
+      );
+    }
+    const result = this.db
+      ?.prepare("UPDATE buckets SET quotaBytes = ? WHERE name = ?")
+      .run(quotaBytes, bucket);
+    if (!result?.changes) {
+      throw new S3Error("NoSuchBucket", "Bucket not found.", 404, bucket);
+    }
+  }
+
+  async getBucketAccountId(bucket: string): Promise<string | undefined> {
+    return (
+      await this.get("SELECT accountId FROM buckets WHERE name = ?", [bucket])
+    )?.accountId;
+  }
+
+  async getBucketQuota(bucket: string): Promise<number | undefined> {
+    const row = await this.get(
+      "SELECT quotaBytes FROM buckets WHERE name = ?",
+      [bucket],
+    );
+    return row ? Number(row.quotaBytes) : undefined;
+  }
+
+  async hasStorageAccounts(): Promise<boolean> {
+    return Boolean(
+      await this.get(
+        "SELECT 1 FROM storage_accounts WHERE accountId != 'legacy' LIMIT 1",
+      ),
+    );
+  }
+
+  async assertBucketAccount(bucket: string, accountId: string): Promise<void> {
+    const row = await this.get("SELECT accountId FROM buckets WHERE name = ?", [
+      bucket,
+    ]);
+    if (!row) {
+      return;
+    }
+    if (row.accountId !== accountId) {
+      throw new S3Error(
+        "AccessDenied",
+        "The bucket is not owned by this account.",
+        403,
+        bucket,
+      );
+    }
+  }
+
+  async getStorageUsage(accountId: string, bucket?: string): Promise<number> {
+    const row = bucket
+      ? await this.get(
+          "SELECT COALESCE(SUM(size), 0) AS bytes FROM objs WHERE bucket = ?",
+          [bucket],
+        )
+      : await this.get(
+          "SELECT COALESCE(SUM(o.size), 0) AS bytes FROM objs o JOIN buckets b ON b.name = o.bucket WHERE b.accountId = ?",
+          [accountId],
+        );
+    const parts = bucket
+      ? await this.get(
+          "SELECT COALESCE(SUM(p.size), 0) AS bytes FROM multipart_parts p JOIN multipart_uploads u ON u.uploadId = p.uploadId WHERE u.bucket = ?",
+          [bucket],
+        )
+      : await this.get(
+          "SELECT COALESCE(SUM(p.size), 0) AS bytes FROM multipart_parts p JOIN multipart_uploads u ON u.uploadId = p.uploadId JOIN buckets b ON b.name = u.bucket WHERE b.accountId = ?",
+          [accountId],
+        );
+    return Number(row?.bytes || 0) + Number(parts?.bytes || 0);
+  }
+
+  private async assertStorageCapacity(
+    bucket: string,
+    additionalBytes: number,
+  ): Promise<void> {
+    const limits = await this.get(
+      "SELECT accountId, quotaBytes FROM buckets WHERE name = ?",
+      [bucket],
+    );
+    if (!limits || additionalBytes <= 0) {
+      return;
+    }
+    const [bucketUsage, accountUsage, account] = await Promise.all([
+      this.getStorageUsage(limits.accountId, bucket),
+      this.getStorageUsage(limits.accountId),
+      this.get("SELECT quotaBytes FROM storage_accounts WHERE accountId = ?", [
+        limits.accountId,
+      ]),
+    ]);
+    const exceeds =
+      (limits.quotaBytes > 0 &&
+        bucketUsage + additionalBytes > limits.quotaBytes) ||
+      (account?.quotaBytes > 0 &&
+        accountUsage + additionalBytes > account.quotaBytes);
+    if (exceeds) {
+      throw new S3Error(
+        "QuotaExceeded",
+        "The configured storage quota would be exceeded.",
+        403,
+        bucket,
+      );
+    }
   }
 
   async applyLifecycle(bucket: string): Promise<void> {
     const configuration = await this.getBucketConfiguration<{
       rules?: Array<any>;
     }>(bucket, "lifecycleConfiguration");
-    if (!configuration?.rules?.length) return;
+    if (!configuration?.rules?.length) {
+      return;
+    }
     const rows = await this.all("SELECT * FROM objs WHERE bucket = ?", [
       bucket,
     ]);
@@ -379,7 +759,9 @@ export class S3Mini {
         const rule = configuration.rules.find((candidate) =>
           lifecycleRuleMatches(candidate, row.key),
         );
-        if (!rule) continue;
+        if (!rule) {
+          continue;
+        }
 
         const transition = lifecycleTransition(
           rule,
@@ -400,9 +782,12 @@ export class S3Mini {
         if (
           !expiration ||
           !lifecycleAgeReached(expiration, row.lastModified, now)
-        )
+        ) {
           continue;
-        if (row.deleteMarker && !expiration.expiredObjectDeleteMarker) continue;
+        }
+        if (row.deleteMarker && !expiration.expiredObjectDeleteMarker) {
+          continue;
+        }
         if (noncurrent || !versioning.status || row.deleteMarker) {
           await this.removeObjectVersion(
             bucket,
@@ -447,14 +832,28 @@ export class S3Mini {
     await fs.rm(this.versionPath(bucket, row.key, row.versionId), {
       force: true,
     });
-    if (row.deleteMarker || removeCurrentFile)
+    if (row.deleteMarker || removeCurrentFile) {
       await fs.rm(path.join(STORAGE_BASE, bucket, row.key), { force: true });
+    }
   }
 
   async createBucket(
     name: string,
     locationConstraint: string = "local",
+    accountId = "legacy",
+    quotaBytes = 0,
   ): Promise<void> {
+    if (!(await this.getStorageAccount(accountId))) {
+      throw new S3Error("NoSuchAccount", "Storage account not found.", 404);
+    }
+    if (!Number.isSafeInteger(quotaBytes) || quotaBytes < 0) {
+      throw new S3Error(
+        "InvalidRequest",
+        "Bucket quota must be a non-negative safe integer.",
+        400,
+        name,
+      );
+    }
     if (
       !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(name) ||
       name.includes("..") ||
@@ -482,16 +881,17 @@ export class S3Mini {
     const exists = await this.get("SELECT name FROM buckets WHERE name = ?", [
       name,
     ]);
-    if (exists)
+    if (exists) {
       throw new S3Error(
         "BucketAlreadyExists",
         "Bucket already exists.",
         409,
         name,
       );
+    }
     await this.run(
-      "INSERT INTO buckets (name, locationConstraint, creationDate) VALUES (?, ?, ?)",
-      [name, locationConstraint, Date.now()],
+      "INSERT INTO buckets (name, locationConstraint, creationDate, accountId, quotaBytes) VALUES (?, ?, ?, ?, ?)",
+      [name, locationConstraint, Date.now(), accountId, quotaBytes],
     );
     await this.run(
       "INSERT INTO bucket_settings (bucket, versioningStatus) VALUES (?, ?)",
@@ -504,27 +904,30 @@ export class S3Mini {
     const bucket = await this.get("SELECT name FROM buckets WHERE name = ?", [
       name,
     ]);
-    if (!bucket)
+    if (!bucket) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, name);
+    }
   }
 
   async deleteBucket(name: string): Promise<void> {
     const bucket = await this.get("SELECT name FROM buckets WHERE name = ?", [
       name,
     ]);
-    if (!bucket)
+    if (!bucket) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, name);
+    }
     const object = await this.get(
       "SELECT id FROM objs WHERE bucket = ? LIMIT 1",
       [name],
     );
-    if (object)
+    if (object) {
       throw new S3Error(
         "BucketNotEmpty",
         "The bucket you tried to delete is not empty.",
         409,
         name,
       );
+    }
     await this.run("DELETE FROM objs WHERE bucket = ?", [name]);
     await this.run("DELETE FROM tags WHERE bucket = ?", [name]);
     await this.run("DELETE FROM object_tags WHERE bucket = ?", [name]);
@@ -539,7 +942,9 @@ export class S3Mini {
   }
 
   async close(): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      return;
+    }
     this.db.close();
     this.db = undefined;
     this.initialized = false;
@@ -547,22 +952,106 @@ export class S3Mini {
 
   async createAccessKey(
     displayName = "",
+    accountId = "legacy",
   ): Promise<{ accessKeyId: string; secretAccessKey: string }> {
+    if (!(await this.getStorageAccount(accountId))) {
+      throw new S3Error("NoSuchAccount", "Storage account not found.", 404);
+    }
     const accessKeyId = `s3mini-${crypto.randomBytes(12).toString("base64url")}`;
     const secretAccessKey = crypto.randomBytes(32).toString("base64url");
+    const createdAt = Date.now();
     await this.run(
-      "INSERT INTO access_keys (accessKeyId, secretAccessKey, displayName, status, createdAt) VALUES (?, ?, ?, ?, ?)",
-      [accessKeyId, secretAccessKey, displayName, "Active", Date.now()],
+      "INSERT INTO access_keys (accessKeyId, secretAccessKey, displayName, status, createdAt, accountId, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [
+        accessKeyId,
+        secretAccessKey,
+        displayName,
+        "Active",
+        createdAt,
+        accountId,
+        createdAt,
+      ],
     );
     return { accessKeyId, secretAccessKey };
   }
 
-  async listAccessKeys(): Promise<AccessKeyRecord[]> {
-    const rows = await this.all(
-      "SELECT accessKeyId, displayName, status, createdAt, lastUsedAt FROM access_keys ORDER BY createdAt DESC",
+  async listReplicatedAccessKeys(): Promise<
+    Array<{
+      accessKeyId: string;
+      accountId: string;
+      secretAccessKey: string;
+      displayName: string;
+      status: "Active" | "Disabled";
+      createdAt: number;
+      updatedAt: number;
+      lastUsedAt?: number;
+    }>
+  > {
+    return this.all(
+      "SELECT accessKeyId, accountId, secretAccessKey, displayName, status, createdAt, updatedAt, lastUsedAt FROM access_keys",
     );
+  }
+
+  async acceptReplicatedAccessKey(key: {
+    accessKeyId: string;
+    accountId: string;
+    secretAccessKey: string;
+    displayName: string;
+    status: "Active" | "Disabled";
+    createdAt: number;
+    updatedAt: number;
+    lastUsedAt?: number;
+  }): Promise<void> {
+    if (
+      !key.accessKeyId ||
+      key.accessKeyId.length > 128 ||
+      !key.secretAccessKey ||
+      key.secretAccessKey.length > 256 ||
+      !["Active", "Disabled"].includes(key.status) ||
+      !Number.isSafeInteger(key.createdAt) ||
+      !Number.isSafeInteger(key.updatedAt) ||
+      typeof key.displayName !== "string" ||
+      !(await this.getStorageAccount(key.accountId))
+    ) {
+      throw new S3Error(
+        "InvalidRequest",
+        "Replicated access-key metadata is invalid.",
+        400,
+      );
+    }
+    await this.run(
+      `INSERT INTO access_keys (accessKeyId, secretAccessKey, displayName, status, createdAt, lastUsedAt, accountId, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(accessKeyId) DO UPDATE SET secretAccessKey = excluded.secretAccessKey,
+       displayName = excluded.displayName,
+       status = CASE WHEN excluded.updatedAt > access_keys.updatedAt THEN excluded.status ELSE access_keys.status END,
+       updatedAt = MAX(access_keys.updatedAt, excluded.updatedAt),
+       lastUsedAt = MAX(COALESCE(access_keys.lastUsedAt, 0), COALESCE(excluded.lastUsedAt, 0))`,
+      [
+        key.accessKeyId,
+        key.secretAccessKey,
+        key.displayName.slice(0, 256),
+        key.status,
+        key.createdAt,
+        key.lastUsedAt || null,
+        key.accountId,
+        key.updatedAt,
+      ],
+    );
+  }
+
+  async listAccessKeys(accountId?: string): Promise<AccessKeyRecord[]> {
+    const rows = accountId
+      ? await this.all(
+          "SELECT accessKeyId, accountId, displayName, status, createdAt, lastUsedAt FROM access_keys WHERE accountId = ? ORDER BY createdAt DESC",
+          [accountId],
+        )
+      : await this.all(
+          "SELECT accessKeyId, accountId, displayName, status, createdAt, lastUsedAt FROM access_keys ORDER BY createdAt DESC",
+        );
     return rows.map((row) => ({
       accessKeyId: row.accessKeyId,
+      accountId: row.accountId,
       displayName: row.displayName,
       status: row.status,
       createdAt: new Date(row.createdAt),
@@ -575,11 +1064,12 @@ export class S3Mini {
         accessKeyId: string;
         secretAccessKey: string;
         status: "Active" | "Disabled";
+        accountId: string;
       }
     | undefined
   > {
     const row = await this.get(
-      "SELECT accessKeyId, secretAccessKey, status FROM access_keys WHERE accessKeyId = ?",
+      "SELECT accessKeyId, secretAccessKey, status, accountId FROM access_keys WHERE accessKeyId = ?",
       [accessKeyId],
     );
     return row
@@ -587,6 +1077,7 @@ export class S3Mini {
           accessKeyId: row.accessKeyId,
           secretAccessKey: row.secretAccessKey,
           status: row.status,
+          accountId: row.accountId,
         }
       : undefined;
   }
@@ -595,10 +1086,10 @@ export class S3Mini {
     accessKeyId: string,
     status: "Active" | "Disabled",
   ): Promise<void> {
-    await this.run("UPDATE access_keys SET status = ? WHERE accessKeyId = ?", [
-      status,
-      accessKeyId,
-    ]);
+    await this.run(
+      "UPDATE access_keys SET status = ?, updatedAt = ? WHERE accessKeyId = ?",
+      [status, Date.now(), accessKeyId],
+    );
   }
 
   async associateAdminToken(
@@ -932,7 +1423,9 @@ export class S3Mini {
     limit = 100,
     leaseMs = 60_000,
   ): Promise<ReplicationPeerEvent[]> {
-    if (!peers.length) return [];
+    if (!peers.length) {
+      return [];
+    }
     const now = Date.now();
     const placeholders = peers.map(() => "?").join(",");
     this.db?.exec("BEGIN IMMEDIATE");
@@ -1084,7 +1577,7 @@ export class S3Mini {
 
   async acceptReplicatedObject(object: ReplicatedObject): Promise<void> {
     this.validateKey(object.key);
-    if (!/^[A-Za-z0-9._+-]+$/.test(object.versionId))
+    if (!/^[A-Za-z0-9._+-]+$/.test(object.versionId)) {
       throw new S3Error(
         "InvalidRequest",
         "The replicated version ID is invalid.",
@@ -1092,9 +1585,10 @@ export class S3Mini {
         object.bucket,
         object.key,
       );
+    }
     const md5Etag =
       '"' + crypto.createHash("md5").update(object.body).digest("hex") + '"';
-    if (md5Etag !== object.etag && !/^"[a-f0-9]{32}-\d+"$/.test(object.etag))
+    if (md5Etag !== object.etag && !/^"[a-f0-9]{32}-\d+"$/.test(object.etag)) {
       throw new S3Error(
         "BadDigest",
         "The replicated object ETag did not match its body.",
@@ -1102,11 +1596,12 @@ export class S3Mini {
         object.bucket,
         object.key,
       );
+    }
     const sha256 = crypto
       .createHash("sha256")
       .update(object.body)
       .digest("hex");
-    if (object.sha256 && object.sha256 !== sha256)
+    if (object.sha256 && object.sha256 !== sha256) {
       throw new S3Error(
         "BadDigest",
         "The replicated object SHA-256 digest did not match its body.",
@@ -1114,19 +1609,22 @@ export class S3Mini {
         object.bucket,
         object.key,
       );
+    }
     if (
       !(await this.get("SELECT name FROM buckets WHERE name = ?", [
         object.bucket,
       ]))
-    )
+    ) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, object.bucket);
+    }
     if (
       await this.get(
         "SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
         [object.bucket, object.key, object.versionId],
       )
-    )
+    ) {
       return;
+    }
 
     const filePath = path.join(STORAGE_BASE, object.bucket, object.key);
     const versionFilePath = this.versionPath(
@@ -1141,11 +1639,13 @@ export class S3Mini {
       "SELECT lastModified FROM objs WHERE bucket = ? AND key = ? ORDER BY lastModified DESC, id DESC LIMIT 1",
       [object.bucket, object.key],
     );
-    if (!current || object.lastModified >= current.lastModified)
+    if (!current || object.lastModified >= current.lastModified) {
       await writeDurableFile(filePath, object.body);
+    }
 
     this.db?.exec("BEGIN IMMEDIATE");
     try {
+      await this.assertStorageCapacity(object.bucket, object.body.length);
       await this.run(
         "INSERT INTO objs (bucket, key, etag, contentType, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker, userMetadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
@@ -1183,16 +1683,18 @@ export class S3Mini {
       !(await this.get("SELECT name FROM buckets WHERE name = ?", [
         event.bucket,
       ]))
-    )
+    ) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, event.bucket);
+    }
     if (event.deleteMarker) {
       if (
         await this.get(
           "SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
           [event.bucket, event.key, event.versionId],
         )
-      )
+      ) {
         return;
+      }
       await this.run(
         "INSERT INTO objs (bucket, key, etag, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker, userMetadata) VALUES (?, ?, NULL, ?, 0, ?, ?, ?, ?, 1, ?)",
         [
@@ -1216,13 +1718,14 @@ export class S3Mini {
         "SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
         [event.bucket, event.key, event.versionId],
       );
-      if (row)
+      if (row) {
         await this.deleteReplicatedVersion(
           event.bucket,
           event.key,
           event.versionId,
           row.id,
         );
+      }
       return;
     }
     await this.run("DELETE FROM objs WHERE bucket = ? AND key = ?", [
@@ -1269,11 +1772,13 @@ export class S3Mini {
     meta: any,
   ): Promise<ObjectMetadata> {
     this.validateKey(key);
-    const b = await this.get("SELECT name FROM buckets WHERE name = ?", [
-      bucketName,
-    ]);
-    if (!b)
+    const b = await this.get(
+      "SELECT name, accountId FROM buckets WHERE name = ?",
+      [bucketName],
+    );
+    if (!b) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, bucketName);
+    }
 
     const versionId = crypto.randomBytes(8).toString("hex") + "+";
     const etag =
@@ -1289,6 +1794,11 @@ export class S3Mini {
 
     this.db?.exec("BEGIN IMMEDIATE");
     try {
+      const reservedBytes = Number(meta.reservedBytes || 0);
+      await this.assertStorageCapacity(
+        bucketName,
+        Math.max(0, body.length - reservedBytes),
+      );
       await this.run(
         `
        INSERT INTO objs (bucket, key, etag, contentType, contentLanguage, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold, deleteMarker, userMetadata)
@@ -1382,9 +1892,10 @@ export class S3Mini {
           "SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY lastModified DESC, id DESC LIMIT 1",
           [bucketName, key],
         );
-    if (!row)
+    if (!row) {
       throw new S3Error("NoSuchKey", "Object not found", 404, bucketName, key);
-    if (row.deleteMarker)
+    }
+    if (row.deleteMarker) {
       throw new S3Error(
         "NoSuchKey",
         "The object is deleted.",
@@ -1392,6 +1903,7 @@ export class S3Mini {
         bucketName,
         key,
       );
+    }
 
     const versionFilePath = this.versionPath(bucketName, key, row.versionId);
     let data: Buffer;
@@ -1514,12 +2026,13 @@ export class S3Mini {
       "SELECT id, objectLockMode, retainUntil, legalHold FROM objs WHERE bucket = ? AND key = ?",
       [bucketName, key],
     );
-    if (!found)
+    if (!found) {
       throw new S3Error("NoSuchKey", "Object not found", 404, bucketName, key);
+    }
     if (
       found.legalHold === "ON" ||
       (found.retainUntil && found.retainUntil > Date.now())
-    )
+    ) {
       throw new S3Error(
         "AccessDenied",
         "Object retention prevents deletion.",
@@ -1527,6 +2040,7 @@ export class S3Mini {
         bucketName,
         key,
       );
+    }
     const versioning = await this.getVersioning(bucketName);
     if (versioning.status === "Enabled") {
       const markerId = crypto.randomBytes(8).toString("hex") + "+";
@@ -1579,10 +2093,11 @@ export class S3Mini {
       key,
     ]);
     await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
-    for (const version of versions as Array<{ versionId: string }>)
+    for (const version of versions as Array<{ versionId: string }>) {
       await fs.rm(this.versionPath(bucketName, key, version.versionId), {
         force: true,
       });
+    }
     await this.queueReplicationEvent({
       bucket: bucketName,
       key,
@@ -1612,13 +2127,14 @@ export class S3Mini {
         await this.deleteObject(bucket, key);
         deleted.push(key);
       } catch (error) {
-        if (error instanceof S3Error && error.code === "NoSuchKey")
+        if (error instanceof S3Error && error.code === "NoSuchKey") {
           deleted.push(key);
-        else
+        } else {
           errors.push({
             key,
             code: error instanceof S3Error ? error.code : "InternalError",
           });
+        }
       }
     }
     return { deleted, errors };
@@ -1679,7 +2195,7 @@ export class S3Mini {
       "SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
       [bucket, key, versionId],
     );
-    if (!row)
+    if (!row) {
       throw new S3Error(
         "NoSuchVersion",
         "The specified version does not exist.",
@@ -1687,6 +2203,7 @@ export class S3Mini {
         bucket,
         key,
       );
+    }
     await this.run("DELETE FROM objs WHERE id = ?", [row.id]);
     await this.run(
       "DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?",
@@ -1718,7 +2235,7 @@ export class S3Mini {
       "SELECT id FROM objs WHERE bucket = ? AND key = ? AND (? = '' OR versionId = ?) LIMIT 1",
       [bucket, key, versionId, versionId],
     );
-    if (!object)
+    if (!object) {
       throw new S3Error(
         versionId ? "NoSuchVersion" : "NoSuchKey",
         "Object not found",
@@ -1726,6 +2243,7 @@ export class S3Mini {
         bucket,
         key,
       );
+    }
     await this.run(
       "INSERT OR REPLACE INTO object_tags (bucket, key, versionId, tags) VALUES (?, ?, ?, ?)",
       [bucket, key, versionId, JSON.stringify(tags)],
@@ -1742,7 +2260,7 @@ export class S3Mini {
       "SELECT tags FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?",
       [bucket, key, versionId],
     );
-    if (!row)
+    if (!row) {
       throw new S3Error(
         "NoSuchTagSet",
         "The object has no tags.",
@@ -1750,6 +2268,7 @@ export class S3Mini {
         bucket,
         key,
       );
+    }
     return JSON.parse(row.tags) as Record<string, string>;
   }
 
@@ -1826,8 +2345,9 @@ export class S3Mini {
       "SELECT locationConstraint FROM buckets WHERE name = ?",
       [bucket],
     );
-    if (!row)
+    if (!row) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, bucket);
+    }
     return row.locationConstraint;
   }
 
@@ -1903,12 +2423,16 @@ export class S3Mini {
     const policy = await this.getBucketConfiguration<{
       statements?: Array<any>;
     }>(bucket, "policy");
-    if (!policy?.statements) return false;
+    if (!policy?.statements) {
+      return false;
+    }
     const resource = `arn:aws:s3:::${bucket}${key ? `/${key}` : ""}`;
     const matching = policy.statements.filter((statement) =>
       policyStatementMatches(statement, resource, action, principal, context),
     );
-    if (matching.some((statement) => statement.effect === "Deny")) return true;
+    if (matching.some((statement) => statement.effect === "Deny")) {
+      return true;
+    }
     return (
       policy.statements.some((statement) => statement.effect === "Allow") &&
       !matching.some((statement) => statement.effect === "Allow")
@@ -1925,7 +2449,9 @@ export class S3Mini {
       bucket,
       key,
     ).catch(() => ({ CannedACL: "private" }));
-    if (principal !== "anonymous") return false;
+    if (principal !== "anonymous") {
+      return false;
+    }
     const requiredPermission =
       action === "GetObject"
         ? "READ"
@@ -1935,11 +2461,15 @@ export class S3Mini {
             ? "WRITE_ACP"
             : "WRITE";
     if (acl.CannedACL) {
-      if (acl.CannedACL === "public-read") return requiredPermission === "READ";
-      if (acl.CannedACL === "public-read-write")
+      if (acl.CannedACL === "public-read") {
+        return requiredPermission === "READ";
+      }
+      if (acl.CannedACL === "public-read-write") {
         return requiredPermission === "READ" || requiredPermission === "WRITE";
-      if (acl.CannedACL === "authenticated-read")
+      }
+      if (acl.CannedACL === "authenticated-read") {
         return !(principal !== "anonymous" && requiredPermission === "READ");
+      }
       return true;
     }
     const grants = Array.isArray((acl as any).Grants)
@@ -1992,8 +2522,9 @@ export class S3Mini {
     const entries = new Map<string, ContractObjectSummary | string>();
 
     for (const row of rows as any[]) {
-      if (!row.key.startsWith(prefix) || (marker && row.key <= marker))
+      if (!row.key.startsWith(prefix) || (marker && row.key <= marker)) {
         continue;
+      }
       if (delimiter) {
         const remainder = row.key.slice(prefix.length);
         const delimiterIndex = remainder.indexOf(delimiter);
@@ -2037,11 +2568,13 @@ export class S3Mini {
       startAfter: request.startAfter,
       encodingType: request.encodingType,
     };
-    if (request.continuationToken)
+    if (request.continuationToken) {
       result.continuationToken = request.continuationToken;
-    if (isTruncated && lastEntry)
+    }
+    if (isTruncated && lastEntry) {
       result.nextContinuationToken =
         Buffer.from(lastEntry).toString("base64url");
+    }
     return result;
   }
 
@@ -2052,7 +2585,7 @@ export class S3Mini {
   ): Promise<CreateMultipartUploadResult> {
     await this.headBucket(bucket);
     this.validateKey(key);
-    if (!VALID_STORAGE_CLASSES.includes(storageClass as any))
+    if (!VALID_STORAGE_CLASSES.includes(storageClass as any)) {
       throw new S3Error(
         "InvalidStorageClass",
         "The storage class is not supported.",
@@ -2060,6 +2593,7 @@ export class S3Mini {
         bucket,
         key,
       );
+    }
     const uploadId = crypto.randomUUID();
     await this.run(
       "INSERT INTO multipart_uploads (uploadId, bucket, key, initiated, storageClass) VALUES (?, ?, ?, ?, ?)",
@@ -2073,7 +2607,7 @@ export class S3Mini {
       "SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?",
       [request.uploadId, request.bucket, request.key],
     );
-    if (!upload)
+    if (!upload) {
       throw new S3Error(
         "NoSuchUpload",
         "The specified multipart upload does not exist.",
@@ -2081,7 +2615,8 @@ export class S3Mini {
         request.bucket,
         request.key,
       );
-    if (request.partNumber < 1 || request.partNumber > 10000)
+    }
+    if (request.partNumber < 1 || request.partNumber > 10000) {
       throw new S3Error(
         "InvalidPart",
         "Part number must be between 1 and 10000.",
@@ -2089,20 +2624,36 @@ export class S3Mini {
         request.bucket,
         request.key,
       );
+    }
     const etag =
       '"' + crypto.createHash("md5").update(request.body).digest("hex") + '"';
     const lastModified = Date.now();
-    await this.run(
-      "INSERT OR REPLACE INTO multipart_parts (uploadId, partNumber, etag, size, lastModified, body) VALUES (?, ?, ?, ?, ?, ?)",
-      [
-        request.uploadId,
-        request.partNumber,
-        etag,
-        request.body.length,
-        lastModified,
-        request.body,
-      ],
-    );
+    this.db?.exec("BEGIN IMMEDIATE");
+    try {
+      const oldPart = await this.get(
+        "SELECT size FROM multipart_parts WHERE uploadId = ? AND partNumber = ?",
+        [request.uploadId, request.partNumber],
+      );
+      await this.assertStorageCapacity(
+        request.bucket,
+        Math.max(0, request.body.length - Number(oldPart?.size || 0)),
+      );
+      await this.run(
+        "INSERT OR REPLACE INTO multipart_parts (uploadId, partNumber, etag, size, lastModified, body) VALUES (?, ?, ?, ?, ?, ?)",
+        [
+          request.uploadId,
+          request.partNumber,
+          etag,
+          request.body.length,
+          lastModified,
+          request.body,
+        ],
+      );
+      this.db?.exec("COMMIT");
+    } catch (error) {
+      this.db?.exec("ROLLBACK");
+      throw error;
+    }
     return {
       partNumber: request.partNumber,
       etag,
@@ -2134,7 +2685,7 @@ export class S3Mini {
       "SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?",
       [request.uploadId, request.bucket, request.key],
     );
-    if (!upload)
+    if (!upload) {
       throw new S3Error(
         "NoSuchUpload",
         "The specified multipart upload does not exist.",
@@ -2142,11 +2693,12 @@ export class S3Mini {
         request.bucket,
         request.key,
       );
+    }
     if (
       request.partNumberMarker !== undefined &&
       (!Number.isInteger(request.partNumberMarker) ||
         request.partNumberMarker < 0)
-    )
+    ) {
       throw new S3Error(
         "InvalidPart",
         "The part number marker is invalid.",
@@ -2154,10 +2706,11 @@ export class S3Mini {
         request.bucket,
         request.key,
       );
+    }
     if (
       request.maxParts !== undefined &&
       (!Number.isInteger(request.maxParts) || request.maxParts < 1)
-    )
+    ) {
       throw new S3Error(
         "InvalidRequest",
         "max-parts must be a positive integer.",
@@ -2165,6 +2718,7 @@ export class S3Mini {
         request.bucket,
         request.key,
       );
+    }
     const rows = await this.all(
       "SELECT * FROM multipart_parts WHERE uploadId = ? AND partNumber > ? ORDER BY partNumber ASC",
       [request.uploadId, request.partNumberMarker || 0],
@@ -2196,7 +2750,7 @@ export class S3Mini {
       "SELECT * FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?",
       [request.uploadId, request.bucket, request.key],
     );
-    if (!upload)
+    if (!upload) {
       throw new S3Error(
         "NoSuchUpload",
         "The specified multipart upload does not exist.",
@@ -2204,7 +2758,8 @@ export class S3Mini {
         request.bucket,
         request.key,
       );
-    if (!request.parts.length)
+    }
+    if (!request.parts.length) {
       throw new S3Error(
         "InvalidRequest",
         "At least one part is required.",
@@ -2212,6 +2767,7 @@ export class S3Mini {
         request.bucket,
         request.key,
       );
+    }
     if (
       request.parts.some(
         (part, index) =>
@@ -2235,7 +2791,7 @@ export class S3Mini {
         "SELECT body, etag FROM multipart_parts WHERE uploadId = ? AND partNumber = ?",
         [request.uploadId, part.partNumber],
       );
-      if (!row || row.etag !== part.etag)
+      if (!row || row.etag !== part.etag) {
         throw new S3Error(
           "InvalidPart",
           "One or more requested parts could not be found.",
@@ -2243,6 +2799,7 @@ export class S3Mini {
           request.bucket,
           request.key,
         );
+      }
       bodies.push(row.body);
     }
     const multipartDigest = crypto
@@ -2262,6 +2819,7 @@ export class S3Mini {
       {
         storageClass: upload.storageClass,
         etag: `"${multipartDigest}-${request.parts.length}"`,
+        reservedBytes: bodies.reduce((total, part) => total + part.length, 0),
       },
     );
     await this.run("DELETE FROM multipart_parts WHERE uploadId = ?", [
@@ -2287,7 +2845,7 @@ export class S3Mini {
       "SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?",
       [uploadId, bucket, key],
     );
-    if (!upload)
+    if (!upload) {
       throw new S3Error(
         "NoSuchUpload",
         "The specified multipart upload does not exist.",
@@ -2295,6 +2853,7 @@ export class S3Mini {
         bucket,
         key,
       );
+    }
     await this.run("DELETE FROM multipart_parts WHERE uploadId = ?", [
       uploadId,
     ]);
@@ -2356,7 +2915,9 @@ async function writeDurableFile(filePath: string, body: Buffer): Promise<void> {
 }
 
 function lifecycleRuleMatches(rule: any, key: string): boolean {
-  if (rule.status && rule.status !== "Enabled") return false;
+  if (rule.status && rule.status !== "Enabled") {
+    return false;
+  }
   const prefix = rule.filter?.prefix ?? rule.prefix ?? "";
   return !prefix || key.startsWith(prefix);
 }
@@ -2366,11 +2927,13 @@ function lifecycleAgeReached(
   lastModified: number,
   now: number,
 ): boolean {
-  if (condition.date !== undefined)
+  if (condition.date !== undefined) {
     return now >= Date.parse(String(condition.date));
+  }
   const days = condition.days ?? condition.noncurrentDays;
-  if (days !== undefined)
+  if (days !== undefined) {
     return now >= lastModified + Number(days) * 86_400_000;
+  }
   return false;
 }
 
@@ -2383,7 +2946,9 @@ function lifecycleTransition(
   const transitions = noncurrent
     ? rule.noncurrentVersionTransitions
     : rule.transitions;
-  if (!Array.isArray(transitions)) return undefined;
+  if (!Array.isArray(transitions)) {
+    return undefined;
+  }
   return transitions
     .filter((transition) => lifecycleAgeReached(transition, lastModified, now))
     .sort(
@@ -2420,7 +2985,9 @@ function policyStatementMatches(
     (value: unknown) =>
       typeof value === "string" && wildcardMatches(value, resource),
   );
-  if (!principals || !actionMatches || !resourceMatches) return false;
+  if (!principals || !actionMatches || !resourceMatches) {
+    return false;
+  }
   return policyConditionsMatch(statement.condition, context);
 }
 
@@ -2428,7 +2995,9 @@ function policyConditionsMatch(
   condition: any,
   context: Record<string, string | undefined>,
 ): boolean {
-  if (!condition) return true;
+  if (!condition) {
+    return true;
+  }
   for (const [operator, entries] of Object.entries(
     condition as Record<string, any>,
   )) {
@@ -2447,8 +3016,9 @@ function policyConditionsMatch(
         operator === "StringNotEquals"
           ? expected.includes(actual || "")
           : !matches
-      )
+      ) {
         return false;
+      }
     }
   }
   return true;

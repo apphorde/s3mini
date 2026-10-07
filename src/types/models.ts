@@ -33,6 +33,8 @@ export interface Bucket {
   name: string;
   locationConstraint: string;
   creationDate: Date;
+  accountId?: string;
+  quotaBytes?: number;
 }
 
 export interface ObjectMetadata {
@@ -173,8 +175,9 @@ export function generateVersionId(): string {
   const chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let r = "";
-  for (let i = 0; i < 32; i++)
+  for (let i = 0; i < 32; i++) {
     r += chars[Math.floor(Math.random() * chars.length)];
+  }
   return r + "+";
 }
 

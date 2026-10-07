@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import crypto from "node:crypto";
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import { S3Mini } from "../storage/s3mini.js";
+import { S3Mini, STORAGE_BASE } from "../storage/s3mini.js";
 import { S3Error } from "../types/models.js";
 
 describe("S3Mini", () => {
@@ -24,6 +25,52 @@ describe("S3Mini", () => {
     expect(
       result.find((item) => item.name === bucket)?.locationConstraint,
     ).toBe("eu-west-1");
+  });
+
+  it("isolates account-owned buckets and enforces bucket and aggregate quotas", async () => {
+    const account = await s3.createStorageAccount(
+      `external-${crypto.randomUUID()}`,
+      "Quota test",
+      6,
+    );
+    await s3.acceptReplicatedStorageAccount(account);
+    const tenantBucket = `tenant-${crypto.randomUUID().replaceAll("-", "")}`;
+    const secondBucket = `tenant-${crypto.randomUUID().replaceAll("-", "")}`;
+    await s3.createBucket(tenantBucket, "local", account.accountId, 4);
+    await s3.createBucket(secondBucket, "local", account.accountId, 6);
+    try {
+      expect(
+        (await s3.listBuckets(account.accountId)).map((item) => item.name),
+      ).toEqual([tenantBucket, secondBucket]);
+      await expect(
+        s3.assertBucketAccount(tenantBucket, "legacy"),
+      ).rejects.toMatchObject({
+        code: "AccessDenied",
+      });
+      await expect(
+        s3.putObject(tenantBucket, "over-limit", Buffer.alloc(5), {}),
+      ).rejects.toMatchObject({ code: "QuotaExceeded" });
+      await s3.putObject(tenantBucket, "within-limit", Buffer.alloc(4), {});
+      await expect(
+        s3.putObject(secondBucket, "aggregate-over-limit", Buffer.alloc(3), {}),
+      ).rejects.toMatchObject({ code: "QuotaExceeded" });
+      const replicatedBody = Buffer.alloc(3);
+      await expect(
+        s3.acceptReplicatedObject({
+          bucket: secondBucket,
+          key: "replicated-over-limit",
+          versionId: "replica-quota+",
+          etag: `"${crypto.createHash("md5").update(replicatedBody).digest("hex")}"`,
+          lastModified: Date.now(),
+          body: replicatedBody,
+        }),
+      ).rejects.toMatchObject({ code: "QuotaExceeded" });
+      expect(await s3.getStorageUsage(account.accountId)).toBe(4);
+    } finally {
+      await s3.clearBucket(tenantBucket);
+      await s3.clearBucket(secondBucket);
+      await s3.deleteStorageAccount(account.accountId);
+    }
   });
 
   it("persists access keys without exposing secrets in listings", async () => {
@@ -180,7 +227,7 @@ describe("S3Mini", () => {
     );
     await rm(
       path.join(
-        "/data/objects",
+        STORAGE_BASE,
         bucket,
         ".versions",
         object.versionId,
