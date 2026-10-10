@@ -20,7 +20,13 @@ export async function registerRoutes(
   replication?: ReplicationWorker,
 ) {
   fastify.addContentTypeParser(
-    ["application/octet-stream", "application/xml", "text/xml", "text/csv"],
+    [
+      "application/octet-stream",
+      "application/xml",
+      "text/xml",
+      "text/csv",
+      "*",
+    ],
     { parseAs: "buffer" },
     (_request, body, done) => {
       done(null, body);

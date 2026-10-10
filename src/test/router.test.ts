@@ -103,6 +103,26 @@ describe("S3 HTTP routes", () => {
     ).toBe(204);
   });
 
+  it("accepts arbitrary media types for binary S3 uploads", async () => {
+    await app.inject({ method: "PUT", url: `/${bucket}` });
+    const image = Buffer.from([0xff, 0xd8, 0xff, 0x00, 0x81]);
+    const put = await app.inject({
+      method: "PUT",
+      url: `/${bucket}/photo.jpg`,
+      headers: { "content-type": "image/jpeg" },
+      payload: image,
+    });
+
+    expect(put.statusCode).toBe(200);
+    const get = await app.inject({
+      method: "GET",
+      url: `/${bucket}/photo.jpg`,
+    });
+    expect(get.statusCode).toBe(200);
+    expect(get.headers["content-type"]).toContain("image/jpeg");
+    expect(get.body).toBe(image.toString());
+  });
+
   it("reserves authentication paths from bucket routing", async () => {
     const response = await app.inject({
       method: "GET",
