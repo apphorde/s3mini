@@ -27,10 +27,24 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
       },
     });
   });
+  await page.route("https://unpkg.com/**", async (route) => {
+    const response = await fetch(route.request().url());
+    await route.fulfill({
+      status: response.status,
+      body: await response.text(),
+      headers: {
+        "content-type": response.headers.get("content-type") || "text/javascript",
+        "access-control-allow-origin": "*",
+      },
+    });
+  });
 
   await page.goto("/admin", { waitUntil: "networkidle" });
   await expect(page.locator("control-plane-app")).toBeAttached();
   await expect(page.getByText("Overview")).toBeVisible();
+  const sidebarIcons = page.locator("aside nav button lucide-icon");
+  await expect(sidebarIcons).toHaveCount(6);
+  await expect.poll(() => sidebarIcons.locator("svg").count()).toBe(6);
   const desktopLayout = await page.evaluate(() => {
     const sidebar = globalThis.document.querySelector("aside")!.getBoundingClientRect();
     const main = globalThis.document.querySelector("main")!.getBoundingClientRect();
@@ -53,6 +67,9 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await page.getByPlaceholder("Display name").fill("ui-smoke-account");
   await page.getByRole("button", { name: "Issue access key" }).click();
   await expect(page.getByText("Secret key")).toBeVisible();
+  const accessKeyTable = page.locator("section table");
+  await expect(accessKeyTable.locator("thead th").nth(0)).toHaveText("Name");
+  await expect(accessKeyTable.locator("thead th").nth(1)).toHaveText("Access key");
   expect(new URL(page.url()).searchParams.get("page")).toBe("accounts");
   await page.reload({ waitUntil: "networkidle" });
   await expect(page).toHaveURL(/page=accounts/);
