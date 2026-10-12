@@ -1276,7 +1276,11 @@ describe("S3 HTTP routes", () => {
     });
     expect(response.statusCode).toBe(403);
     expect(response.headers.location).toBeUndefined();
-    expect(response.body).toContain("dashboard role assigned");
+    expect(response.headers["content-type"]).toContain("text/html");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.body).toContain("Your dashboard access needs attention");
+    expect(response.body).toContain('href="/admin/login"');
+    expect(response.body).toContain('action="/auth/logout"');
     delete process.env.AUTH_PROVIDER;
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
@@ -1751,8 +1755,35 @@ describe("S3 HTTP routes", () => {
 
   it("clears the OIDC dashboard session on logout", async () => {
     const response = await app.inject({ method: "POST", url: "/admin/logout" });
+    const setCookies = String(response.headers["set-cookie"]);
     expect(response.statusCode).toBe(204);
-    expect(response.headers["set-cookie"]).toContain("s3mini_oidc_token=;");
+    expect(setCookies).toContain("s3mini_oidc_token=;");
+    expect(setCookies).toContain("s3mini_oidc_state=;");
+  });
+
+  it.each(["GET", "POST"] as const)(
+    "%s /auth/logout clears the local session and shows sign-in again",
+    async (method) => {
+      const response = await app.inject({
+        method,
+        url: "/auth/logout",
+        headers: { authorization: "Bearer dev-admin" },
+      });
+      const setCookies = String(response.headers["set-cookie"]);
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("text/html");
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(setCookies).toContain("s3mini_oidc_token=;");
+      expect(setCookies).toContain("s3mini_oidc_state=;");
+      expect(response.body).toContain("You’re signed out");
+      expect(response.body).toContain('href="/admin/login"');
+    },
+  );
+
+  it("keeps other reserved auth paths unavailable to S3 routing", async () => {
+    const response = await app.inject({ method: "GET", url: "/auth/unknown" });
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toContain("authentication path is reserved");
   });
 
   it("accepts authenticated replicated object writes without creating a replication loop", async () => {

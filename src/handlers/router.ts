@@ -11,6 +11,7 @@ import { S3Error, VALID_STORAGE_CLASSES } from "../types/models.js";
 import { verifyPresignedSigV4, verifySigV4 } from "../auth/sigv4.js";
 import { introspectOidcToken, verifyOidcToken } from "../auth/oidc.js";
 import { CONTROL_PLANE_HTML } from "../ui/control-plane.js";
+import { DASHBOARD_ACCESS_ERROR_HTML, SIGNED_OUT_HTML } from "../ui/auth-pages.js";
 import type { ReplicationWorker } from "../replication/worker.js";
 import type { AdminUserRole, StorageAccountRecord } from "../storage/s3mini.js";
 
@@ -41,6 +42,8 @@ export async function registerRoutes(
     const pathname = new URL(request.url, "http://localhost").pathname;
     if (
       pathname === "/api" ||
+      pathname === "/auth" ||
+      pathname.startsWith("/auth/") ||
       pathname === "/admin" ||
       pathname.startsWith("/admin/") ||
       pathname.startsWith("/provisioning/")
@@ -704,9 +707,10 @@ export async function registerRoutes(
       }
       if (role !== "admin") {
         return reply
-          .type("text/plain")
+          .header("Cache-Control", "no-store")
+          .type("text/html")
           .code(403)
-          .send("Your OIDC account does not have a dashboard role assigned.");
+          .send(DASHBOARD_ACCESS_ERROR_HTML);
       }
     }
     return reply.type("text/html").send(CONTROL_PLANE_HTML);
@@ -920,13 +924,24 @@ export async function registerRoutes(
           404,
         ).toResponseXml(request.id),
       );
+  const clearDashboardSession = (reply: FastifyReply) =>
+    reply.header("Set-Cookie", [
+      "s3mini_oidc_token=; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=0",
+      "s3mini_oidc_state=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0",
+    ]);
+  const logoutPage = async (_request: FastifyRequest, reply: FastifyReply) => {
+    clearDashboardSession(reply);
+    return reply
+      .header("Cache-Control", "no-store")
+      .type("text/html")
+      .send(SIGNED_OUT_HTML);
+  };
+  fastify.get("/auth/logout", logoutPage);
+  fastify.post("/auth/logout", logoutPage);
   fastify.all("/auth", reservedAuthPath);
   fastify.all("/auth/*", reservedAuthPath);
   fastify.post("/admin/logout", async (_request, reply) => {
-    reply.header(
-      "Set-Cookie",
-      "s3mini_oidc_token=; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=0",
-    );
+    clearDashboardSession(reply);
     return reply.code(204).send();
   });
 

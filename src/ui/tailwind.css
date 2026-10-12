@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+@source "./auth-pages.ts";
 @source "./control-plane.ts";
 
 @theme {
@@ -20,6 +21,15 @@ body {
   background: #eef2ec;
   color: #1c201e;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+body.auth-page {
+  display: grid;
+  min-height: 100dvh;
+  height: auto;
+  place-items: center;
+  overflow: auto;
+  padding: 1rem;
 }
 
 control-plane-app {

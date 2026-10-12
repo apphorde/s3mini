@@ -191,6 +191,10 @@ access keys, edits bucket policies through a modal on the Buckets page, and lets
 admins assign OIDC subject IDs to dashboard roles on the Users page. Bucket,
 policy, and access-key actions operate on the current node; user roles converge
 asynchronously across configured replicas and do not provide cluster consensus.
+If a dashboard session expires or has no admin role, `/admin` displays a
+session-recovery page. Visit `/auth/logout` directly to clear the local dashboard
+session; this does not sign out of the identity provider. The same endpoint
+accepts `POST` for the recovery page's sign-out action.
 
 Set `S3MINI_REPLICATION_QUORUM` to a positive number to expose a degraded
 state when fewer than that many configured peers are healthy. Current writes

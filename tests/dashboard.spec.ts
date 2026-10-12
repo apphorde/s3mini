@@ -159,3 +159,17 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
     expect(width.content, `${pageName} overflows the mobile viewport`).toBeLessThanOrEqual(width.viewport);
   }
 });
+
+test("direct logout clears the session and offers a fresh sign-in", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const response = await page.goto("/auth/logout");
+  expect(response?.status(), await response?.text()).toBe(200);
+  await expect(page.getByRole("heading", { name: "You’re signed out" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/admin/login");
+  await expect(page.locator('link[rel="stylesheet"][href="/admin/tailwind.css"]')).toHaveCount(1);
+  const width = await page.evaluate(() => ({
+    viewport: globalThis.document.documentElement.clientWidth,
+    content: globalThis.document.documentElement.scrollWidth,
+  }));
+  expect(width.content).toBeLessThanOrEqual(width.viewport);
+});
