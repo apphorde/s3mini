@@ -1,8 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("dashboard boots, renders, and has no browser errors", async ({
-  page,
-}) => {
+test("dashboard boots, renders, and has no browser errors", async ({ page }) => {
   const errors: string[] = [];
   const requests: string[] = [];
   const failedResponses: string[] = [];
@@ -12,18 +10,34 @@ test("dashboard boots, renders, and has no browser errors", async ({
     }
   });
   page.on("pageerror", (error) => errors.push(error.message));
-  page.on("request", (request) =>
-    requests.push(request.method() + " " + request.url()),
-  );
+  page.on("request", (request) => requests.push(request.method() + " " + request.url()));
   page.on("response", (response) => {
     if (response.status() >= 500) {
       failedResponses.push(response.status() + " " + response.url());
     }
   });
+  await page.route("https://cdn.li3.dev/**", async (route) => {
+    const response = await fetch(route.request().url());
+    await route.fulfill({
+      status: response.status,
+      body: await response.text(),
+      headers: {
+        "content-type": response.headers.get("content-type") || "text/javascript",
+        "access-control-allow-origin": "*",
+      },
+    });
+  });
 
   await page.goto("/admin", { waitUntil: "networkidle" });
   await expect(page.locator("control-plane-app")).toBeAttached();
   await expect(page.getByText("Overview")).toBeVisible();
+  const desktopLayout = await page.evaluate(() => {
+    const sidebar = globalThis.document.querySelector("aside")!.getBoundingClientRect();
+    const main = globalThis.document.querySelector("main")!.getBoundingClientRect();
+    return { sidebarRight: sidebar.right, mainLeft: main.left, mainWidth: main.width };
+  });
+  expect(desktopLayout.sidebarRight).toBe(desktopLayout.mainLeft);
+  expect(desktopLayout.mainWidth).toBeGreaterThan(900);
   await page.screenshot({
     path: "test-results/dashboard-overview.png",
     fullPage: true,
@@ -42,13 +56,30 @@ test("dashboard boots, renders, and has no browser errors", async ({
   expect(new URL(page.url()).searchParams.get("page")).toBe("accounts");
   await page.reload({ waitUntil: "networkidle" });
   await expect(page).toHaveURL(/page=accounts/);
-  await expect(
-    page.getByRole("heading", { name: "Accounts", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
+  await page.route("**/admin/accounts", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          accountId: "ui-account-1",
+          externalId: "oidc:ui-account-1",
+          displayName: "UI test account",
+          quotaBytes: 0,
+        },
+      ]),
+    });
+  });
+  await page.route("**/admin/accounts/ui-account-1/quota", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ quotaBytes: 1048576 });
+    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
   await page.getByRole("button", { name: "Allocations" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Storage allocations" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Storage allocations" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Allocations" })).toHaveClass(/nav-item-active/);
+  await page.getByRole("spinbutton").fill("1048576");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Account quota saved.")).toBeVisible();
   await page.route("**/admin/oidc/api-tokens", async (route) => {
     expect(route.request().postDataJSON()).toEqual({
       label: "ui-smoke-token",
@@ -66,13 +97,13 @@ test("dashboard boots, renders, and has no browser errors", async ({
     });
   });
   await page.getByRole("button", { name: "OIDC tokens" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Issue OIDC API token" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Issue OIDC API token" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "OIDC tokens" })).toHaveClass(/nav-item-active/);
   await page.getByPlaceholder("Filebin provisioning").fill("ui-smoke-token");
   await page.getByRole("button", { name: "Generate token" }).click();
   await expect(page.getByText("one-time-ui-token")).toBeVisible();
   await page.getByRole("button", { name: "Users" }).click();
+  await expect(page.getByRole("button", { name: "Users" })).toHaveClass(/nav-item-active/);
   const userId = `ui-smoke-role-${Date.now()}`;
   await page.getByPlaceholder("User subject ID").fill(userId);
   await page.getByPlaceholder("user@example.com").fill("ui-role@example.com");
@@ -81,9 +112,7 @@ test("dashboard boots, renders, and has no browser errors", async ({
   await page.getByRole("button", { name: "Save role" }).click();
   await expect(page.getByText(userId)).toBeVisible();
   const removal = page.waitForResponse(
-    (response) =>
-      response.request().method() === "DELETE" &&
-      response.url().endsWith(`/admin/users/${userId}`),
+    (response) => response.request().method() === "DELETE" && response.url().endsWith(`/admin/users/${userId}`),
   );
   await page
     .getByRole("row", { name: new RegExp(userId) })
@@ -104,14 +133,19 @@ test("dashboard boots, renders, and has no browser errors", async ({
   expect([...errors, ...failedResponses]).toEqual([]);
 
   await page.setViewportSize({ width: 375, height: 812 });
-  for (const [pageName, heading] of [
-    ["accounts", "Accounts"],
-    ["allocations", "Storage allocations"],
-    ["users", "Users"],
-    ["tokens", "Issue OIDC API token"],
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(page.locator("aside.control-sidebar-open")).toBeVisible();
+  await page.getByRole("button", { name: "Close navigation overlay" }).click({ position: { x: 300, y: 200 } });
+  await expect(page.locator("aside.control-sidebar-open")).toHaveCount(0);
+  for (const [pageName, heading, menuItem] of [
+    ["accounts", "Accounts", "Accounts"],
+    ["allocations", "Storage allocations", "Allocations"],
+    ["users", "Users", "Users"],
+    ["tokens", "Issue OIDC API token", "OIDC tokens"],
   ]) {
     await page.goto(`/admin?page=${pageName}`, { waitUntil: "networkidle" });
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expect(page.locator("aside button").filter({ hasText: menuItem })).toHaveClass(/nav-item-active/);
     if (pageName === "accounts") {
       await page.screenshot({
         path: "test-results/dashboard-mobile-accounts.png",
@@ -119,12 +153,9 @@ test("dashboard boots, renders, and has no browser errors", async ({
       });
     }
     const width = await page.evaluate(() => ({
-      viewport: document.documentElement.clientWidth,
-      content: document.documentElement.scrollWidth,
+      viewport: globalThis.document.documentElement.clientWidth,
+      content: globalThis.document.documentElement.scrollWidth,
     }));
-    expect(
-      width.content,
-      `${pageName} overflows the mobile viewport`,
-    ).toBeLessThanOrEqual(width.viewport);
+    expect(width.content, `${pageName} overflows the mobile viewport`).toBeLessThanOrEqual(width.viewport);
   }
 });

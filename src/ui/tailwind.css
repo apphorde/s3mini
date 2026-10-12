@@ -10,13 +10,178 @@
 
 html,
 body {
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 body {
+  overflow: hidden;
   background: #eef2ec;
   color: #1c201e;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+control-plane-app {
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.control-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 40;
+  display: none;
+  width: 16rem;
+  flex: 0 0 16rem;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow-y: auto;
+  border-right: 1px solid #d9dfd8;
+  background: #eef2ec;
+  padding: 1rem;
+}
+
+.control-sidebar-open {
+  display: flex;
+  box-shadow: 0 16px 32px rgb(28 32 30 / 18%);
+}
+
+.mobile-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid rgb(203 213 225 / 55%);
+}
+
+.brand-mark {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  border-radius: 0.5rem;
+  background: #3b714b;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.menu-toggle {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #374151;
+  font-size: 1.375rem;
+}
+
+.menu-toggle:hover {
+  background: rgb(203 213 225 / 45%);
+}
+
+.nav-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  color: #374151;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+.nav-item:hover {
+  background: rgb(203 213 225 / 35%);
+}
+
+.nav-item-active,
+.nav-item-active:hover {
+  border-color: #3b714b;
+  background: #fff;
+  color: #3b714b;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(28 32 30 / 8%);
+}
+
+.nav-icon {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  color: #6b7280;
+  text-align: center;
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+.nav-item-active .nav-icon {
+  color: #3b714b;
+}
+
+main.control-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+main.control-main > .content-canvas {
+  width: 100%;
+  max-width: 64rem;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  align-self: center;
+  border: 1px solid #d9dfd8;
+  border-radius: 1rem;
+  background: white;
+  padding: 1.5rem;
+  box-shadow: 0 1px 2px rgb(28 32 30 / 5%);
+}
+
+main.control-main table {
+  border-collapse: collapse;
+}
+
+main.control-main th,
+main.control-main td {
+  vertical-align: middle;
+}
+
+main.control-main input:not([type="checkbox"]),
+main.control-main select,
+main.control-main textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+main.control-main input:not([type="checkbox"]),
+main.control-main select {
+  min-height: 2.5rem;
+}
+
+main.control-main button:not(.nav-item) {
+  min-height: 2.5rem;
+}
+
+main.control-main section {
+  min-width: 0;
 }
 
 button,
@@ -42,4 +207,37 @@ textarea:focus-visible {
 
 ::selection {
   background: #dcebdd;
+}
+
+@media (min-width: 768px) {
+  .control-sidebar,
+  .control-sidebar-open {
+    position: relative;
+    inset: auto;
+    display: flex;
+    height: 100%;
+    box-shadow: none;
+  }
+
+  .mobile-header {
+    display: none;
+  }
+
+  main.control-main {
+    padding: 1.5rem 1.5rem 1.5rem 0;
+  }
+
+  main.control-main > .content-canvas {
+    padding: 2.5rem;
+  }
+}
+
+@media (max-width: 639px) {
+  main.control-main > .content-canvas {
+    padding: 1.25rem 1rem;
+  }
+
+  main.control-main table {
+    min-width: 36rem;
+  }
 }
