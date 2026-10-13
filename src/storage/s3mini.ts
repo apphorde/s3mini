@@ -4,10 +4,7 @@ import fs from "fs/promises";
 import crypto from "crypto";
 import type { Bucket, ObjectMetadata, ObjectSummary } from "../types/models.js";
 import { S3Error } from "../types/models.js";
-import {
-  VALID_LOCATION_CONSTRAINTS,
-  VALID_STORAGE_CLASSES,
-} from "../types/models.js";
+import { VALID_LOCATION_CONSTRAINTS, VALID_STORAGE_CLASSES } from "../types/models.js";
 import type {
   CompleteMultipartUploadRequest,
   CompleteMultipartUploadResult,
@@ -25,8 +22,7 @@ import type {
 } from "../types/contracts.js";
 
 export const STORAGE_BASE = process.env.S3MINI_STORAGE_BASE || "/data/objects";
-export const DATABASE_PATH =
-  process.env.S3MINI_DATABASE_PATH || "/data/s3mini.sqlite";
+export const DATABASE_PATH = process.env.S3MINI_DATABASE_PATH || "/data/s3mini.sqlite";
 export const NODE_ID = process.env.S3MINI_NODE_ID || "node-local";
 export const REPLICATION_MAX_ATTEMPTS = 8;
 
@@ -125,18 +121,8 @@ export class S3Mini {
   }
 
   private validateKey(key: string): void {
-    if (
-      !key ||
-      path.isAbsolute(key) ||
-      key.split("/").some((part) => part === "..")
-    ) {
-      throw new S3Error(
-        "InvalidObjectName",
-        "The object key is invalid.",
-        400,
-        undefined,
-        key,
-      );
+    if (!key || path.isAbsolute(key) || key.split("/").some((part) => part === "..")) {
+      throw new S3Error("InvalidObjectName", "The object key is invalid.", 400, undefined, key);
     }
   }
 
@@ -175,10 +161,7 @@ export class S3Mini {
       accountId TEXT NOT NULL DEFAULT 'legacy',
       quotaBytes INTEGER NOT NULL DEFAULT 0
     )`);
-    for (const column of [
-      "accountId TEXT NOT NULL DEFAULT 'legacy'",
-      "quotaBytes INTEGER NOT NULL DEFAULT 0",
-    ]) {
+    for (const column of ["accountId TEXT NOT NULL DEFAULT 'legacy'", "quotaBytes INTEGER NOT NULL DEFAULT 0"]) {
       try {
         await this.run(`ALTER TABLE buckets ADD COLUMN ${column}`);
       } catch {
@@ -288,16 +271,12 @@ export class S3Mini {
       updatedAt INTEGER NOT NULL DEFAULT 0
     )`);
     try {
-      await this.run(
-        "ALTER TABLE access_keys ADD COLUMN accountId TEXT NOT NULL DEFAULT 'legacy'",
-      );
+      await this.run("ALTER TABLE access_keys ADD COLUMN accountId TEXT NOT NULL DEFAULT 'legacy'");
     } catch {
       /* Existing databases already have the column. */
     }
     try {
-      await this.run(
-        "ALTER TABLE access_keys ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0",
-      );
+      await this.run("ALTER TABLE access_keys ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0");
     } catch {
       /* Existing databases already have the column. */
     }
@@ -317,6 +296,17 @@ export class S3Mini {
       updatedAt INTEGER NOT NULL,
       sourceNodeId TEXT NOT NULL
     )`);
+    await this.run(`CREATE TABLE IF NOT EXISTS oidc_sessions (
+      sessionId TEXT PRIMARY KEY,
+      encryptedSession TEXT NOT NULL,
+      expiresAt INTEGER NOT NULL,
+      refreshLockUntil INTEGER
+    )`);
+    try {
+      await this.run("ALTER TABLE oidc_sessions ADD COLUMN refreshLockUntil INTEGER");
+    } catch {
+      /* Existing databases already have the column. */
+    }
     await this.run(`CREATE TABLE IF NOT EXISTS replication_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       bucket TEXT NOT NULL,
@@ -338,9 +328,7 @@ export class S3Mini {
       UNIQUE(bucket, key, versionId, operation, sourceNodeId)
     )`);
     try {
-      await this.run(
-        "ALTER TABLE replication_events ADD COLUMN deleteMarker INTEGER NOT NULL DEFAULT 0",
-      );
+      await this.run("ALTER TABLE replication_events ADD COLUMN deleteMarker INTEGER NOT NULL DEFAULT 0");
     } catch {
       /* Existing databases already have the column. */
     }
@@ -350,16 +338,12 @@ export class S3Mini {
       /* Existing databases already have the column. */
     }
     try {
-      await this.run(
-        "ALTER TABLE replication_events ADD COLUMN leaseOwner TEXT",
-      );
+      await this.run("ALTER TABLE replication_events ADD COLUMN leaseOwner TEXT");
     } catch {
       /* Existing databases already have the column. */
     }
     try {
-      await this.run(
-        "ALTER TABLE replication_events ADD COLUMN leaseUntil INTEGER",
-      );
+      await this.run("ALTER TABLE replication_events ADD COLUMN leaseUntil INTEGER");
     } catch {
       /* Existing databases already have the column. */
     }
@@ -410,11 +394,7 @@ export class S3Mini {
     }));
   }
 
-  async createStorageAccount(
-    externalId: string,
-    displayName = "",
-    quotaBytes = 0,
-  ): Promise<StorageAccountRecord> {
+  async createStorageAccount(externalId: string, displayName = "", quotaBytes = 0): Promise<StorageAccountRecord> {
     const normalizedExternalId = externalId.trim();
     if (
       !normalizedExternalId ||
@@ -422,45 +402,25 @@ export class S3Mini {
       !Number.isSafeInteger(quotaBytes) ||
       quotaBytes < 0
     ) {
-      throw new S3Error(
-        "InvalidRequest",
-        "A valid external ID and non-negative quota are required.",
-        400,
-      );
+      throw new S3Error("InvalidRequest", "A valid external ID and non-negative quota are required.", 400);
     }
-    const existing =
-      await this.getStorageAccountByExternalId(normalizedExternalId);
+    const existing = await this.getStorageAccountByExternalId(normalizedExternalId);
     if (existing) {
       return existing;
     }
-    const accountId = `acct-${crypto
-      .createHash("sha256")
-      .update(normalizedExternalId)
-      .digest("hex")
-      .slice(0, 32)}`;
+    const accountId = `acct-${crypto.createHash("sha256").update(normalizedExternalId).digest("hex").slice(0, 32)}`;
     const createdAt = Date.now();
     try {
       await this.run(
         "INSERT INTO storage_accounts (accountId, externalId, displayName, quotaBytes, createdAt) VALUES (?, ?, ?, ?, ?)",
-        [
-          accountId,
-          normalizedExternalId,
-          displayName.trim().slice(0, 256),
-          quotaBytes,
-          createdAt,
-        ],
+        [accountId, normalizedExternalId, displayName.trim().slice(0, 256), quotaBytes, createdAt],
       );
     } catch {
-      const raced =
-        await this.getStorageAccountByExternalId(normalizedExternalId);
+      const raced = await this.getStorageAccountByExternalId(normalizedExternalId);
       if (raced) {
         return raced;
       }
-      throw new S3Error(
-        "InternalError",
-        "Storage account could not be created.",
-        500,
-      );
+      throw new S3Error("InternalError", "Storage account could not be created.", 500);
     }
     return {
       accountId,
@@ -471,13 +431,8 @@ export class S3Mini {
     };
   }
 
-  async getStorageAccount(
-    accountId: string,
-  ): Promise<StorageAccountRecord | undefined> {
-    const row = await this.get(
-      "SELECT * FROM storage_accounts WHERE accountId = ?",
-      [accountId],
-    );
+  async getStorageAccount(accountId: string): Promise<StorageAccountRecord | undefined> {
+    const row = await this.get("SELECT * FROM storage_accounts WHERE accountId = ?", [accountId]);
     return row
       ? {
           accountId: row.accountId,
@@ -489,13 +444,8 @@ export class S3Mini {
       : undefined;
   }
 
-  async getStorageAccountByExternalId(
-    externalId: string,
-  ): Promise<StorageAccountRecord | undefined> {
-    const row = await this.get(
-      "SELECT * FROM storage_accounts WHERE externalId = ?",
-      [externalId],
-    );
+  async getStorageAccountByExternalId(externalId: string): Promise<StorageAccountRecord | undefined> {
+    const row = await this.get("SELECT * FROM storage_accounts WHERE externalId = ?", [externalId]);
     return row
       ? {
           accountId: row.accountId,
@@ -508,9 +458,7 @@ export class S3Mini {
   }
 
   async listStorageAccounts(): Promise<StorageAccountRecord[]> {
-    const rows = await this.all(
-      "SELECT * FROM storage_accounts WHERE accountId != 'legacy' ORDER BY createdAt",
-    );
+    const rows = await this.all("SELECT * FROM storage_accounts WHERE accountId != 'legacy' ORDER BY createdAt");
     return rows.map((row) => ({
       accountId: row.accountId,
       externalId: row.externalId,
@@ -520,9 +468,7 @@ export class S3Mini {
     }));
   }
 
-  async acceptReplicatedStorageAccount(
-    account: StorageAccountRecord,
-  ): Promise<void> {
+  async acceptReplicatedStorageAccount(account: StorageAccountRecord): Promise<void> {
     if (
       !account.accountId ||
       account.accountId === "legacy" ||
@@ -532,63 +478,34 @@ export class S3Mini {
       !Number.isSafeInteger(account.quotaBytes) ||
       account.quotaBytes < 0
     ) {
-      throw new S3Error(
-        "InvalidRequest",
-        "Replicated storage account metadata is invalid.",
-        400,
-      );
+      throw new S3Error("InvalidRequest", "Replicated storage account metadata is invalid.", 400);
     }
     const byId = await this.getStorageAccount(account.accountId);
-    const byExternalId = await this.getStorageAccountByExternalId(
-      account.externalId,
-    );
+    const byExternalId = await this.getStorageAccountByExternalId(account.externalId);
     if (
       (byId && byId.externalId !== account.externalId) ||
       (byExternalId && byExternalId.accountId !== account.accountId)
     ) {
-      throw new S3Error(
-        "Conflict",
-        "Replicated storage account identity conflicts with local metadata.",
-        409,
-      );
+      throw new S3Error("Conflict", "Replicated storage account identity conflicts with local metadata.", 409);
     }
     const createdAt = new Date(account.createdAt).getTime();
     if (!Number.isFinite(createdAt)) {
-      throw new S3Error(
-        "InvalidRequest",
-        "Replicated storage account timestamp is invalid.",
-        400,
-      );
+      throw new S3Error("InvalidRequest", "Replicated storage account timestamp is invalid.", 400);
     }
     await this.run(
       `INSERT INTO storage_accounts (accountId, externalId, displayName, quotaBytes, createdAt)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(accountId) DO UPDATE SET displayName = excluded.displayName, quotaBytes = excluded.quotaBytes`,
-      [
-        account.accountId,
-        account.externalId,
-        account.displayName.slice(0, 256),
-        account.quotaBytes,
-        createdAt,
-      ],
+      [account.accountId, account.externalId, account.displayName.slice(0, 256), account.quotaBytes, createdAt],
     );
   }
 
-  async setStorageAccountQuota(
-    accountId: string,
-    quotaBytes: number,
-  ): Promise<void> {
+  async setStorageAccountQuota(accountId: string, quotaBytes: number): Promise<void> {
     if (!Number.isSafeInteger(quotaBytes) || quotaBytes < 0) {
-      throw new S3Error(
-        "InvalidRequest",
-        "Quota must be a non-negative safe integer.",
-        400,
-      );
+      throw new S3Error("InvalidRequest", "Quota must be a non-negative safe integer.", 400);
     }
     const result = this.db
-      ?.prepare(
-        "UPDATE storage_accounts SET quotaBytes = ? WHERE accountId = ? AND accountId != 'legacy'",
-      )
+      ?.prepare("UPDATE storage_accounts SET quotaBytes = ? WHERE accountId = ? AND accountId != 'legacy'")
       .run(quotaBytes, accountId);
     if (!result?.changes) {
       throw new S3Error("NoSuchAccount", "Storage account not found.", 404);
@@ -597,26 +514,16 @@ export class S3Mini {
 
   async deleteStorageAccount(accountId: string): Promise<void> {
     if (accountId === "legacy") {
-      throw new S3Error(
-        "AccessDenied",
-        "The legacy account cannot be deleted.",
-        403,
-      );
+      throw new S3Error("AccessDenied", "The legacy account cannot be deleted.", 403);
     }
     const resources = await this.get(
       "SELECT (SELECT COUNT(*) FROM buckets WHERE accountId = ?) + (SELECT COUNT(*) FROM access_keys WHERE accountId = ?) AS count",
       [accountId, accountId],
     );
     if (!resources || resources.count > 0) {
-      throw new S3Error(
-        "Conflict",
-        "Storage accounts with buckets or keys cannot be deleted.",
-        409,
-      );
+      throw new S3Error("Conflict", "Storage accounts with buckets or keys cannot be deleted.", 409);
     }
-    const result = this.db
-      ?.prepare("DELETE FROM storage_accounts WHERE accountId = ?")
-      .run(accountId);
+    const result = this.db?.prepare("DELETE FROM storage_accounts WHERE accountId = ?").run(accountId);
     if (!result?.changes) {
       throw new S3Error("NoSuchAccount", "Storage account not found.", 404);
     }
@@ -624,66 +531,40 @@ export class S3Mini {
 
   async setBucketQuota(bucket: string, quotaBytes: number): Promise<void> {
     if (!Number.isSafeInteger(quotaBytes) || quotaBytes < 0) {
-      throw new S3Error(
-        "InvalidRequest",
-        "Quota must be a non-negative safe integer.",
-        400,
-        bucket,
-      );
+      throw new S3Error("InvalidRequest", "Quota must be a non-negative safe integer.", 400, bucket);
     }
-    const result = this.db
-      ?.prepare("UPDATE buckets SET quotaBytes = ? WHERE name = ?")
-      .run(quotaBytes, bucket);
+    const result = this.db?.prepare("UPDATE buckets SET quotaBytes = ? WHERE name = ?").run(quotaBytes, bucket);
     if (!result?.changes) {
       throw new S3Error("NoSuchBucket", "Bucket not found.", 404, bucket);
     }
   }
 
   async getBucketAccountId(bucket: string): Promise<string | undefined> {
-    return (
-      await this.get("SELECT accountId FROM buckets WHERE name = ?", [bucket])
-    )?.accountId;
+    return (await this.get("SELECT accountId FROM buckets WHERE name = ?", [bucket]))?.accountId;
   }
 
   async getBucketQuota(bucket: string): Promise<number | undefined> {
-    const row = await this.get(
-      "SELECT quotaBytes FROM buckets WHERE name = ?",
-      [bucket],
-    );
+    const row = await this.get("SELECT quotaBytes FROM buckets WHERE name = ?", [bucket]);
     return row ? Number(row.quotaBytes) : undefined;
   }
 
   async hasStorageAccounts(): Promise<boolean> {
-    return Boolean(
-      await this.get(
-        "SELECT 1 FROM storage_accounts WHERE accountId != 'legacy' LIMIT 1",
-      ),
-    );
+    return Boolean(await this.get("SELECT 1 FROM storage_accounts WHERE accountId != 'legacy' LIMIT 1"));
   }
 
   async assertBucketAccount(bucket: string, accountId: string): Promise<void> {
-    const row = await this.get("SELECT accountId FROM buckets WHERE name = ?", [
-      bucket,
-    ]);
+    const row = await this.get("SELECT accountId FROM buckets WHERE name = ?", [bucket]);
     if (!row) {
       return;
     }
     if (row.accountId !== accountId) {
-      throw new S3Error(
-        "AccessDenied",
-        "The bucket is not owned by this account.",
-        403,
-        bucket,
-      );
+      throw new S3Error("AccessDenied", "The bucket is not owned by this account.", 403, bucket);
     }
   }
 
   async getStorageUsage(accountId: string, bucket?: string): Promise<number> {
     const row = bucket
-      ? await this.get(
-          "SELECT COALESCE(SUM(size), 0) AS bytes FROM objs WHERE bucket = ?",
-          [bucket],
-        )
+      ? await this.get("SELECT COALESCE(SUM(size), 0) AS bytes FROM objs WHERE bucket = ?", [bucket])
       : await this.get(
           "SELECT COALESCE(SUM(o.size), 0) AS bytes FROM objs o JOIN buckets b ON b.name = o.bucket WHERE b.accountId = ?",
           [accountId],
@@ -700,36 +581,21 @@ export class S3Mini {
     return Number(row?.bytes || 0) + Number(parts?.bytes || 0);
   }
 
-  private async assertStorageCapacity(
-    bucket: string,
-    additionalBytes: number,
-  ): Promise<void> {
-    const limits = await this.get(
-      "SELECT accountId, quotaBytes FROM buckets WHERE name = ?",
-      [bucket],
-    );
+  private async assertStorageCapacity(bucket: string, additionalBytes: number): Promise<void> {
+    const limits = await this.get("SELECT accountId, quotaBytes FROM buckets WHERE name = ?", [bucket]);
     if (!limits || additionalBytes <= 0) {
       return;
     }
     const [bucketUsage, accountUsage, account] = await Promise.all([
       this.getStorageUsage(limits.accountId, bucket),
       this.getStorageUsage(limits.accountId),
-      this.get("SELECT quotaBytes FROM storage_accounts WHERE accountId = ?", [
-        limits.accountId,
-      ]),
+      this.get("SELECT quotaBytes FROM storage_accounts WHERE accountId = ?", [limits.accountId]),
     ]);
     const exceeds =
-      (limits.quotaBytes > 0 &&
-        bucketUsage + additionalBytes > limits.quotaBytes) ||
-      (account?.quotaBytes > 0 &&
-        accountUsage + additionalBytes > account.quotaBytes);
+      (limits.quotaBytes > 0 && bucketUsage + additionalBytes > limits.quotaBytes) ||
+      (account?.quotaBytes > 0 && accountUsage + additionalBytes > account.quotaBytes);
     if (exceeds) {
-      throw new S3Error(
-        "QuotaExceeded",
-        "The configured storage quota would be exceeded.",
-        403,
-        bucket,
-      );
+      throw new S3Error("QuotaExceeded", "The configured storage quota would be exceeded.", 403, bucket);
     }
   }
 
@@ -740,9 +606,7 @@ export class S3Mini {
     if (!configuration?.rules?.length) {
       return;
     }
-    const rows = await this.all("SELECT * FROM objs WHERE bucket = ?", [
-      bucket,
-    ]);
+    const rows = await this.all("SELECT * FROM objs WHERE bucket = ?", [bucket]);
     const now = Date.now();
     const versioning = await this.getVersioning(bucket);
     const rowsByKey = new Map<string, any[]>();
@@ -756,44 +620,25 @@ export class S3Mini {
       versions.sort((left, right) => right.id - left.id);
       for (const [index, row] of versions.entries()) {
         const noncurrent = index > 0;
-        const rule = configuration.rules.find((candidate) =>
-          lifecycleRuleMatches(candidate, row.key),
-        );
+        const rule = configuration.rules.find((candidate) => lifecycleRuleMatches(candidate, row.key));
         if (!rule) {
           continue;
         }
 
-        const transition = lifecycleTransition(
-          rule,
-          noncurrent,
-          row.lastModified,
-          now,
-        );
+        const transition = lifecycleTransition(rule, noncurrent, row.lastModified, now);
         if (transition && row.storageClass !== transition) {
-          await this.run("UPDATE objs SET storageClass = ? WHERE id = ?", [
-            transition,
-            row.id,
-          ]);
+          await this.run("UPDATE objs SET storageClass = ? WHERE id = ?", [transition, row.id]);
         }
 
-        const expiration = noncurrent
-          ? rule.noncurrentVersionExpiration
-          : rule.expiration;
-        if (
-          !expiration ||
-          !lifecycleAgeReached(expiration, row.lastModified, now)
-        ) {
+        const expiration = noncurrent ? rule.noncurrentVersionExpiration : rule.expiration;
+        if (!expiration || !lifecycleAgeReached(expiration, row.lastModified, now)) {
           continue;
         }
         if (row.deleteMarker && !expiration.expiredObjectDeleteMarker) {
           continue;
         }
         if (noncurrent || !versioning.status || row.deleteMarker) {
-          await this.removeObjectVersion(
-            bucket,
-            row,
-            !noncurrent && !versioning.status,
-          );
+          await this.removeObjectVersion(bucket, row, !noncurrent && !versioning.status);
           continue;
         }
 
@@ -815,20 +660,18 @@ export class S3Mini {
     }
   }
 
-  private async removeObjectVersion(
-    bucket: string,
-    row: any,
-    removeCurrentFile = false,
-  ): Promise<void> {
+  private async removeObjectVersion(bucket: string, row: any, removeCurrentFile = false): Promise<void> {
     await this.run("DELETE FROM objs WHERE id = ?", [row.id]);
-    await this.run(
-      "DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?",
-      [bucket, row.key, row.versionId],
-    );
-    await this.run(
-      "DELETE FROM object_acl WHERE bucket = ? AND key = ? AND versionId = ?",
-      [bucket, row.key, row.versionId],
-    );
+    await this.run("DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?", [
+      bucket,
+      row.key,
+      row.versionId,
+    ]);
+    await this.run("DELETE FROM object_acl WHERE bucket = ? AND key = ? AND versionId = ?", [
+      bucket,
+      row.key,
+      row.versionId,
+    ]);
     await fs.rm(this.versionPath(bucket, row.key, row.versionId), {
       force: true,
     });
@@ -847,12 +690,7 @@ export class S3Mini {
       throw new S3Error("NoSuchAccount", "Storage account not found.", 404);
     }
     if (!Number.isSafeInteger(quotaBytes) || quotaBytes < 0) {
-      throw new S3Error(
-        "InvalidRequest",
-        "Bucket quota must be a non-negative safe integer.",
-        400,
-        name,
-      );
+      throw new S3Error("InvalidRequest", "Bucket quota must be a non-negative safe integer.", 400, name);
     }
     if (
       !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(name) ||
@@ -860,73 +698,41 @@ export class S3Mini {
       name.includes(".-") ||
       name.includes("-.")
     ) {
-      throw new S3Error(
-        "InvalidBucketName",
-        "The bucket name is invalid.",
-        400,
-        name,
-      );
+      throw new S3Error("InvalidBucketName", "The bucket name is invalid.", 400, name);
     }
     if (
       !VALID_LOCATION_CONSTRAINTS.includes(locationConstraint) &&
       !/^[a-z][a-z0-9-]{1,31}$/.test(locationConstraint)
     ) {
-      throw new S3Error(
-        "InvalidLocationConstraint",
-        "The location constraint is invalid.",
-        400,
-        name,
-      );
+      throw new S3Error("InvalidLocationConstraint", "The location constraint is invalid.", 400, name);
     }
-    const exists = await this.get("SELECT name FROM buckets WHERE name = ?", [
-      name,
-    ]);
+    const exists = await this.get("SELECT name FROM buckets WHERE name = ?", [name]);
     if (exists) {
-      throw new S3Error(
-        "BucketAlreadyExists",
-        "Bucket already exists.",
-        409,
-        name,
-      );
+      throw new S3Error("BucketAlreadyExists", "Bucket already exists.", 409, name);
     }
     await this.run(
       "INSERT INTO buckets (name, locationConstraint, creationDate, accountId, quotaBytes) VALUES (?, ?, ?, ?, ?)",
       [name, locationConstraint, Date.now(), accountId, quotaBytes],
     );
-    await this.run(
-      "INSERT INTO bucket_settings (bucket, versioningStatus) VALUES (?, ?)",
-      [name, null],
-    );
+    await this.run("INSERT INTO bucket_settings (bucket, versioningStatus) VALUES (?, ?)", [name, null]);
     await fs.mkdir(path.join(STORAGE_BASE, name), { recursive: true });
   }
 
   async headBucket(name: string): Promise<void> {
-    const bucket = await this.get("SELECT name FROM buckets WHERE name = ?", [
-      name,
-    ]);
+    const bucket = await this.get("SELECT name FROM buckets WHERE name = ?", [name]);
     if (!bucket) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, name);
     }
   }
 
   async deleteBucket(name: string): Promise<void> {
-    const bucket = await this.get("SELECT name FROM buckets WHERE name = ?", [
-      name,
-    ]);
+    const bucket = await this.get("SELECT name FROM buckets WHERE name = ?", [name]);
     if (!bucket) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, name);
     }
-    const object = await this.get(
-      "SELECT id FROM objs WHERE bucket = ? LIMIT 1",
-      [name],
-    );
+    const object = await this.get("SELECT id FROM objs WHERE bucket = ? LIMIT 1", [name]);
     if (object) {
-      throw new S3Error(
-        "BucketNotEmpty",
-        "The bucket you tried to delete is not empty.",
-        409,
-        name,
-      );
+      throw new S3Error("BucketNotEmpty", "The bucket you tried to delete is not empty.", 409, name);
     }
     await this.run("DELETE FROM objs WHERE bucket = ?", [name]);
     await this.run("DELETE FROM tags WHERE bucket = ?", [name]);
@@ -962,15 +768,7 @@ export class S3Mini {
     const createdAt = Date.now();
     await this.run(
       "INSERT INTO access_keys (accessKeyId, secretAccessKey, displayName, status, createdAt, accountId, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [
-        accessKeyId,
-        secretAccessKey,
-        displayName,
-        "Active",
-        createdAt,
-        accountId,
-        createdAt,
-      ],
+      [accessKeyId, secretAccessKey, displayName, "Active", createdAt, accountId, createdAt],
     );
     return { accessKeyId, secretAccessKey };
   }
@@ -1013,11 +811,7 @@ export class S3Mini {
       typeof key.displayName !== "string" ||
       !(await this.getStorageAccount(key.accountId))
     ) {
-      throw new S3Error(
-        "InvalidRequest",
-        "Replicated access-key metadata is invalid.",
-        400,
-      );
+      throw new S3Error("InvalidRequest", "Replicated access-key metadata is invalid.", 400);
     }
     await this.run(
       `INSERT INTO access_keys (accessKeyId, secretAccessKey, displayName, status, createdAt, lastUsedAt, accountId, updatedAt)
@@ -1082,47 +876,31 @@ export class S3Mini {
       : undefined;
   }
 
-  async setAccessKeyStatus(
-    accessKeyId: string,
-    status: "Active" | "Disabled",
-  ): Promise<void> {
-    await this.run(
-      "UPDATE access_keys SET status = ?, updatedAt = ? WHERE accessKeyId = ?",
-      [status, Date.now(), accessKeyId],
-    );
+  async setAccessKeyStatus(accessKeyId: string, status: "Active" | "Disabled"): Promise<void> {
+    await this.run("UPDATE access_keys SET status = ?, updatedAt = ? WHERE accessKeyId = ?", [
+      status,
+      Date.now(),
+      accessKeyId,
+    ]);
   }
 
-  async associateAdminToken(
-    token: string,
-    profile: { id?: string; email?: string; name?: string },
-  ): Promise<void> {
+  async associateAdminToken(token: string, profile: { id?: string; email?: string; name?: string }): Promise<void> {
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const now = Date.now();
     await this.run(
       `INSERT INTO admin_token_owners (tokenHash, userId, email, name, createdAt, lastSeenAt) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(tokenHash) DO UPDATE SET userId = excluded.userId, email = excluded.email, name = excluded.name, lastSeenAt = excluded.lastSeenAt`,
-      [
-        tokenHash,
-        profile.id || null,
-        profile.email || null,
-        profile.name || null,
-        now,
-        now,
-      ],
+      [tokenHash, profile.id || null, profile.email || null, profile.name || null, now, now],
     );
   }
 
   async getAdminTokenOwner(
     token: string,
-  ): Promise<
-    | { userId?: string; email?: string; name?: string; lastSeenAt: number }
-    | undefined
-  > {
+  ): Promise<{ userId?: string; email?: string; name?: string; lastSeenAt: number } | undefined> {
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-    const row = await this.get(
-      "SELECT userId, email, name, lastSeenAt FROM admin_token_owners WHERE tokenHash = ?",
-      [tokenHash],
-    );
+    const row = await this.get("SELECT userId, email, name, lastSeenAt FROM admin_token_owners WHERE tokenHash = ?", [
+      tokenHash,
+    ]);
     return row
       ? {
           userId: row.userId || undefined,
@@ -1147,9 +925,7 @@ export class S3Mini {
     }));
   }
 
-  async getAdminUserRole(
-    userId: string,
-  ): Promise<AdminUserRoleRecord | undefined> {
+  async getAdminUserRole(userId: string): Promise<AdminUserRoleRecord | undefined> {
     const row = await this.get(
       "SELECT userId, email, name, role, updatedAt, sourceNodeId FROM admin_user_roles WHERE userId = ?",
       [userId],
@@ -1166,6 +942,57 @@ export class S3Mini {
       : undefined;
   }
 
+  async putOidcSession(sessionId: string, encryptedSession: string, expiresAt: number): Promise<void> {
+    await this.run(
+      "INSERT INTO oidc_sessions (sessionId, encryptedSession, expiresAt, refreshLockUntil) VALUES (?, ?, ?, NULL) ON CONFLICT(sessionId) DO UPDATE SET encryptedSession = excluded.encryptedSession, expiresAt = excluded.expiresAt, refreshLockUntil = NULL",
+      [sessionId, encryptedSession, expiresAt],
+    );
+    await this.run("DELETE FROM oidc_sessions WHERE expiresAt < ?", [Date.now()]);
+  }
+
+  async getOidcSession(
+    sessionId: string,
+  ): Promise<{ encryptedSession: string; expiresAt: number; refreshLockUntil?: number } | undefined> {
+    const row = await this.get(
+      "SELECT encryptedSession, expiresAt, refreshLockUntil FROM oidc_sessions WHERE sessionId = ?",
+      [sessionId],
+    );
+    return row
+      ? { encryptedSession: row.encryptedSession, expiresAt: row.expiresAt, refreshLockUntil: row.refreshLockUntil }
+      : undefined;
+  }
+
+  async tryLockOidcSessionRefresh(sessionId: string, lockUntil: number): Promise<boolean> {
+    const result = this.db
+      ?.prepare(
+        "UPDATE oidc_sessions SET refreshLockUntil = ? WHERE sessionId = ? AND (refreshLockUntil IS NULL OR refreshLockUntil < ?)",
+      )
+      .run(lockUntil, sessionId, Date.now());
+    return Boolean(result?.changes);
+  }
+
+  async updateOidcSessionAfterRefresh(
+    sessionId: string,
+    encryptedSession: string,
+    expiresAt: number,
+    lockUntil: number,
+  ): Promise<boolean> {
+    const result = this.db
+      ?.prepare(
+        "UPDATE oidc_sessions SET encryptedSession = ?, expiresAt = ?, refreshLockUntil = NULL WHERE sessionId = ? AND refreshLockUntil = ?",
+      )
+      .run(encryptedSession, expiresAt, sessionId, lockUntil);
+    return Boolean(result?.changes);
+  }
+
+  async unlockOidcSessionRefresh(sessionId: string): Promise<void> {
+    await this.run("UPDATE oidc_sessions SET refreshLockUntil = NULL WHERE sessionId = ?", [sessionId]);
+  }
+
+  async deleteOidcSession(sessionId: string): Promise<void> {
+    await this.run("DELETE FROM oidc_sessions WHERE sessionId = ?", [sessionId]);
+  }
+
   async setAdminUserRole(
     userId: string,
     email: string | undefined,
@@ -1173,11 +1000,7 @@ export class S3Mini {
     role: Exclude<AdminUserRole, "revoked">,
   ): Promise<AdminUserRoleRecord> {
     const existing = await this.getAdminUserRole(userId);
-    const updatedAt = Math.max(
-      Date.now(),
-      this.lastAdminRoleTimestamp + 1,
-      (existing?.updatedAt || 0) + 1,
-    );
+    const updatedAt = Math.max(Date.now(), this.lastAdminRoleTimestamp + 1, (existing?.updatedAt || 0) + 1);
     this.lastAdminRoleTimestamp = updatedAt;
     const record: AdminUserRoleRecord = {
       userId,
@@ -1193,11 +1016,7 @@ export class S3Mini {
 
   async revokeAdminUserRole(userId: string): Promise<void> {
     const existing = await this.getAdminUserRole(userId);
-    const updatedAt = Math.max(
-      Date.now(),
-      this.lastAdminRoleTimestamp + 1,
-      (existing?.updatedAt || 0) + 1,
-    );
+    const updatedAt = Math.max(Date.now(), this.lastAdminRoleTimestamp + 1, (existing?.updatedAt || 0) + 1);
     this.lastAdminRoleTimestamp = updatedAt;
     await this.applyAdminUserRole({
       userId,
@@ -1223,9 +1042,7 @@ export class S3Mini {
     }));
   }
 
-  async acceptReplicatedAdminUserRole(
-    record: AdminUserRoleRecord,
-  ): Promise<void> {
+  async acceptReplicatedAdminUserRole(record: AdminUserRoleRecord): Promise<void> {
     await this.applyAdminUserRole(record);
   }
 
@@ -1234,45 +1051,27 @@ export class S3Mini {
       `INSERT INTO admin_user_roles (userId, email, name, role, updatedAt, sourceNodeId) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(userId) DO UPDATE SET email = excluded.email, name = excluded.name, role = excluded.role, updatedAt = excluded.updatedAt, sourceNodeId = excluded.sourceNodeId
        WHERE excluded.updatedAt > admin_user_roles.updatedAt OR (excluded.updatedAt = admin_user_roles.updatedAt AND excluded.sourceNodeId > admin_user_roles.sourceNodeId)`,
-      [
-        record.userId,
-        record.email || null,
-        record.name || null,
-        record.role,
-        record.updatedAt,
-        record.sourceNodeId,
-      ],
+      [record.userId, record.email || null, record.name || null, record.role, record.updatedAt, record.sourceNodeId],
     );
   }
 
   async markAccessKeyUsed(accessKeyId: string): Promise<void> {
-    await this.run(
-      "UPDATE access_keys SET lastUsedAt = ? WHERE accessKeyId = ?",
-      [Date.now(), accessKeyId],
-    );
+    await this.run("UPDATE access_keys SET lastUsedAt = ? WHERE accessKeyId = ?", [Date.now(), accessKeyId]);
   }
 
   async hasActiveAccessKeys(): Promise<boolean> {
-    return Boolean(
-      await this.get(
-        "SELECT 1 FROM access_keys WHERE status = 'Active' LIMIT 1",
-      ),
-    );
+    return Boolean(await this.get("SELECT 1 FROM access_keys WHERE status = 'Active' LIMIT 1"));
   }
 
-  async listReplicationEvents(
-    limit = 100,
-    status?: ReplicationEvent["status"],
-  ): Promise<ReplicationEvent[]> {
+  async listReplicationEvents(limit = 100, status?: ReplicationEvent["status"]): Promise<ReplicationEvent[]> {
     const rows = status
-      ? await this.all(
-          "SELECT * FROM replication_events WHERE status = ? ORDER BY id ASC LIMIT ?",
-          [status, Math.max(1, Math.min(limit, 1000))],
-        )
-      : await this.all(
-          "SELECT * FROM replication_events ORDER BY id ASC LIMIT ?",
-          [Math.max(1, Math.min(limit, 1000))],
-        );
+      ? await this.all("SELECT * FROM replication_events WHERE status = ? ORDER BY id ASC LIMIT ?", [
+          status,
+          Math.max(1, Math.min(limit, 1000)),
+        ])
+      : await this.all("SELECT * FROM replication_events ORDER BY id ASC LIMIT ?", [
+          Math.max(1, Math.min(limit, 1000)),
+        ]);
     return rows.map((row) => this.replicationEventFromRow(row));
   }
 
@@ -1291,16 +1090,12 @@ export class S3Mini {
       deleteMarker: Boolean(row.deleteMarker),
       status: row.status,
       attempts: row.attempts,
-      nextAttemptAt: row.nextAttemptAt
-        ? new Date(row.nextAttemptAt)
-        : undefined,
+      nextAttemptAt: row.nextAttemptAt ? new Date(row.nextAttemptAt) : undefined,
       createdAt: new Date(row.createdAt),
     };
   }
 
-  async listReplicationInventory(
-    limit = 1000,
-  ): Promise<ReplicationInventoryItem[]> {
+  async listReplicationInventory(limit = 1000): Promise<ReplicationInventoryItem[]> {
     const rows = await this.all(
       "SELECT bucket, key, versionId, etag, size, lastModified, deleteMarker FROM objs ORDER BY bucket, key, lastModified, id LIMIT ?",
       [Math.max(1, Math.min(limit, 10000))],
@@ -1315,11 +1110,7 @@ export class S3Mini {
           ? ""
           : crypto
               .createHash("sha256")
-              .update(
-                await fs.readFile(
-                  this.versionPath(row.bucket, row.key, row.versionId),
-                ),
-              )
+              .update(await fs.readFile(this.versionPath(row.bucket, row.key, row.versionId)))
               .digest("hex"),
         size: row.size,
         lastModified: new Date(row.lastModified),
@@ -1329,19 +1120,13 @@ export class S3Mini {
   }
 
   async listPeerHealth(): Promise<PeerHealthState[]> {
-    const rows = await this.all(
-      "SELECT * FROM replication_peer_health ORDER BY peer ASC",
-    );
+    const rows = await this.all("SELECT * FROM replication_peer_health ORDER BY peer ASC");
     return rows.map((row) => ({
       peer: row.peer,
       status: row.status,
       consecutiveFailures: row.consecutiveFailures,
-      lastSuccessAt: row.lastSuccessAt
-        ? new Date(row.lastSuccessAt)
-        : undefined,
-      lastFailureAt: row.lastFailureAt
-        ? new Date(row.lastFailureAt)
-        : undefined,
+      lastSuccessAt: row.lastSuccessAt ? new Date(row.lastSuccessAt) : undefined,
+      lastFailureAt: row.lastFailureAt ? new Date(row.lastFailureAt) : undefined,
     }));
   }
 
@@ -1379,11 +1164,7 @@ export class S3Mini {
     );
   }
 
-  async claimReplicationEvents(
-    owner: string,
-    limit = 100,
-    leaseMs = 60_000,
-  ): Promise<ReplicationEvent[]> {
+  async claimReplicationEvents(owner: string, limit = 100, leaseMs = 60_000): Promise<ReplicationEvent[]> {
     const now = Date.now();
     this.db?.exec("BEGIN IMMEDIATE");
     try {
@@ -1437,14 +1218,7 @@ export class S3Mini {
             AND (nextAttemptAt IS NULL OR nextAttemptAt <= ?)
             AND (leaseUntil IS NULL OR leaseUntil <= ?)
           ORDER BY eventId ASC LIMIT ?)`,
-        [
-          owner,
-          now + leaseMs,
-          ...peers,
-          now,
-          now,
-          Math.max(1, Math.min(limit, 1000)),
-        ],
+        [owner, now + leaseMs, ...peers, now, now, Math.max(1, Math.min(limit, 1000))],
       );
       const rows = await this.all(
         `SELECT p.peer AS peerName, p.status AS peerStatus, p.attempts AS peerAttempts, p.nextAttemptAt AS peerNextAttemptAt, e.* FROM replication_event_peers p JOIN replication_events e ON e.id = p.eventId
@@ -1457,9 +1231,7 @@ export class S3Mini {
         peer: row.peerName,
         status: row.peerStatus,
         attempts: row.peerAttempts,
-        nextAttemptAt: row.peerNextAttemptAt
-          ? new Date(row.peerNextAttemptAt)
-          : undefined,
+        nextAttemptAt: row.peerNextAttemptAt ? new Date(row.peerNextAttemptAt) : undefined,
       }));
     } catch (error) {
       this.db?.exec("ROLLBACK");
@@ -1476,14 +1248,7 @@ export class S3Mini {
   ): Promise<void> {
     await this.run(
       `UPDATE replication_event_peers SET status = ?, attempts = ?, nextAttemptAt = ?, leaseOwner = NULL, leaseUntil = NULL, updatedAt = ? WHERE eventId = ? AND peer = ?`,
-      [
-        status,
-        attempts,
-        nextAttemptAt?.getTime() || null,
-        Date.now(),
-        eventId,
-        peer,
-      ],
+      [status, attempts, nextAttemptAt?.getTime() || null, Date.now(), eventId, peer],
     );
     const pending = await this.get(
       "SELECT COUNT(*) AS count FROM replication_event_peers WHERE eventId = ? AND status IN ('Pending', 'Failed')",
@@ -1494,13 +1259,7 @@ export class S3Mini {
       [eventId],
     );
     const globalStatus =
-      pending?.count > 0
-        ? status === "Pending"
-          ? "Pending"
-          : "Failed"
-        : dead?.count > 0
-          ? "DeadLetter"
-          : "Delivered";
+      pending?.count > 0 ? (status === "Pending" ? "Pending" : "Failed") : dead?.count > 0 ? "DeadLetter" : "Delivered";
     await this.run(
       "UPDATE replication_events SET status = ?, attempts = MAX(attempts, ?), nextAttemptAt = ? WHERE id = ?",
       [globalStatus, attempts, nextAttemptAt?.getTime() || null, eventId],
@@ -1525,33 +1284,21 @@ export class S3Mini {
         ") GROUP BY status",
       peers,
     );
-    const statuses = Object.fromEntries(
-      health.map((row) => [row.status, Number(row.count)]),
-    );
-    const events = await this.all(
-      "SELECT status, COUNT(*) AS count FROM replication_events GROUP BY status",
-    );
+    const statuses = Object.fromEntries(health.map((row) => [row.status, Number(row.count)]));
+    const events = await this.all("SELECT status, COUNT(*) AS count FROM replication_events GROUP BY status");
     return {
       configuredPeers: peers.length,
       quorum,
       healthyPeers: statuses.Healthy || 0,
       unhealthyPeers: statuses.Unhealthy || 0,
-      unknownPeers: Math.max(
-        0,
-        peers.length - (statuses.Healthy || 0) - (statuses.Unhealthy || 0),
-      ),
+      unknownPeers: Math.max(0, peers.length - (statuses.Healthy || 0) - (statuses.Unhealthy || 0)),
       degraded: quorum > 0 && (statuses.Healthy || 0) < quorum,
-      events: Object.fromEntries(
-        events.map((row) => [row.status, Number(row.count)]),
-      ),
+      events: Object.fromEntries(events.map((row) => [row.status, Number(row.count)])),
     };
   }
 
   private async queueReplicationEvent(
-    event: Omit<
-      ReplicationEvent,
-      "id" | "status" | "attempts" | "nextAttemptAt"
-    >,
+    event: Omit<ReplicationEvent, "id" | "status" | "attempts" | "nextAttemptAt">,
   ): Promise<void> {
     await this.run(
       "INSERT OR IGNORE INTO replication_events (bucket, key, versionId, operation, sourceNodeId, payloadPath, etag, size, deleteMarker, sha256, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1578,16 +1325,9 @@ export class S3Mini {
   async acceptReplicatedObject(object: ReplicatedObject): Promise<void> {
     this.validateKey(object.key);
     if (!/^[A-Za-z0-9._+-]+$/.test(object.versionId)) {
-      throw new S3Error(
-        "InvalidRequest",
-        "The replicated version ID is invalid.",
-        400,
-        object.bucket,
-        object.key,
-      );
+      throw new S3Error("InvalidRequest", "The replicated version ID is invalid.", 400, object.bucket, object.key);
     }
-    const md5Etag =
-      '"' + crypto.createHash("md5").update(object.body).digest("hex") + '"';
+    const md5Etag = '"' + crypto.createHash("md5").update(object.body).digest("hex") + '"';
     if (md5Etag !== object.etag && !/^"[a-f0-9]{32}-\d+"$/.test(object.etag)) {
       throw new S3Error(
         "BadDigest",
@@ -1597,10 +1337,7 @@ export class S3Mini {
         object.key,
       );
     }
-    const sha256 = crypto
-      .createHash("sha256")
-      .update(object.body)
-      .digest("hex");
+    const sha256 = crypto.createHash("sha256").update(object.body).digest("hex");
     if (object.sha256 && object.sha256 !== sha256) {
       throw new S3Error(
         "BadDigest",
@@ -1610,28 +1347,21 @@ export class S3Mini {
         object.key,
       );
     }
-    if (
-      !(await this.get("SELECT name FROM buckets WHERE name = ?", [
-        object.bucket,
-      ]))
-    ) {
+    if (!(await this.get("SELECT name FROM buckets WHERE name = ?", [object.bucket]))) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, object.bucket);
     }
     if (
-      await this.get(
-        "SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
-        [object.bucket, object.key, object.versionId],
-      )
+      await this.get("SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?", [
+        object.bucket,
+        object.key,
+        object.versionId,
+      ])
     ) {
       return;
     }
 
     const filePath = path.join(STORAGE_BASE, object.bucket, object.key);
-    const versionFilePath = this.versionPath(
-      object.bucket,
-      object.key,
-      object.versionId,
-    );
+    const versionFilePath = this.versionPath(object.bucket, object.key, object.versionId);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.mkdir(path.dirname(versionFilePath), { recursive: true });
     await writeDurableFile(versionFilePath, object.body);
@@ -1679,19 +1409,16 @@ export class S3Mini {
     deleteMarker: boolean;
   }): Promise<void> {
     this.validateKey(event.key);
-    if (
-      !(await this.get("SELECT name FROM buckets WHERE name = ?", [
-        event.bucket,
-      ]))
-    ) {
+    if (!(await this.get("SELECT name FROM buckets WHERE name = ?", [event.bucket]))) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, event.bucket);
     }
     if (event.deleteMarker) {
       if (
-        await this.get(
-          "SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
-          [event.bucket, event.key, event.versionId],
-        )
+        await this.get("SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?", [
+          event.bucket,
+          event.key,
+          event.versionId,
+        ])
       ) {
         return;
       }
@@ -1714,40 +1441,25 @@ export class S3Mini {
       return;
     }
     if (event.versionId) {
-      const row = await this.get(
-        "SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
-        [event.bucket, event.key, event.versionId],
-      );
+      const row = await this.get("SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?", [
+        event.bucket,
+        event.key,
+        event.versionId,
+      ]);
       if (row) {
-        await this.deleteReplicatedVersion(
-          event.bucket,
-          event.key,
-          event.versionId,
-          row.id,
-        );
+        await this.deleteReplicatedVersion(event.bucket, event.key, event.versionId, row.id);
       }
       return;
     }
-    await this.run("DELETE FROM objs WHERE bucket = ? AND key = ?", [
-      event.bucket,
-      event.key,
-    ]);
+    await this.run("DELETE FROM objs WHERE bucket = ? AND key = ?", [event.bucket, event.key]);
     await fs.rm(path.join(STORAGE_BASE, event.bucket, event.key), {
       force: true,
     });
   }
 
-  private async deleteReplicatedVersion(
-    bucket: string,
-    key: string,
-    versionId: string,
-    id: number,
-  ): Promise<void> {
+  private async deleteReplicatedVersion(bucket: string, key: string, versionId: string, id: number): Promise<void> {
     await this.run("DELETE FROM objs WHERE id = ?", [id]);
-    await this.run(
-      "DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?",
-      [bucket, key, versionId],
-    );
+    await this.run("DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?", [bucket, key, versionId]);
     await fs.rm(this.versionPath(bucket, key, versionId), { force: true });
   }
 
@@ -1765,25 +1477,15 @@ export class S3Mini {
     });
   }
 
-  async putObject(
-    bucketName: string,
-    key: string,
-    body: Buffer,
-    meta: any,
-  ): Promise<ObjectMetadata> {
+  async putObject(bucketName: string, key: string, body: Buffer, meta: any): Promise<ObjectMetadata> {
     this.validateKey(key);
-    const b = await this.get(
-      "SELECT name, accountId FROM buckets WHERE name = ?",
-      [bucketName],
-    );
+    const b = await this.get("SELECT name, accountId FROM buckets WHERE name = ?", [bucketName]);
     if (!b) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, bucketName);
     }
 
     const versionId = crypto.randomBytes(8).toString("hex") + "+";
-    const etag =
-      meta.etag ||
-      '"' + crypto.createHash("md5").update(body).digest("hex") + '"';
+    const etag = meta.etag || '"' + crypto.createHash("md5").update(body).digest("hex") + '"';
     const lastModified = Date.now();
     const filePath = path.join(STORAGE_BASE, bucketName, key);
     const versionFilePath = this.versionPath(bucketName, key, versionId);
@@ -1795,10 +1497,7 @@ export class S3Mini {
     this.db?.exec("BEGIN IMMEDIATE");
     try {
       const reservedBytes = Number(meta.reservedBytes || 0);
-      await this.assertStorageCapacity(
-        bucketName,
-        Math.max(0, body.length - reservedBytes),
-      );
+      await this.assertStorageCapacity(bucketName, Math.max(0, body.length - reservedBytes));
       await this.run(
         `
        INSERT INTO objs (bucket, key, etag, contentType, contentLanguage, contentDisposition, contentEncoding, cacheControl, expires, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, encryption, sseKmsKeyId, objectLockMode, retainUntil, legalHold, deleteMarker, userMetadata)
@@ -1868,9 +1567,7 @@ export class S3Mini {
       serverSideEncryption: meta.serverSideEncryption,
       sseKmsKeyId: meta.sseKmsKeyId,
       objectLockMode: meta.objectLockMode,
-      objectLockRetainUntilDate: meta.retainUntil
-        ? new Date(meta.retainUntil)
-        : undefined,
+      objectLockRetainUntilDate: meta.retainUntil ? new Date(meta.retainUntil) : undefined,
       objectLockLegalHold: meta.legalHold === "ON",
       size: body.length, // FIX: added missing size
     };
@@ -1884,25 +1581,20 @@ export class S3Mini {
     this.validateKey(key);
     await this.applyLifecycle(bucketName);
     const row = versionId
-      ? await this.get(
-          "SELECT * FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
-          [bucketName, key, versionId],
-        )
-      : await this.get(
-          "SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY lastModified DESC, id DESC LIMIT 1",
-          [bucketName, key],
-        );
+      ? await this.get("SELECT * FROM objs WHERE bucket = ? AND key = ? AND versionId = ?", [
+          bucketName,
+          key,
+          versionId,
+        ])
+      : await this.get("SELECT * FROM objs WHERE bucket = ? AND key = ? ORDER BY lastModified DESC, id DESC LIMIT 1", [
+          bucketName,
+          key,
+        ]);
     if (!row) {
       throw new S3Error("NoSuchKey", "Object not found", 404, bucketName, key);
     }
     if (row.deleteMarker) {
-      throw new S3Error(
-        "NoSuchKey",
-        "The object is deleted.",
-        404,
-        bucketName,
-        key,
-      );
+      throw new S3Error("NoSuchKey", "The object is deleted.", 404, bucketName, key);
     }
 
     const versionFilePath = this.versionPath(bucketName, key, row.versionId);
@@ -1910,13 +1602,7 @@ export class S3Mini {
     try {
       data = await fs.readFile(versionFilePath);
     } catch {
-      throw new S3Error(
-        "InternalError",
-        "The stored object data is missing.",
-        500,
-        bucketName,
-        key,
-      );
+      throw new S3Error("InternalError", "The stored object data is missing.", 500, bucketName, key);
     }
 
     const metadata: ObjectMetadata = {
@@ -1939,9 +1625,7 @@ export class S3Mini {
       serverSideEncryption: row.encryption || undefined,
       sseKmsKeyId: row.sseKmsKeyId || undefined,
       objectLockMode: row.objectLockMode || undefined,
-      objectLockRetainUntilDate: row.retainUntil
-        ? new Date(row.retainUntil)
-        : undefined,
+      objectLockRetainUntilDate: row.retainUntil ? new Date(row.retainUntil) : undefined,
       objectLockLegalHold: row.legalHold === "ON",
     };
     return { data, metadata };
@@ -1954,24 +1638,11 @@ export class S3Mini {
     end?: number,
   ): Promise<{ data: Buffer; metadata: ObjectMetadata; totalSize: number }> {
     const object = await this.getObject(bucketName, key);
-    if (
-      start < 0 ||
-      start >= object.data.length ||
-      (end !== undefined && end < start)
-    ) {
-      throw new S3Error(
-        "InvalidRange",
-        "The requested range is not satisfiable.",
-        416,
-        bucketName,
-        key,
-      );
+    if (start < 0 || start >= object.data.length || (end !== undefined && end < start)) {
+      throw new S3Error("InvalidRange", "The requested range is not satisfiable.", 416, bucketName, key);
     }
     return {
-      data: object.data.subarray(
-        start,
-        end === undefined ? undefined : end + 1,
-      ),
+      data: object.data.subarray(start, end === undefined ? undefined : end + 1),
       metadata: object.metadata,
       totalSize: object.data.length,
     };
@@ -2003,19 +1674,9 @@ export class S3Mini {
     await this.getObject(bucket, key);
   }
 
-  async selectObjectContent(
-    bucket: string,
-    key: string,
-    expression: string,
-  ): Promise<Buffer> {
+  async selectObjectContent(bucket: string, key: string, expression: string): Promise<Buffer> {
     if (!/^\s*SELECT\s+\*\s+FROM\s+S3Object\s*;?\s*$/i.test(expression)) {
-      throw new S3Error(
-        "InvalidExpression",
-        "Only SELECT * FROM S3Object is supported.",
-        400,
-        bucket,
-        key,
-      );
+      throw new S3Error("InvalidExpression", "Only SELECT * FROM S3Object is supported.", 400, bucket, key);
     }
     return (await this.getObject(bucket, key)).data;
   }
@@ -2029,17 +1690,8 @@ export class S3Mini {
     if (!found) {
       throw new S3Error("NoSuchKey", "Object not found", 404, bucketName, key);
     }
-    if (
-      found.legalHold === "ON" ||
-      (found.retainUntil && found.retainUntil > Date.now())
-    ) {
-      throw new S3Error(
-        "AccessDenied",
-        "Object retention prevents deletion.",
-        403,
-        bucketName,
-        key,
-      );
+    if (found.legalHold === "ON" || (found.retainUntil && found.retainUntil > Date.now())) {
+      throw new S3Error("AccessDenied", "Object retention prevents deletion.", 403, bucketName, key);
     }
     const versioning = await this.getVersioning(bucketName);
     if (versioning.status === "Enabled") {
@@ -2047,15 +1699,7 @@ export class S3Mini {
       const deletedAt = Date.now();
       await this.run(
         "INSERT INTO objs (bucket, key, etag, lastModified, size, storageClass, versionId, ownerId, ownerDisplayName, deleteMarker) VALUES (?, ?, NULL, ?, 0, ?, ?, ?, ?, 1)",
-        [
-          bucketName,
-          key,
-          deletedAt,
-          "STANDARD",
-          markerId,
-          "000000000000000000000000",
-          "s3mini",
-        ],
+        [bucketName, key, deletedAt, "STANDARD", markerId, "000000000000000000000000", "s3mini"],
       );
       await this.queueReplicationEvent({
         bucket: bucketName,
@@ -2072,26 +1716,11 @@ export class S3Mini {
       await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
       return;
     }
-    const versions = await this.all(
-      "SELECT versionId FROM objs WHERE bucket = ? AND key = ?",
-      [bucketName, key],
-    );
-    await this.run("DELETE FROM objs WHERE bucket = ? AND key = ?", [
-      bucketName,
-      key,
-    ]);
-    await this.run("DELETE FROM tags WHERE bucket = ? AND key = ?", [
-      bucketName,
-      key,
-    ]);
-    await this.run("DELETE FROM object_tags WHERE bucket = ? AND key = ?", [
-      bucketName,
-      key,
-    ]);
-    await this.run("DELETE FROM object_acl WHERE bucket = ? AND key = ?", [
-      bucketName,
-      key,
-    ]);
+    const versions = await this.all("SELECT versionId FROM objs WHERE bucket = ? AND key = ?", [bucketName, key]);
+    await this.run("DELETE FROM objs WHERE bucket = ? AND key = ?", [bucketName, key]);
+    await this.run("DELETE FROM tags WHERE bucket = ? AND key = ?", [bucketName, key]);
+    await this.run("DELETE FROM object_tags WHERE bucket = ? AND key = ?", [bucketName, key]);
+    await this.run("DELETE FROM object_acl WHERE bucket = ? AND key = ?", [bucketName, key]);
     await fs.rm(path.join(STORAGE_BASE, bucketName, key), { force: true });
     for (const version of versions as Array<{ versionId: string }>) {
       await fs.rm(this.versionPath(bucketName, key, version.versionId), {
@@ -2140,41 +1769,26 @@ export class S3Mini {
     return { deleted, errors };
   }
 
-  async getVersioning(
-    bucket: string,
-  ): Promise<{ status?: "Enabled" | "Suspended" }> {
+  async getVersioning(bucket: string): Promise<{ status?: "Enabled" | "Suspended" }> {
     await this.headBucket(bucket);
-    const row = await this.get(
-      "SELECT versioningStatus FROM bucket_settings WHERE bucket = ?",
-      [bucket],
-    );
+    const row = await this.get("SELECT versioningStatus FROM bucket_settings WHERE bucket = ?", [bucket]);
     return row?.versioningStatus ? { status: row.versioningStatus } : {};
   }
 
-  async putVersioning(
-    bucket: string,
-    status: "Enabled" | "Suspended",
-  ): Promise<void> {
+  async putVersioning(bucket: string, status: "Enabled" | "Suspended"): Promise<void> {
     await this.headBucket(bucket);
-    await this.run(
-      "UPDATE bucket_settings SET versioningStatus = ? WHERE bucket = ?",
-      [status, bucket],
-    );
+    await this.run("UPDATE bucket_settings SET versioningStatus = ? WHERE bucket = ?", [status, bucket]);
   }
 
   async listObjectVersions(bucket: string, prefix?: string): Promise<any[]> {
     await this.headBucket(bucket);
-    const rows = await this.all(
-      "SELECT * FROM objs WHERE bucket = ? ORDER BY key ASC, id DESC",
-      [bucket],
-    );
+    const rows = await this.all("SELECT * FROM objs WHERE bucket = ? ORDER BY key ASC, id DESC", [bucket]);
     return (rows as any[])
       .filter((row) => !prefix || row.key.startsWith(prefix))
       .map((row, index, all) => ({
         Key: row.key,
         VersionId: row.versionId,
-        IsLatest:
-          index === all.findIndex((candidate) => candidate.key === row.key),
+        IsLatest: index === all.findIndex((candidate) => candidate.key === row.key),
         LastModified: new Date(row.lastModified),
         ETag: row.etag,
         Size: row.size,
@@ -2184,31 +1798,19 @@ export class S3Mini {
       }));
   }
 
-  async deleteObjectVersion(
-    bucket: string,
-    key: string,
-    versionId: string,
-  ): Promise<void> {
+  async deleteObjectVersion(bucket: string, key: string, versionId: string): Promise<void> {
     this.validateKey(key);
     await this.headBucket(bucket);
-    const row = await this.get(
-      "SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?",
-      [bucket, key, versionId],
-    );
+    const row = await this.get("SELECT id FROM objs WHERE bucket = ? AND key = ? AND versionId = ?", [
+      bucket,
+      key,
+      versionId,
+    ]);
     if (!row) {
-      throw new S3Error(
-        "NoSuchVersion",
-        "The specified version does not exist.",
-        404,
-        bucket,
-        key,
-      );
+      throw new S3Error("NoSuchVersion", "The specified version does not exist.", 404, bucket, key);
     }
     await this.run("DELETE FROM objs WHERE id = ?", [row.id]);
-    await this.run(
-      "DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?",
-      [bucket, key, versionId],
-    );
+    await this.run("DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?", [bucket, key, versionId]);
     await fs.rm(this.versionPath(bucket, key, versionId), { force: true });
     await this.queueReplicationEvent({
       bucket,
@@ -2224,127 +1826,81 @@ export class S3Mini {
     });
   }
 
-  async putObjectTags(
-    bucket: string,
-    key: string,
-    tags: Record<string, string>,
-    versionId = "",
-  ): Promise<void> {
+  async putObjectTags(bucket: string, key: string, tags: Record<string, string>, versionId = ""): Promise<void> {
     await this.headBucket(bucket);
     const object = await this.get(
       "SELECT id FROM objs WHERE bucket = ? AND key = ? AND (? = '' OR versionId = ?) LIMIT 1",
       [bucket, key, versionId, versionId],
     );
     if (!object) {
-      throw new S3Error(
-        versionId ? "NoSuchVersion" : "NoSuchKey",
-        "Object not found",
-        404,
-        bucket,
-        key,
-      );
+      throw new S3Error(versionId ? "NoSuchVersion" : "NoSuchKey", "Object not found", 404, bucket, key);
     }
-    await this.run(
-      "INSERT OR REPLACE INTO object_tags (bucket, key, versionId, tags) VALUES (?, ?, ?, ?)",
-      [bucket, key, versionId, JSON.stringify(tags)],
-    );
+    await this.run("INSERT OR REPLACE INTO object_tags (bucket, key, versionId, tags) VALUES (?, ?, ?, ?)", [
+      bucket,
+      key,
+      versionId,
+      JSON.stringify(tags),
+    ]);
   }
 
-  async getObjectTags(
-    bucket: string,
-    key: string,
-    versionId = "",
-  ): Promise<Record<string, string>> {
+  async getObjectTags(bucket: string, key: string, versionId = ""): Promise<Record<string, string>> {
     await this.headBucket(bucket);
-    const row = await this.get(
-      "SELECT tags FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?",
-      [bucket, key, versionId],
-    );
+    const row = await this.get("SELECT tags FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?", [
+      bucket,
+      key,
+      versionId,
+    ]);
     if (!row) {
-      throw new S3Error(
-        "NoSuchTagSet",
-        "The object has no tags.",
-        404,
-        bucket,
-        key,
-      );
+      throw new S3Error("NoSuchTagSet", "The object has no tags.", 404, bucket, key);
     }
     return JSON.parse(row.tags) as Record<string, string>;
   }
 
-  async deleteObjectTags(
-    bucket: string,
-    key: string,
-    versionId = "",
-  ): Promise<void> {
+  async deleteObjectTags(bucket: string, key: string, versionId = ""): Promise<void> {
     await this.headBucket(bucket);
-    await this.run(
-      "DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?",
-      [bucket, key, versionId],
-    );
+    await this.run("DELETE FROM object_tags WHERE bucket = ? AND key = ? AND versionId = ?", [bucket, key, versionId]);
   }
 
-  async putObjectAcl(
-    bucket: string,
-    key: string,
-    acl: unknown,
-    versionId = "",
-  ): Promise<void> {
+  async putObjectAcl(bucket: string, key: string, acl: unknown, versionId = ""): Promise<void> {
     await this.headBucket(bucket);
     await this.getObject(bucket, key, versionId || undefined);
-    await this.run(
-      "INSERT OR REPLACE INTO object_acl (bucket, key, versionId, acl) VALUES (?, ?, ?, ?)",
-      [bucket, key, versionId, JSON.stringify(acl)],
-    );
+    await this.run("INSERT OR REPLACE INTO object_acl (bucket, key, versionId, acl) VALUES (?, ?, ?, ?)", [
+      bucket,
+      key,
+      versionId,
+      JSON.stringify(acl),
+    ]);
   }
 
-  async getObjectAcl<T>(
-    bucket: string,
-    key: string,
-    versionId = "",
-  ): Promise<T> {
+  async getObjectAcl<T>(bucket: string, key: string, versionId = ""): Promise<T> {
     await this.headBucket(bucket);
     await this.getObject(bucket, key, versionId || undefined);
-    const row = await this.get(
-      "SELECT acl FROM object_acl WHERE bucket = ? AND key = ? AND versionId = ?",
-      [bucket, key, versionId],
-    );
+    const row = await this.get("SELECT acl FROM object_acl WHERE bucket = ? AND key = ? AND versionId = ?", [
+      bucket,
+      key,
+      versionId,
+    ]);
     return (row ? JSON.parse(row.acl) : { CannedACL: "private" }) as T;
   }
 
-  async putBucketTags(
-    bucket: string,
-    tags: Record<string, string>,
-  ): Promise<void> {
+  async putBucketTags(bucket: string, tags: Record<string, string>): Promise<void> {
     await this.headBucket(bucket);
-    await this.run(
-      "UPDATE bucket_settings SET bucketTags = ? WHERE bucket = ?",
-      [JSON.stringify(tags), bucket],
-    );
+    await this.run("UPDATE bucket_settings SET bucketTags = ? WHERE bucket = ?", [JSON.stringify(tags), bucket]);
   }
 
   async getBucketTags(bucket: string): Promise<Record<string, string>> {
     await this.headBucket(bucket);
-    const row = await this.get(
-      "SELECT bucketTags FROM bucket_settings WHERE bucket = ?",
-      [bucket],
-    );
+    const row = await this.get("SELECT bucketTags FROM bucket_settings WHERE bucket = ?", [bucket]);
     return row?.bucketTags ? JSON.parse(row.bucketTags) : {};
   }
 
   async deleteBucketTags(bucket: string): Promise<void> {
     await this.headBucket(bucket);
-    await this.run(
-      "UPDATE bucket_settings SET bucketTags = NULL WHERE bucket = ?",
-      [bucket],
-    );
+    await this.run("UPDATE bucket_settings SET bucketTags = NULL WHERE bucket = ?", [bucket]);
   }
 
   async getBucketLocation(bucket: string): Promise<string> {
-    const row = await this.get(
-      "SELECT locationConstraint FROM buckets WHERE name = ?",
-      [bucket],
-    );
+    const row = await this.get("SELECT locationConstraint FROM buckets WHERE name = ?", [bucket]);
     if (!row) {
       throw new S3Error("NoSuchBucket", "Bucket not found", 404, bucket);
     }
@@ -2366,10 +1922,7 @@ export class S3Mini {
     value: unknown,
   ): Promise<void> {
     await this.headBucket(bucket);
-    await this.run(`UPDATE bucket_settings SET ${name} = ? WHERE bucket = ?`, [
-      JSON.stringify(value),
-      bucket,
-    ]);
+    await this.run(`UPDATE bucket_settings SET ${name} = ? WHERE bucket = ?`, [JSON.stringify(value), bucket]);
   }
 
   async getBucketConfiguration<T>(
@@ -2386,10 +1939,7 @@ export class S3Mini {
       | "acl",
   ): Promise<T | undefined> {
     await this.headBucket(bucket);
-    const row = await this.get(
-      `SELECT ${name} FROM bucket_settings WHERE bucket = ?`,
-      [bucket],
-    );
+    const row = await this.get(`SELECT ${name} FROM bucket_settings WHERE bucket = ?`, [bucket]);
     return row?.[name] ? (JSON.parse(row[name]) as T) : undefined;
   }
 
@@ -2407,10 +1957,7 @@ export class S3Mini {
       | "acl",
   ): Promise<void> {
     await this.headBucket(bucket);
-    await this.run(
-      `UPDATE bucket_settings SET ${name} = NULL WHERE bucket = ?`,
-      [bucket],
-    );
+    await this.run(`UPDATE bucket_settings SET ${name} = NULL WHERE bucket = ?`, [bucket]);
   }
 
   async isRequestDenied(
@@ -2439,16 +1986,8 @@ export class S3Mini {
     );
   }
 
-  async isObjectRequestDenied(
-    bucket: string,
-    key: string,
-    action: string,
-    principal: string,
-  ): Promise<boolean> {
-    const acl = await this.getObjectAcl<{ CannedACL?: string }>(
-      bucket,
-      key,
-    ).catch(() => ({ CannedACL: "private" }));
+  async isObjectRequestDenied(bucket: string, key: string, action: string, principal: string): Promise<boolean> {
+    const acl = await this.getObjectAcl<{ CannedACL?: string }>(bucket, key).catch(() => ({ CannedACL: "private" }));
     if (principal !== "anonymous") {
       return false;
     }
@@ -2472,29 +2011,20 @@ export class S3Mini {
       }
       return true;
     }
-    const grants = Array.isArray((acl as any).Grants)
-      ? (acl as any).Grants
-      : [];
+    const grants = Array.isArray((acl as any).Grants) ? (acl as any).Grants : [];
     return !grants.some((grant: any) => {
       const grantee = grant.Grantee || {};
       const matches =
         grantee.ID === principal ||
-        (principal === "anonymous" &&
-          grantee.URI === "http://acs.amazonaws.com/groups/global/AllUsers") ||
-        (principal !== "anonymous" &&
-          grantee.URI ===
-            "http://acs.amazonaws.com/groups/global/AuthenticatedUsers");
+        (principal === "anonymous" && grantee.URI === "http://acs.amazonaws.com/groups/global/AllUsers") ||
+        (principal !== "anonymous" && grantee.URI === "http://acs.amazonaws.com/groups/global/AuthenticatedUsers");
       return matches && grant.Permission === requiredPermission;
     });
   }
 
   async listObjectsV2(bucketName: string, prefix?: string): Promise<any[]> {
-    const rows = await this.all("SELECT * FROM objs WHERE bucket = ?", [
-      bucketName,
-    ]);
-    const filtered = rows.filter(
-      (r: any) => !prefix || r.key.startsWith(prefix),
-    );
+    const rows = await this.all("SELECT * FROM objs WHERE bucket = ?", [bucketName]);
+    const filtered = rows.filter((r: any) => !prefix || r.key.startsWith(prefix));
     return filtered.map((r: any) => ({
       Key: r.key,
       LastModified: new Date(r.lastModified),
@@ -2505,15 +2035,10 @@ export class S3Mini {
     }));
   }
 
-  async listObjectsV2Advanced(
-    request: ListObjectsV2Request,
-  ): Promise<ListObjectsV2Result> {
+  async listObjectsV2Advanced(request: ListObjectsV2Request): Promise<ListObjectsV2Result> {
     await this.headBucket(request.bucket);
     await this.applyLifecycle(request.bucket);
-    const rows = await this.all(
-      "SELECT * FROM objs WHERE bucket = ? ORDER BY key ASC",
-      [request.bucket],
-    );
+    const rows = await this.all("SELECT * FROM objs WHERE bucket = ? ORDER BY key ASC", [request.bucket]);
     const prefix = request.prefix || "";
     const delimiter = request.delimiter;
     const marker = request.continuationToken
@@ -2529,8 +2054,7 @@ export class S3Mini {
         const remainder = row.key.slice(prefix.length);
         const delimiterIndex = remainder.indexOf(delimiter);
         if (delimiterIndex >= 0) {
-          const commonPrefix =
-            prefix + remainder.slice(0, delimiterIndex + delimiter.length);
+          const commonPrefix = prefix + remainder.slice(0, delimiterIndex + delimiter.length);
           entries.set(commonPrefix, commonPrefix);
           continue;
         }
@@ -2545,9 +2069,7 @@ export class S3Mini {
       });
     }
 
-    const ordered = [...entries.entries()].sort(([left], [right]) =>
-      left.localeCompare(right),
-    );
+    const ordered = [...entries.entries()].sort(([left], [right]) => left.localeCompare(right));
     const maxKeys = Math.max(0, Math.min(request.maxKeys ?? 1000, 1000));
     const page = ordered.slice(0, maxKeys);
     const isTruncated = ordered.length > page.length;
@@ -2559,12 +2081,8 @@ export class S3Mini {
       maxKeys,
       keyCount: page.length,
       isTruncated,
-      contents: page.flatMap(([, value]) =>
-        typeof value === "string" ? [] : [value],
-      ),
-      commonPrefixes: page.flatMap(([, value]) =>
-        typeof value === "string" ? [value] : [],
-      ),
+      contents: page.flatMap(([, value]) => (typeof value === "string" ? [] : [value])),
+      commonPrefixes: page.flatMap(([, value]) => (typeof value === "string" ? [value] : [])),
       startAfter: request.startAfter,
       encodingType: request.encodingType,
     };
@@ -2572,8 +2090,7 @@ export class S3Mini {
       result.continuationToken = request.continuationToken;
     }
     if (isTruncated && lastEntry) {
-      result.nextContinuationToken =
-        Buffer.from(lastEntry).toString("base64url");
+      result.nextContinuationToken = Buffer.from(lastEntry).toString("base64url");
     }
     return result;
   }
@@ -2586,13 +2103,7 @@ export class S3Mini {
     await this.headBucket(bucket);
     this.validateKey(key);
     if (!VALID_STORAGE_CLASSES.includes(storageClass as any)) {
-      throw new S3Error(
-        "InvalidStorageClass",
-        "The storage class is not supported.",
-        400,
-        bucket,
-        key,
-      );
+      throw new S3Error("InvalidStorageClass", "The storage class is not supported.", 400, bucket, key);
     }
     const uploadId = crypto.randomUUID();
     await this.run(
@@ -2617,37 +2128,20 @@ export class S3Mini {
       );
     }
     if (request.partNumber < 1 || request.partNumber > 10000) {
-      throw new S3Error(
-        "InvalidPart",
-        "Part number must be between 1 and 10000.",
-        400,
-        request.bucket,
-        request.key,
-      );
+      throw new S3Error("InvalidPart", "Part number must be between 1 and 10000.", 400, request.bucket, request.key);
     }
-    const etag =
-      '"' + crypto.createHash("md5").update(request.body).digest("hex") + '"';
+    const etag = '"' + crypto.createHash("md5").update(request.body).digest("hex") + '"';
     const lastModified = Date.now();
     this.db?.exec("BEGIN IMMEDIATE");
     try {
-      const oldPart = await this.get(
-        "SELECT size FROM multipart_parts WHERE uploadId = ? AND partNumber = ?",
-        [request.uploadId, request.partNumber],
-      );
-      await this.assertStorageCapacity(
-        request.bucket,
-        Math.max(0, request.body.length - Number(oldPart?.size || 0)),
-      );
+      const oldPart = await this.get("SELECT size FROM multipart_parts WHERE uploadId = ? AND partNumber = ?", [
+        request.uploadId,
+        request.partNumber,
+      ]);
+      await this.assertStorageCapacity(request.bucket, Math.max(0, request.body.length - Number(oldPart?.size || 0)));
       await this.run(
         "INSERT OR REPLACE INTO multipart_parts (uploadId, partNumber, etag, size, lastModified, body) VALUES (?, ?, ?, ?, ?, ?)",
-        [
-          request.uploadId,
-          request.partNumber,
-          etag,
-          request.body.length,
-          lastModified,
-          request.body,
-        ],
+        [request.uploadId, request.partNumber, etag, request.body.length, lastModified, request.body],
       );
       this.db?.exec("COMMIT");
     } catch (error) {
@@ -2696,28 +2190,12 @@ export class S3Mini {
     }
     if (
       request.partNumberMarker !== undefined &&
-      (!Number.isInteger(request.partNumberMarker) ||
-        request.partNumberMarker < 0)
+      (!Number.isInteger(request.partNumberMarker) || request.partNumberMarker < 0)
     ) {
-      throw new S3Error(
-        "InvalidPart",
-        "The part number marker is invalid.",
-        400,
-        request.bucket,
-        request.key,
-      );
+      throw new S3Error("InvalidPart", "The part number marker is invalid.", 400, request.bucket, request.key);
     }
-    if (
-      request.maxParts !== undefined &&
-      (!Number.isInteger(request.maxParts) || request.maxParts < 1)
-    ) {
-      throw new S3Error(
-        "InvalidRequest",
-        "max-parts must be a positive integer.",
-        400,
-        request.bucket,
-        request.key,
-      );
+    if (request.maxParts !== undefined && (!Number.isInteger(request.maxParts) || request.maxParts < 1)) {
+      throw new S3Error("InvalidRequest", "max-parts must be a positive integer.", 400, request.bucket, request.key);
     }
     const rows = await this.all(
       "SELECT * FROM multipart_parts WHERE uploadId = ? AND partNumber > ? ORDER BY partNumber ASC",
@@ -2736,20 +2214,16 @@ export class S3Mini {
         lastModified: new Date(row.lastModified),
       })),
       isTruncated: rows.length > page.length,
-      nextPartNumberMarker:
-        rows.length > page.length
-          ? page[page.length - 1].partNumber
-          : undefined,
+      nextPartNumberMarker: rows.length > page.length ? page[page.length - 1].partNumber : undefined,
     };
   }
 
-  async completeMultipartUpload(
-    request: CompleteMultipartUploadRequest,
-  ): Promise<CompleteMultipartUploadResult> {
-    const upload = await this.get(
-      "SELECT * FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?",
-      [request.uploadId, request.bucket, request.key],
-    );
+  async completeMultipartUpload(request: CompleteMultipartUploadRequest): Promise<CompleteMultipartUploadResult> {
+    const upload = await this.get("SELECT * FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?", [
+      request.uploadId,
+      request.bucket,
+      request.key,
+    ]);
     if (!upload) {
       throw new S3Error(
         "NoSuchUpload",
@@ -2760,13 +2234,7 @@ export class S3Mini {
       );
     }
     if (!request.parts.length) {
-      throw new S3Error(
-        "InvalidRequest",
-        "At least one part is required.",
-        400,
-        request.bucket,
-        request.key,
-      );
+      throw new S3Error("InvalidRequest", "At least one part is required.", 400, request.bucket, request.key);
     }
     if (
       request.parts.some(
@@ -2787,10 +2255,10 @@ export class S3Mini {
     }
     const bodies: Buffer[] = [];
     for (const part of request.parts) {
-      const row = await this.get(
-        "SELECT body, etag FROM multipart_parts WHERE uploadId = ? AND partNumber = ?",
-        [request.uploadId, part.partNumber],
-      );
+      const row = await this.get("SELECT body, etag FROM multipart_parts WHERE uploadId = ? AND partNumber = ?", [
+        request.uploadId,
+        part.partNumber,
+      ]);
       if (!row || row.etag !== part.etag) {
         throw new S3Error(
           "InvalidPart",
@@ -2804,30 +2272,15 @@ export class S3Mini {
     }
     const multipartDigest = crypto
       .createHash("md5")
-      .update(
-        Buffer.concat(
-          request.parts.map((part) =>
-            Buffer.from(part.etag.replace(/^"|"$/g, ""), "hex"),
-          ),
-        ),
-      )
+      .update(Buffer.concat(request.parts.map((part) => Buffer.from(part.etag.replace(/^"|"$/g, ""), "hex"))))
       .digest("hex");
-    const result = await this.putObject(
-      request.bucket,
-      request.key,
-      Buffer.concat(bodies),
-      {
-        storageClass: upload.storageClass,
-        etag: `"${multipartDigest}-${request.parts.length}"`,
-        reservedBytes: bodies.reduce((total, part) => total + part.length, 0),
-      },
-    );
-    await this.run("DELETE FROM multipart_parts WHERE uploadId = ?", [
-      request.uploadId,
-    ]);
-    await this.run("DELETE FROM multipart_uploads WHERE uploadId = ?", [
-      request.uploadId,
-    ]);
+    const result = await this.putObject(request.bucket, request.key, Buffer.concat(bodies), {
+      storageClass: upload.storageClass,
+      etag: `"${multipartDigest}-${request.parts.length}"`,
+      reservedBytes: bodies.reduce((total, part) => total + part.length, 0),
+    });
+    await this.run("DELETE FROM multipart_parts WHERE uploadId = ?", [request.uploadId]);
+    await this.run("DELETE FROM multipart_uploads WHERE uploadId = ?", [request.uploadId]);
     return {
       bucket: request.bucket,
       key: request.key,
@@ -2836,43 +2289,24 @@ export class S3Mini {
     };
   }
 
-  async abortMultipartUpload(
-    bucket: string,
-    key: string,
-    uploadId: string,
-  ): Promise<void> {
+  async abortMultipartUpload(bucket: string, key: string, uploadId: string): Promise<void> {
     const upload = await this.get(
       "SELECT uploadId FROM multipart_uploads WHERE uploadId = ? AND bucket = ? AND key = ?",
       [uploadId, bucket, key],
     );
     if (!upload) {
-      throw new S3Error(
-        "NoSuchUpload",
-        "The specified multipart upload does not exist.",
-        404,
-        bucket,
-        key,
-      );
+      throw new S3Error("NoSuchUpload", "The specified multipart upload does not exist.", 404, bucket, key);
     }
-    await this.run("DELETE FROM multipart_parts WHERE uploadId = ?", [
-      uploadId,
-    ]);
-    await this.run("DELETE FROM multipart_uploads WHERE uploadId = ?", [
-      uploadId,
-    ]);
+    await this.run("DELETE FROM multipart_parts WHERE uploadId = ?", [uploadId]);
+    await this.run("DELETE FROM multipart_uploads WHERE uploadId = ?", [uploadId]);
   }
 
-  async listMultipartUploads(
-    request: ListMultipartUploadsRequest,
-  ): Promise<ListMultipartUploadsResult> {
+  async listMultipartUploads(request: ListMultipartUploadsRequest): Promise<ListMultipartUploadsResult> {
     await this.headBucket(request.bucket);
-    const rows = await this.all(
-      "SELECT * FROM multipart_uploads WHERE bucket = ? ORDER BY key, initiated",
-      [request.bucket],
-    );
-    const filtered = (rows as any[]).filter(
-      (row) => !request.prefix || row.key.startsWith(request.prefix),
-    );
+    const rows = await this.all("SELECT * FROM multipart_uploads WHERE bucket = ? ORDER BY key, initiated", [
+      request.bucket,
+    ]);
+    const filtered = (rows as any[]).filter((row) => !request.prefix || row.key.startsWith(request.prefix));
     return {
       bucket: request.bucket,
       uploads: filtered.slice(0, request.maxUploads ?? 1000).map((row) => ({
@@ -2922,11 +2356,7 @@ function lifecycleRuleMatches(rule: any, key: string): boolean {
   return !prefix || key.startsWith(prefix);
 }
 
-function lifecycleAgeReached(
-  condition: any,
-  lastModified: number,
-  now: number,
-): boolean {
+function lifecycleAgeReached(condition: any, lastModified: number, now: number): boolean {
   if (condition.date !== undefined) {
     return now >= Date.parse(String(condition.date));
   }
@@ -2937,24 +2367,15 @@ function lifecycleAgeReached(
   return false;
 }
 
-function lifecycleTransition(
-  rule: any,
-  noncurrent: boolean,
-  lastModified: number,
-  now: number,
-): string | undefined {
-  const transitions = noncurrent
-    ? rule.noncurrentVersionTransitions
-    : rule.transitions;
+function lifecycleTransition(rule: any, noncurrent: boolean, lastModified: number, now: number): string | undefined {
+  const transitions = noncurrent ? rule.noncurrentVersionTransitions : rule.transitions;
   if (!Array.isArray(transitions)) {
     return undefined;
   }
   return transitions
     .filter((transition) => lifecycleAgeReached(transition, lastModified, now))
     .sort(
-      (left, right) =>
-        Number(right.days ?? right.noncurrentDays ?? 0) -
-        Number(left.days ?? left.noncurrentDays ?? 0),
+      (left, right) => Number(right.days ?? right.noncurrentDays ?? 0) - Number(left.days ?? left.noncurrentDays ?? 0),
     )
     .map((transition) => transition.storageClass || transition.StorageClass)
     .find(Boolean);
@@ -2967,23 +2388,15 @@ function policyStatementMatches(
   principal: string,
   context: Record<string, string | undefined>,
 ): boolean {
-  const actions = Array.isArray(statement.action)
-    ? statement.action
-    : [statement.action];
-  const resources = Array.isArray(statement.resource)
-    ? statement.resource
-    : [statement.resource];
+  const actions = Array.isArray(statement.action) ? statement.action : [statement.action];
+  const resources = Array.isArray(statement.resource) ? statement.resource : [statement.resource];
   const principals =
     statement.principal === "*" ||
     statement.principal?.aws === "*" ||
     [statement.principal, statement.principal?.aws].includes(principal);
-  const actionMatches = actions.some(
-    (value: unknown) =>
-      typeof value === "string" && wildcardMatches(value, action),
-  );
+  const actionMatches = actions.some((value: unknown) => typeof value === "string" && wildcardMatches(value, action));
   const resourceMatches = resources.some(
-    (value: unknown) =>
-      typeof value === "string" && wildcardMatches(value, resource),
+    (value: unknown) => typeof value === "string" && wildcardMatches(value, resource),
   );
   if (!principals || !actionMatches || !resourceMatches) {
     return false;
@@ -2991,32 +2404,19 @@ function policyStatementMatches(
   return policyConditionsMatch(statement.condition, context);
 }
 
-function policyConditionsMatch(
-  condition: any,
-  context: Record<string, string | undefined>,
-): boolean {
+function policyConditionsMatch(condition: any, context: Record<string, string | undefined>): boolean {
   if (!condition) {
     return true;
   }
-  for (const [operator, entries] of Object.entries(
-    condition as Record<string, any>,
-  )) {
+  for (const [operator, entries] of Object.entries(condition as Record<string, any>)) {
     for (const [name, expectedValue] of Object.entries(entries || {})) {
       const actual = context[name];
-      const expected = Array.isArray(expectedValue)
-        ? expectedValue.map(String)
-        : [String(expectedValue)];
+      const expected = Array.isArray(expectedValue) ? expectedValue.map(String) : [String(expectedValue)];
       const matches =
         operator === "StringLike"
-          ? expected.some(
-              (value) => actual !== undefined && wildcardMatches(value, actual),
-            )
+          ? expected.some((value) => actual !== undefined && wildcardMatches(value, actual))
           : expected.includes(actual || "");
-      if (
-        operator === "StringNotEquals"
-          ? expected.includes(actual || "")
-          : !matches
-      ) {
+      if (operator === "StringNotEquals" ? expected.includes(actual || "") : !matches) {
         return false;
       }
     }

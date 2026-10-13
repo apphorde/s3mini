@@ -98,6 +98,13 @@ S3MINI follows the provider's Node client flow: authorization-code PKCE uses
 `/.well-known/jwks.json`, and user identity is loaded from `/userinfo` with
 `X-Auth-Audience`.
 
+Dashboard login requests `offline_access` and renews short-lived access tokens
+on the server with the provider's rotating refresh token. The browser receives
+only an opaque, `HttpOnly` session cookie; token data is encrypted in the
+configured SQLite database. Keep that database and the OIDC client secret
+stable across restarts so active sessions can be resumed. Sessions expire after
+30 days, and existing access-token-only sessions may need one fresh sign-in.
+
 Provider API tokens can call S3MINI with an `Authorization: Bearer` header.
 Create them through the provider's `/api-tokens/{clientId}` endpoint and grant
 only the scopes the integration needs:

@@ -51,7 +51,6 @@ control-plane-app {
   flex-direction: column;
   justify-content: space-between;
   overflow-y: auto;
-  border-right: 1px solid #d9dfd8;
   background: #eef2ec;
   padding: 1rem;
 }
@@ -166,8 +165,8 @@ main.control-main > .content-canvas {
   flex: 1 1 auto;
   overflow: auto;
   align-self: center;
-  border: 1px solid #d9dfd8;
-  border-radius: 1rem;
+  border: 0;
+  border-radius: 0;
   background: white;
   padding: 1.5rem;
   box-shadow: 0 1px 2px rgb(28 32 30 / 5%);
@@ -235,6 +234,10 @@ textarea:focus-visible {
     display: flex;
     height: 100%;
     box-shadow: none;
+  }
+
+  .control-sidebar {
+    border-right: 0;
   }
 
   .mobile-header {

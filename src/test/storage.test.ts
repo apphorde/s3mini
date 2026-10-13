@@ -22,38 +22,46 @@ describe("S3Mini", () => {
   it("creates and lists a bucket", async () => {
     await s3.createBucket(bucket, "eu-west-1");
     const result = await s3.listBuckets();
-    expect(
-      result.find((item) => item.name === bucket)?.locationConstraint,
-    ).toBe("eu-west-1");
+    expect(result.find((item) => item.name === bucket)?.locationConstraint).toBe("eu-west-1");
+  });
+
+  it("serializes refresh-token rotation and conditionally stores refreshed sessions", async () => {
+    const sessionId = crypto.randomUUID();
+    const expiresAt = Date.now() + 60_000;
+    const lockUntil = Date.now() + 30_000;
+    await s3.putOidcSession(sessionId, "encrypted-initial", expiresAt);
+    try {
+      expect(await s3.tryLockOidcSessionRefresh(sessionId, lockUntil)).toBe(true);
+      expect(await s3.tryLockOidcSessionRefresh(sessionId, lockUntil + 1)).toBe(false);
+      expect(await s3.updateOidcSessionAfterRefresh(sessionId, "encrypted-next", expiresAt, lockUntil + 1)).toBe(false);
+      expect(await s3.updateOidcSessionAfterRefresh(sessionId, "encrypted-next", expiresAt, lockUntil)).toBe(true);
+      await expect(s3.getOidcSession(sessionId)).resolves.toMatchObject({
+        encryptedSession: "encrypted-next",
+      });
+    } finally {
+      await s3.deleteOidcSession(sessionId);
+    }
   });
 
   it("isolates account-owned buckets and enforces bucket and aggregate quotas", async () => {
-    const account = await s3.createStorageAccount(
-      `external-${crypto.randomUUID()}`,
-      "Quota test",
-      6,
-    );
+    const account = await s3.createStorageAccount(`external-${crypto.randomUUID()}`, "Quota test", 6);
     await s3.acceptReplicatedStorageAccount(account);
     const tenantBucket = `tenant-${crypto.randomUUID().replaceAll("-", "")}`;
     const secondBucket = `tenant-${crypto.randomUUID().replaceAll("-", "")}`;
     await s3.createBucket(tenantBucket, "local", account.accountId, 4);
     await s3.createBucket(secondBucket, "local", account.accountId, 6);
     try {
-      expect(
-        (await s3.listBuckets(account.accountId)).map((item) => item.name),
-      ).toEqual([tenantBucket, secondBucket]);
-      await expect(
-        s3.assertBucketAccount(tenantBucket, "legacy"),
-      ).rejects.toMatchObject({
+      expect((await s3.listBuckets(account.accountId)).map((item) => item.name)).toEqual([tenantBucket, secondBucket]);
+      await expect(s3.assertBucketAccount(tenantBucket, "legacy")).rejects.toMatchObject({
         code: "AccessDenied",
       });
-      await expect(
-        s3.putObject(tenantBucket, "over-limit", Buffer.alloc(5), {}),
-      ).rejects.toMatchObject({ code: "QuotaExceeded" });
+      await expect(s3.putObject(tenantBucket, "over-limit", Buffer.alloc(5), {})).rejects.toMatchObject({
+        code: "QuotaExceeded",
+      });
       await s3.putObject(tenantBucket, "within-limit", Buffer.alloc(4), {});
-      await expect(
-        s3.putObject(secondBucket, "aggregate-over-limit", Buffer.alloc(3), {}),
-      ).rejects.toMatchObject({ code: "QuotaExceeded" });
+      await expect(s3.putObject(secondBucket, "aggregate-over-limit", Buffer.alloc(3), {})).rejects.toMatchObject({
+        code: "QuotaExceeded",
+      });
       const replicatedBody = Buffer.alloc(3);
       await expect(
         s3.acceptReplicatedObject({
@@ -77,11 +85,10 @@ describe("S3Mini", () => {
     const created = await s3.createAccessKey("test-admin");
     expect(created.accessKeyId).toMatch(/^s3mini-/);
     expect(created.secretAccessKey).toBeTruthy();
-    expect(
-      (await s3.listAccessKeys()).find(
-        (key) => key.accessKeyId === created.accessKeyId,
-      ),
-    ).toMatchObject({ displayName: "test-admin", status: "Active" });
+    expect((await s3.listAccessKeys()).find((key) => key.accessKeyId === created.accessKeyId)).toMatchObject({
+      displayName: "test-admin",
+      status: "Active",
+    });
     expect(await s3.getAccessKey(created.accessKeyId)).toMatchObject({
       secretAccessKey: created.secretAccessKey,
       status: "Active",
@@ -90,11 +97,9 @@ describe("S3Mini", () => {
     expect(await s3.getAccessKey(created.accessKeyId)).toMatchObject({
       status: "Disabled",
     });
-    expect(
-      (await s3.listAccessKeys()).find(
-        (key) => key.accessKeyId === created.accessKeyId,
-      ),
-    ).not.toHaveProperty("secretAccessKey");
+    expect((await s3.listAccessKeys()).find((key) => key.accessKeyId === created.accessKeyId)).not.toHaveProperty(
+      "secretAccessKey",
+    );
   });
 
   it("associates the admin token with an authenticated user without storing the token", async () => {
@@ -108,19 +113,12 @@ describe("S3Mini", () => {
       email: "admin@example.com",
       name: "Admin User",
     });
-    expect(
-      JSON.stringify(await s3.getAdminTokenOwner("admin-secret")),
-    ).not.toContain("admin-secret");
+    expect(JSON.stringify(await s3.getAdminTokenOwner("admin-secret"))).not.toContain("admin-secret");
   });
 
   it("persists replicated user roles with conflict ordering and revocation tombstones", async () => {
     const userId = `role-${Date.now()}`;
-    const viewer = await s3.setAdminUserRole(
-      userId,
-      "viewer@example.com",
-      "Viewer",
-      "viewer",
-    );
+    const viewer = await s3.setAdminUserRole(userId, "viewer@example.com", "Viewer", "viewer");
     await s3.acceptReplicatedAdminUserRole({
       ...viewer,
       role: "admin",
@@ -135,22 +133,16 @@ describe("S3Mini", () => {
     });
     expect(await s3.getAdminUserRole(userId)).toMatchObject({ role: "admin" });
     expect(await s3.listAdminUserRoles()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ userId, role: "admin" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ userId, role: "admin" })]),
     );
 
     await s3.revokeAdminUserRole(userId);
     expect(await s3.getAdminUserRole(userId)).toMatchObject({
       role: "revoked",
     });
-    expect(await s3.listAdminUserRoles()).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ userId })]),
-    );
+    expect(await s3.listAdminUserRoles()).not.toEqual(expect.arrayContaining([expect.objectContaining({ userId })]));
     expect(await s3.listReplicatedAdminUserRoles()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ userId, role: "revoked" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ userId, role: "revoked" })]),
     );
   });
 
@@ -158,13 +150,13 @@ describe("S3Mini", () => {
     await expect(s3.createBucket("Bad_Name")).rejects.toMatchObject({
       code: "InvalidBucketName",
     });
-    await expect(
-      s3.createBucket("valid-bucket", "Moon_1"),
-    ).rejects.toMatchObject({ code: "InvalidLocationConstraint" });
+    await expect(s3.createBucket("valid-bucket", "Moon_1")).rejects.toMatchObject({
+      code: "InvalidLocationConstraint",
+    });
     await s3.createBucket(bucket);
-    await expect(
-      s3.putObject(bucket, "../outside", Buffer.from("x"), {}),
-    ).rejects.toMatchObject({ code: "InvalidObjectName" });
+    await expect(s3.putObject(bucket, "../outside", Buffer.from("x"), {})).rejects.toMatchObject({
+      code: "InvalidObjectName",
+    });
   });
 
   it("rejects duplicate buckets", async () => {
@@ -190,68 +182,34 @@ describe("S3Mini", () => {
     expect(metadata.contentType).toBe("text/plain");
     const object = await s3.getObject(bucket, "folder/item.txt");
     expect(object.data.equals(body)).toBe(true);
-    expect((await s3.listObjectsV2(bucket, "folder/"))[0].Key).toBe(
-      "folder/item.txt",
-    );
+    expect((await s3.listObjectsV2(bucket, "folder/"))[0].Key).toBe("folder/item.txt");
 
     await s3.deleteObject(bucket, "folder/item.txt");
-    await expect(s3.getObject(bucket, "folder/item.txt")).rejects.toMatchObject(
-      { code: "NoSuchKey" },
-    );
+    await expect(s3.getObject(bucket, "folder/item.txt")).rejects.toMatchObject({ code: "NoSuchKey" });
   });
 
   it("does not remove another object version when deleting a key", async () => {
     await s3.createBucket(bucket);
-    const other = await s3.putObject(
-      bucket,
-      "other.txt",
-      Buffer.from("keep"),
-      {},
-    );
+    const other = await s3.putObject(bucket, "other.txt", Buffer.from("keep"), {});
     await s3.putObject(bucket, "remove.txt", Buffer.from("remove"), {});
     await s3.deleteObject(bucket, "remove.txt");
-    expect(
-      (
-        await s3.getObject(bucket, "other.txt", other.versionId)
-      ).data.toString(),
-    ).toBe("keep");
+    expect((await s3.getObject(bucket, "other.txt", other.versionId)).data.toString()).toBe("keep");
   });
 
   it("fails closed when a committed object version file is missing", async () => {
     await s3.createBucket(bucket);
-    const object = await s3.putObject(
-      bucket,
-      "missing.txt",
-      Buffer.from("missing"),
-      {},
-    );
-    await rm(
-      path.join(
-        STORAGE_BASE,
-        bucket,
-        ".versions",
-        object.versionId,
-        "missing.txt",
-      ),
-    );
-    await expect(
-      s3.getObject(bucket, "missing.txt", object.versionId),
-    ).rejects.toMatchObject({ code: "InternalError" });
+    const object = await s3.putObject(bucket, "missing.txt", Buffer.from("missing"), {});
+    await rm(path.join(STORAGE_BASE, bucket, ".versions", object.versionId, "missing.txt"));
+    await expect(s3.getObject(bucket, "missing.txt", object.versionId)).rejects.toMatchObject({
+      code: "InternalError",
+    });
   });
 
   it("records durable replication intent for object writes", async () => {
     await s3.createBucket(bucket);
-    const object = await s3.putObject(
-      bucket,
-      "replicated.txt",
-      Buffer.from("replicate me"),
-      {},
-    );
+    const object = await s3.putObject(bucket, "replicated.txt", Buffer.from("replicate me"), {});
     const event = (await s3.listReplicationEvents()).find(
-      (item) =>
-        item.bucket === bucket &&
-        item.key === "replicated.txt" &&
-        item.versionId === object.versionId,
+      (item) => item.bucket === bucket && item.key === "replicated.txt" && item.versionId === object.versionId,
     );
     expect(event).toMatchObject({
       operation: "PutObject",
@@ -260,15 +218,10 @@ describe("S3Mini", () => {
       size: 12,
     });
     expect(event?.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(
-      (await s3.claimReplicationEvents("test-worker")).map((item) => item.id),
-    ).toEqual([event!.id]);
+    expect((await s3.claimReplicationEvents("test-worker")).map((item) => item.id)).toEqual([event!.id]);
     expect(await s3.claimReplicationEvents("other-worker")).toEqual([]);
     await s3.updateReplicationEvent(event!.id, "Delivered", 1);
-    expect(
-      (await s3.listReplicationEvents()).find((item) => item.id === event!.id)
-        ?.status,
-    ).toBe("Delivered");
+    expect((await s3.listReplicationEvents()).find((item) => item.id === event!.id)?.status).toBe("Delivered");
   });
 
   it("rejects replicated bodies with an invalid SHA-256 digest", async () => {
@@ -296,11 +249,7 @@ describe("S3Mini", () => {
     await s3.close();
     s3 = new S3Mini();
     await s3.init();
-    expect(
-      (await s3.listPeerHealth()).find(
-        (peer) => peer.peer === "http://vpn-peer:9000",
-      ),
-    ).toEqual(
+    expect((await s3.listPeerHealth()).find((peer) => peer.peer === "http://vpn-peer:9000")).toEqual(
       expect.objectContaining({
         peer: "http://vpn-peer:9000",
         status: "Unhealthy",
@@ -312,25 +261,17 @@ describe("S3Mini", () => {
 
   it("moves exhausted replication events to a dead-letter state and allows retry", async () => {
     await s3.createBucket(bucket);
-    const object = await s3.putObject(
-      bucket,
-      "dead-letter.txt",
-      Buffer.from("retry me"),
-      {},
-    );
-    const event = (await s3.listReplicationEvents()).find(
-      (item) => item.key === "dead-letter.txt",
-    );
+    const object = await s3.putObject(bucket, "dead-letter.txt", Buffer.from("retry me"), {});
+    const event = (await s3.listReplicationEvents()).find((item) => item.key === "dead-letter.txt");
     await s3.updateReplicationEvent(event!.id, "DeadLetter", 8);
-    expect(
-      (await s3.listReplicationEvents(100, "DeadLetter")).find(
-        (item) => item.id === event!.id,
-      )?.status,
-    ).toBe("DeadLetter");
+    expect((await s3.listReplicationEvents(100, "DeadLetter")).find((item) => item.id === event!.id)?.status).toBe(
+      "DeadLetter",
+    );
     await s3.retryReplicationEvent(event!.id);
-    expect(
-      (await s3.listReplicationEvents()).find((item) => item.id === event!.id),
-    ).toMatchObject({ status: "Pending", attempts: 0 });
+    expect((await s3.listReplicationEvents()).find((item) => item.id === event!.id)).toMatchObject({
+      status: "Pending",
+      attempts: 0,
+    });
     expect(object.versionId).toBeTruthy();
   });
 
@@ -343,9 +284,7 @@ describe("S3Mini", () => {
   });
 
   it("reports missing buckets and objects as S3 errors", async () => {
-    await expect(s3.headBucket("missing-bucket")).rejects.toBeInstanceOf(
-      S3Error,
-    );
+    await expect(s3.headBucket("missing-bucket")).rejects.toBeInstanceOf(S3Error);
     await s3.createBucket(bucket);
     await expect(s3.deleteObject(bucket, "missing")).rejects.toMatchObject({
       code: "NoSuchKey",
@@ -413,15 +352,13 @@ describe("S3Mini", () => {
       ],
     });
     expect(completed.etag).toMatch(/^"[a-f0-9]{32}-2"$/);
-    expect((await s3.getObject(bucket, "large.bin")).data.toString()).toBe(
-      "hello world",
-    );
+    expect((await s3.getObject(bucket, "large.bin")).data.toString()).toBe("hello world");
 
     const aborted = await s3.createMultipartUpload(bucket, "aborted.bin");
     await s3.abortMultipartUpload(bucket, "aborted.bin", aborted.uploadId);
-    await expect(
-      s3.listParts({ bucket, key: "aborted.bin", uploadId: aborted.uploadId }),
-    ).rejects.toMatchObject({ code: "NoSuchUpload" });
+    await expect(s3.listParts({ bucket, key: "aborted.bin", uploadId: aborted.uploadId })).rejects.toMatchObject({
+      code: "NoSuchUpload",
+    });
   });
 
   it("rejects multipart completion with unordered parts", async () => {
@@ -456,9 +393,9 @@ describe("S3Mini", () => {
 
   it("validates multipart storage class and list pagination parameters", async () => {
     await s3.createBucket(bucket);
-    await expect(
-      s3.createMultipartUpload(bucket, "invalid.bin", "MADE_UP"),
-    ).rejects.toMatchObject({ code: "InvalidStorageClass" });
+    await expect(s3.createMultipartUpload(bucket, "invalid.bin", "MADE_UP")).rejects.toMatchObject({
+      code: "InvalidStorageClass",
+    });
     const upload = await s3.createMultipartUpload(bucket, "paged.bin");
     await expect(
       s3.listParts({
@@ -484,47 +421,22 @@ describe("S3Mini", () => {
     await s3.putVersioning(bucket, "Enabled");
     expect(await s3.getVersioning(bucket)).toEqual({ status: "Enabled" });
 
-    const object = await s3.putObject(
-      bucket,
-      "tagged.txt",
-      Buffer.from("first"),
-      {},
-    );
-    const latest = await s3.putObject(
-      bucket,
-      "tagged.txt",
-      Buffer.from("second"),
-      {},
-    );
-    expect((await s3.getObject(bucket, "tagged.txt")).data.toString()).toBe(
-      "second",
-    );
-    expect(
-      (
-        await s3.getObject(bucket, "tagged.txt", object.versionId)
-      ).data.toString(),
-    ).toBe("first");
-    await s3.putObjectTags(
-      bucket,
-      "tagged.txt",
-      { environment: "test" },
-      object.versionId,
-    );
-    expect(
-      await s3.getObjectTags(bucket, "tagged.txt", object.versionId),
-    ).toEqual({ environment: "test" });
+    const object = await s3.putObject(bucket, "tagged.txt", Buffer.from("first"), {});
+    const latest = await s3.putObject(bucket, "tagged.txt", Buffer.from("second"), {});
+    expect((await s3.getObject(bucket, "tagged.txt")).data.toString()).toBe("second");
+    expect((await s3.getObject(bucket, "tagged.txt", object.versionId)).data.toString()).toBe("first");
+    await s3.putObjectTags(bucket, "tagged.txt", { environment: "test" }, object.versionId);
+    expect(await s3.getObjectTags(bucket, "tagged.txt", object.versionId)).toEqual({ environment: "test" });
     await s3.deleteObjectTags(bucket, "tagged.txt", object.versionId);
-    await expect(
-      s3.getObjectTags(bucket, "tagged.txt", object.versionId),
-    ).rejects.toMatchObject({ code: "NoSuchTagSet" });
+    await expect(s3.getObjectTags(bucket, "tagged.txt", object.versionId)).rejects.toMatchObject({
+      code: "NoSuchTagSet",
+    });
 
     await s3.putBucketTags(bucket, { team: "storage" });
     expect(await s3.getBucketTags(bucket)).toEqual({ team: "storage" });
     await s3.deleteBucketTags(bucket);
     expect(await s3.getBucketTags(bucket)).toEqual({});
-    expect((await s3.listObjectVersions(bucket, "tagged"))[0].VersionId).toBe(
-      latest.versionId,
-    );
+    expect((await s3.listObjectVersions(bucket, "tagged"))[0].VersionId).toBe(latest.versionId);
     await s3.deleteObjectVersion(bucket, "tagged.txt", object.versionId);
   });
 
@@ -534,13 +446,11 @@ describe("S3Mini", () => {
     await s3.putBucketConfiguration(bucket, "corsConfiguration", {
       rules: [{ allowedOrigins: ["*"] }],
     });
-    expect(
-      await s3.getBucketConfiguration(bucket, "corsConfiguration"),
-    ).toEqual({ rules: [{ allowedOrigins: ["*"] }] });
+    expect(await s3.getBucketConfiguration(bucket, "corsConfiguration")).toEqual({
+      rules: [{ allowedOrigins: ["*"] }],
+    });
     await s3.deleteBucketConfiguration(bucket, "corsConfiguration");
-    expect(
-      await s3.getBucketConfiguration(bucket, "corsConfiguration"),
-    ).toBeUndefined();
+    expect(await s3.getBucketConfiguration(bucket, "corsConfiguration")).toBeUndefined();
   });
 
   it("creates delete markers when versioning is enabled", async () => {
@@ -551,9 +461,7 @@ describe("S3Mini", () => {
     await expect(s3.getObject(bucket, "marker.txt")).rejects.toMatchObject({
       code: "NoSuchKey",
     });
-    expect(
-      (await s3.listObjectVersions(bucket, "marker"))[0].IsDeleteMarker,
-    ).toBe(true);
+    expect((await s3.listObjectVersions(bucket, "marker"))[0].IsDeleteMarker).toBe(true);
   });
 
   it("applies enabled lifecycle expiration rules during reads", async () => {
@@ -569,44 +477,29 @@ describe("S3Mini", () => {
     });
     await s3.putObject(bucket, "tmp/expired.txt", Buffer.from("expired"), {});
     await s3.putObject(bucket, "keep.txt", Buffer.from("keep"), {});
-    expect(
-      (await s3.listObjectsV2Advanced({ bucket })).contents.map(
-        (item) => item.key,
-      ),
-    ).toEqual(["keep.txt"]);
+    expect((await s3.listObjectsV2Advanced({ bucket })).contents.map((item) => item.key)).toEqual(["keep.txt"]);
   });
 
   it("transitions current and noncurrent versions and expires old versions", async () => {
     await s3.createBucket(bucket);
     await s3.putVersioning(bucket, "Enabled");
-    const first = await s3.putObject(
-      bucket,
-      "archive.txt",
-      Buffer.from("first"),
-      {},
-    );
+    const first = await s3.putObject(bucket, "archive.txt", Buffer.from("first"), {});
     await s3.putObject(bucket, "archive.txt", Buffer.from("second"), {});
     await s3.putBucketConfiguration(bucket, "lifecycleConfiguration", {
       rules: [
         {
           status: "Enabled",
           filter: { prefix: "archive" },
-          noncurrentVersionTransitions: [
-            { noncurrentDays: 0, storageClass: "GLACIER" },
-          ],
+          noncurrentVersionTransitions: [{ noncurrentDays: 0, storageClass: "GLACIER" }],
           noncurrentVersionExpiration: { noncurrentDays: 0 },
         },
       ],
     });
 
     await s3.getObject(bucket, "archive.txt");
-    await expect(
-      s3.getObject(bucket, "archive.txt", first.versionId),
-    ).rejects.toMatchObject({ code: "NoSuchKey" });
+    await expect(s3.getObject(bucket, "archive.txt", first.versionId)).rejects.toMatchObject({ code: "NoSuchKey" });
     expect(
-      (await s3.listObjectVersions(bucket, "archive.txt")).some(
-        (version) => version.VersionId === first.versionId,
-      ),
+      (await s3.listObjectVersions(bucket, "archive.txt")).some((version) => version.VersionId === first.versionId),
     ).toBe(false);
   });
 
@@ -624,9 +517,7 @@ describe("S3Mini", () => {
     });
 
     await s3.getObject(bucket, "cold.txt");
-    expect((await s3.getObject(bucket, "cold.txt")).metadata.storageClass).toBe(
-      "GLACIER",
-    );
+    expect((await s3.getObject(bucket, "cold.txt")).metadata.storageClass).toBe("GLACIER");
   });
 
   it("copies objects and serves byte ranges", async () => {
@@ -634,12 +525,7 @@ describe("S3Mini", () => {
     await s3.putObject(bucket, "source.txt", Buffer.from("abcdef"), {
       contentType: "text/plain",
     });
-    const copied = await s3.copyObject(
-      bucket,
-      "source.txt",
-      bucket,
-      "copy.txt",
-    );
+    const copied = await s3.copyObject(bucket, "source.txt", bucket, "copy.txt");
     expect(copied.contentType).toBe("text/plain");
     const ranged = await s3.getObjectRange(bucket, "copy.txt", 1, 3);
     expect(ranged.data.toString()).toBe("bcd");

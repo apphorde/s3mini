@@ -1,8 +1,4 @@
-import Fastify, {
-  FastifyInstance,
-  FastifyRequest,
-  FastifyReply,
-} from "fastify";
+import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -15,19 +11,46 @@ import { DASHBOARD_ACCESS_ERROR_HTML, SIGNED_OUT_HTML } from "../ui/auth-pages.j
 import type { ReplicationWorker } from "../replication/worker.js";
 import type { AdminUserRole, StorageAccountRecord } from "../storage/s3mini.js";
 
-export async function registerRoutes(
-  fastify: FastifyInstance,
-  s3: S3Mini,
-  replication?: ReplicationWorker,
-) {
+export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, replication?: ReplicationWorker) {
+  type BrowserOidcSession = {
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt: number;
+    sessionExpiresAt?: number;
+  };
+  const oidcRefreshes = new Map<string, Promise<BrowserOidcSession | undefined>>();
+  let oidcSessionEncryptionKey: Buffer | undefined;
+  const getOidcSessionEncryptionKey = () => {
+    oidcSessionEncryptionKey ??= crypto.scryptSync(oidcClientSecret()!, `s3mini-oidc-session:${oidcClientId()}`, 32);
+    return oidcSessionEncryptionKey;
+  };
+  const encryptOidcSession = (session: BrowserOidcSession) => {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", getOidcSessionEncryptionKey(), iv);
+    const ciphertext = Buffer.concat([cipher.update(JSON.stringify(session)), cipher.final()]);
+    return [iv, cipher.getAuthTag(), ciphertext].map((part) => part.toString("base64url")).join(".");
+  };
+  const decryptOidcSession = (encrypted: string): BrowserOidcSession => {
+    const [iv, tag, ciphertext] = encrypted.split(".").map((part) => Buffer.from(part, "base64url"));
+    if (!iv || !tag || !ciphertext || iv.length !== 12 || tag.length !== 16) {
+      throw new Error("Invalid encrypted OIDC session.");
+    }
+    const decipher = crypto.createDecipheriv("aes-256-gcm", getOidcSessionEncryptionKey(), iv);
+    decipher.setAuthTag(tag);
+    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+    const session = JSON.parse(plaintext) as BrowserOidcSession;
+    if (
+      typeof session.accessToken !== "string" ||
+      typeof session.expiresAt !== "number" ||
+      (session.refreshToken !== undefined && typeof session.refreshToken !== "string") ||
+      (session.sessionExpiresAt !== undefined && typeof session.sessionExpiresAt !== "number")
+    ) {
+      throw new Error("Invalid OIDC session data.");
+    }
+    return session;
+  };
   fastify.addContentTypeParser(
-    [
-      "application/octet-stream",
-      "application/xml",
-      "text/xml",
-      "text/csv",
-      "*",
-    ],
+    ["application/octet-stream", "application/xml", "text/xml", "text/csv", "*"],
     { parseAs: "buffer" },
     (_request, body, done) => {
       done(null, body);
@@ -55,11 +78,7 @@ export async function registerRoutes(
     let oidcScopes: string[] = [];
     if (bearerToken) {
       if (!oidcConfigured()) {
-        throw new S3Error(
-          "AccessDenied",
-          "OIDC bearer tokens are not configured.",
-          403,
-        );
+        throw new S3Error("AccessDenied", "OIDC bearer tokens are not configured.", 403);
       }
       try {
         const introspection = await introspectOidcToken(
@@ -73,17 +92,10 @@ export async function registerRoutes(
         }
         oidcScopes = introspection.scopes;
       } catch {
-        throw new S3Error(
-          "AccessDenied",
-          "The bearer token is invalid or expired.",
-          403,
-        );
+        throw new S3Error("AccessDenied", "The bearer token is invalid or expired.", 403);
       }
     }
-    const hasPresign = new URL(
-      request.raw.url || "/",
-      "http://localhost",
-    ).searchParams.has("X-Amz-Algorithm");
+    const hasPresign = new URL(request.raw.url || "/", "http://localhost").searchParams.has("X-Amz-Algorithm");
     const credentials = await resolveCredentials(s3, request, hasPresign);
     const accessKeyId = credentials?.accessKeyId;
     const secretAccessKey = credentials?.secretAccessKey;
@@ -103,11 +115,7 @@ export async function registerRoutes(
           signingCredentials,
         ))
     ) {
-      throw new S3Error(
-        "SignatureDoesNotMatch",
-        "The presigned URL signature does not match.",
-        403,
-      );
+      throw new S3Error("SignatureDoesNotMatch", "The presigned URL signature does not match.", 403);
     }
     if (
       authorization &&
@@ -123,11 +131,7 @@ export async function registerRoutes(
           signingCredentials,
         ))
     ) {
-      throw new S3Error(
-        "SignatureDoesNotMatch",
-        "The request signature does not match.",
-        403,
-      );
+      throw new S3Error("SignatureDoesNotMatch", "The request signature does not match.", 403);
     }
     if (bearerToken && !hasOidcScope(oidcScopes, requiredOidcScope(request))) {
       throw new S3Error(
@@ -142,9 +146,7 @@ export async function registerRoutes(
     const params = request.params as { bucket?: string; "*": string };
     const query = request.query as Record<string, string | undefined>;
     const key = params["*"] ? normalizeObjectKey(params["*"]) : undefined;
-    const credentialsConfigured = Boolean(
-      process.env.S3MINI_ACCESS_KEY && process.env.S3MINI_SECRET_KEY,
-    );
+    const credentialsConfigured = Boolean(process.env.S3MINI_ACCESS_KEY && process.env.S3MINI_SECRET_KEY);
     if (
       params.bucket &&
       credentialsConfigured &&
@@ -152,18 +154,10 @@ export async function registerRoutes(
       !hasPresign &&
       !["GET", "HEAD", "OPTIONS"].includes(request.method)
     ) {
-      throw new S3Error(
-        "AccessDenied",
-        "Authentication is required.",
-        403,
-        params.bucket,
-        key,
-      );
+      throw new S3Error("AccessDenied", "Authentication is required.", 403, params.bucket, key);
     }
     const creatingBucket =
-      !key &&
-      request.method === "PUT" &&
-      Object.keys(query).every((name) => name === "locationConstraint");
+      !key && request.method === "PUT" && Object.keys(query).every((name) => name === "locationConstraint");
     const accountId = credentials?.accountId || "legacy";
     if (bearerToken && (await s3.hasStorageAccounts())) {
       throw new S3Error(
@@ -182,19 +176,11 @@ export async function registerRoutes(
       !hasPresign &&
       !["GET", "HEAD", "OPTIONS"].includes(request.method)
     ) {
-      throw new S3Error(
-        "AccessDenied",
-        "Authenticated account credentials are required.",
-        403,
-        params.bucket,
-        key,
-      );
+      throw new S3Error("AccessDenied", "Authenticated account credentials are required.", 403, params.bucket, key);
     }
     const copySource = request.headers["x-amz-copy-source"];
     if (params.bucket && copySource && request.method === "PUT") {
-      const source = decodeURIComponent(String(copySource))
-        .replace(/^\//, "")
-        .split("/");
+      const source = decodeURIComponent(String(copySource)).replace(/^\//, "").split("/");
       if (source.length > 1) {
         await s3.assertBucketAccount(source.shift()!, accountId);
       }
@@ -220,81 +206,39 @@ export async function registerRoutes(
               : request.method === "GET"
                 ? "ListBucket"
                 : `${request.method}Bucket`;
-      const authenticatedPrincipal =
-        authorization || hasPresign ? accessKeyId || "" : "anonymous";
+      const authenticatedPrincipal = authorization || hasPresign ? accessKeyId || "" : "anonymous";
       const context = {
         "s3:x-amz-acl": String(request.headers["x-amz-acl"] || ""),
         "s3:prefix": query.prefix,
         "aws:PrincipalArn": authenticatedPrincipal,
       };
-      if (
-        await s3.isRequestDenied(
-          params.bucket,
-          key,
-          `s3:${action}`,
-          authenticatedPrincipal,
-          context,
-        )
-      ) {
-        throw new S3Error(
-          "AccessDenied",
-          "Access denied by bucket policy.",
-          403,
-          params.bucket,
-          key,
-        );
+      if (await s3.isRequestDenied(params.bucket, key, `s3:${action}`, authenticatedPrincipal, context)) {
+        throw new S3Error("AccessDenied", "Access denied by bucket policy.", 403, params.bucket, key);
       }
       if (
         credentialsConfigured &&
         key &&
         authenticatedPrincipal === "anonymous" &&
-        [
-          "GetObject",
-          "PutObject",
-          "DeleteObject",
-          "GetObjectAcl",
-          "PutObjectAcl",
-          "DeleteObjectAcl",
-        ].includes(action) &&
-        (await s3.isObjectRequestDenied(
-          params.bucket,
-          key,
+        ["GetObject", "PutObject", "DeleteObject", "GetObjectAcl", "PutObjectAcl", "DeleteObjectAcl"].includes(
           action,
-          authenticatedPrincipal,
-        ))
+        ) &&
+        (await s3.isObjectRequestDenied(params.bucket, key, action, authenticatedPrincipal))
       ) {
-        throw new S3Error(
-          "AccessDenied",
-          "Access denied by object ACL.",
-          403,
-          params.bucket,
-          key,
-        );
+        throw new S3Error("AccessDenied", "Access denied by object ACL.", 403, params.bucket, key);
       }
     }
   });
 
   fastify.get("/api", async (_request, reply) => {
-    const specification = await readFile(
-      new URL("../../openapi-s3mini.json", import.meta.url),
-      "utf8",
-    );
+    const specification = await readFile(new URL("../../openapi-s3mini.json", import.meta.url), "utf8");
     return reply.type("application/json; charset=utf-8").send(specification);
   });
 
   fastify.put("/internal/replication", async (request, reply) => {
     const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
-    if (
-      !expectedToken ||
-      !suppliedToken ||
-      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
-    ) {
-      throw new S3Error(
-        "AccessDenied",
-        "The replication token is invalid.",
-        403,
-      );
+    if (!expectedToken || !suppliedToken || !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)) {
+      throw new S3Error("AccessDenied", "The replication token is invalid.", 403);
     }
     const bucket = String(request.headers["x-s3mini-bucket"] || "");
     const key = String(request.headers["x-s3mini-key"] || "");
@@ -302,30 +246,14 @@ export async function registerRoutes(
     const operation = String(request.headers["x-s3mini-operation"] || "");
     const deleteMarker = request.headers["x-s3mini-delete-marker"] === "true";
     const etag = String(request.headers["x-s3mini-etag"] || "");
-    const sha256 = request.headers["x-s3mini-sha256"]
-      ? String(request.headers["x-s3mini-sha256"])
-      : undefined;
+    const sha256 = request.headers["x-s3mini-sha256"] ? String(request.headers["x-s3mini-sha256"]) : undefined;
     const lastModified = Number(request.headers["x-s3mini-last-modified"]);
-    if (
-      !bucket ||
-      !key ||
-      !operation ||
-      (operation === "PutObject" && !versionId) ||
-      !Number.isFinite(lastModified)
-    ) {
-      throw new S3Error(
-        "InvalidRequest",
-        "Replication metadata is incomplete.",
-        400,
-      );
+    if (!bucket || !key || !operation || (operation === "PutObject" && !versionId) || !Number.isFinite(lastModified)) {
+      throw new S3Error("InvalidRequest", "Replication metadata is incomplete.", 400);
     }
     if (operation === "PutObject") {
       if (!etag || !Buffer.isBuffer(request.body)) {
-        throw new S3Error(
-          "InvalidRequest",
-          "Replicated object data is missing.",
-          400,
-        );
+        throw new S3Error("InvalidRequest", "Replicated object data is missing.", 400);
       }
       await s3.acceptReplicatedObject({
         bucket,
@@ -345,44 +273,26 @@ export async function registerRoutes(
         deleteMarker,
       });
     } else {
-      throw new S3Error(
-        "InvalidRequest",
-        "The replication operation is unsupported.",
-        400,
-      );
+      throw new S3Error("InvalidRequest", "The replication operation is unsupported.", 400);
     }
     return reply.code(204).send();
   });
   fastify.put("/internal/replication/bucket", async (request, reply) => {
     const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
-    if (
-      !expectedToken ||
-      !suppliedToken ||
-      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
-    ) {
-      throw new S3Error(
-        "AccessDenied",
-        "The replication token is invalid.",
-        403,
-      );
+    if (!expectedToken || !suppliedToken || !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)) {
+      throw new S3Error("AccessDenied", "The replication token is invalid.", 403);
     }
     const bucket = String(request.headers["x-s3mini-bucket"] || "");
     const location = String(request.headers["x-s3mini-location"] || "local");
-    const accountId = String(
-      request.headers["x-s3mini-account-id"] || "legacy",
-    );
+    const accountId = String(request.headers["x-s3mini-account-id"] || "legacy");
     const quotaBytes = Number(request.headers["x-s3mini-quota-bytes"] || 0);
     if (!bucket) {
       throw new S3Error("InvalidRequest", "Bucket is required.", 400);
     }
     try {
       if (!(await s3.getStorageAccount(accountId))) {
-        throw new S3Error(
-          "NoSuchAccount",
-          "Replicated bucket account metadata is missing.",
-          404,
-        );
+        throw new S3Error("NoSuchAccount", "Replicated bucket account metadata is missing.", 404);
       }
       await s3.createBucket(bucket, location, accountId, quotaBytes);
     } catch (error) {
@@ -395,54 +305,26 @@ export async function registerRoutes(
   fastify.put("/internal/replication/account", async (request, reply) => {
     const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
-    if (
-      !expectedToken ||
-      !suppliedToken ||
-      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
-    ) {
-      throw new S3Error(
-        "AccessDenied",
-        "The replication token is invalid.",
-        403,
-      );
+    if (!expectedToken || !suppliedToken || !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)) {
+      throw new S3Error("AccessDenied", "The replication token is invalid.", 403);
     }
-    await s3.acceptReplicatedStorageAccount(
-      request.body as StorageAccountRecord,
-    );
+    await s3.acceptReplicatedStorageAccount(request.body as StorageAccountRecord);
     return reply.code(204).send();
   });
   fastify.put("/internal/replication/access-key", async (request, reply) => {
     const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
-    if (
-      !expectedToken ||
-      !suppliedToken ||
-      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
-    ) {
-      throw new S3Error(
-        "AccessDenied",
-        "The replication token is invalid.",
-        403,
-      );
+    if (!expectedToken || !suppliedToken || !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)) {
+      throw new S3Error("AccessDenied", "The replication token is invalid.", 403);
     }
-    await s3.acceptReplicatedAccessKey(
-      request.body as Parameters<S3Mini["acceptReplicatedAccessKey"]>[0],
-    );
+    await s3.acceptReplicatedAccessKey(request.body as Parameters<S3Mini["acceptReplicatedAccessKey"]>[0]);
     return reply.code(204).send();
   });
   fastify.put("/internal/replication/user-role", async (request, reply) => {
     const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
-    if (
-      !expectedToken ||
-      !suppliedToken ||
-      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
-    ) {
-      throw new S3Error(
-        "AccessDenied",
-        "The replication token is invalid.",
-        403,
-      );
+    if (!expectedToken || !suppliedToken || !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)) {
+      throw new S3Error("AccessDenied", "The replication token is invalid.", 403);
     }
     const body = request.body as Partial<{
       userId: string;
@@ -464,16 +346,10 @@ export async function registerRoutes(
       !body.sourceNodeId.trim() ||
       body.sourceNodeId !== body.sourceNodeId.trim() ||
       body.sourceNodeId.length > 256 ||
-      (body.email !== undefined &&
-        (typeof body.email !== "string" || body.email.length > 320)) ||
-      (body.name !== undefined &&
-        (typeof body.name !== "string" || body.name.length > 256))
+      (body.email !== undefined && (typeof body.email !== "string" || body.email.length > 320)) ||
+      (body.name !== undefined && (typeof body.name !== "string" || body.name.length > 256))
     ) {
-      throw new S3Error(
-        "InvalidRequest",
-        "The replicated user role is invalid.",
-        400,
-      );
+      throw new S3Error("InvalidRequest", "The replicated user role is invalid.", 400);
     }
     await s3.acceptReplicatedAdminUserRole({
       userId: body.userId,
@@ -488,37 +364,24 @@ export async function registerRoutes(
   fastify.get("/internal/replication/inventory", async (request, reply) => {
     const expectedToken = process.env.S3MINI_REPLICATION_TOKEN?.trim();
     const suppliedToken = request.headers["x-s3mini-replication-token"];
-    if (
-      !expectedToken ||
-      !suppliedToken ||
-      !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)
-    ) {
-      throw new S3Error(
-        "AccessDenied",
-        "The replication token is invalid.",
-        403,
-      );
+    if (!expectedToken || !suppliedToken || !timingSafeTokenEqual(String(suppliedToken).trim(), expectedToken)) {
+      throw new S3Error("AccessDenied", "The replication token is invalid.", 403);
     }
     return reply.send(await s3.listReplicationInventory());
   });
-  fastify.setErrorHandler(
-    (error: Error, request: FastifyRequest, reply: FastifyReply) => {
-      if (error instanceof S3Error) {
-        reply
-          .type("application/xml")
-          .code(error.httpCode)
-          .send(error.toResponseXml(request.id));
-      } else {
-        fastify.log.error(error);
-        reply
-          .type("application/xml")
-          .code(500)
-          .send(
-            `<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>${escapeXml(error.message)}</Message><RequestId>${escapeXml(request.id)}</RequestId></Error>`,
-          );
-      }
-    },
-  );
+  fastify.setErrorHandler((error: Error, request: FastifyRequest, reply: FastifyReply) => {
+    if (error instanceof S3Error) {
+      reply.type("application/xml").code(error.httpCode).send(error.toResponseXml(request.id));
+    } else {
+      fastify.log.error(error);
+      reply
+        .type("application/xml")
+        .code(500)
+        .send(
+          `<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>${escapeXml(error.message)}</Message><RequestId>${escapeXml(request.id)}</RequestId></Error>`,
+        );
+    }
+  });
 
   type DashboardRole = Exclude<AdminUserRole, "revoked">;
   const roleRank: Record<DashboardRole, number> = {
@@ -531,10 +394,7 @@ export async function registerRoutes(
     return roleRank[role] >= roleRank[required];
   }
 
-  async function getOidcRole(profile: {
-    id?: string;
-    email?: string;
-  }): Promise<DashboardRole | undefined> {
+  async function getOidcRole(profile: { id?: string; email?: string }): Promise<DashboardRole | undefined> {
     if (await isDashboardAdmin(profile)) {
       return "admin";
     }
@@ -545,10 +405,7 @@ export async function registerRoutes(
     return record && record.role !== "revoked" ? record.role : undefined;
   }
 
-  async function isDashboardAdmin(profile: {
-    id?: string;
-    email?: string;
-  }): Promise<boolean> {
+  async function isDashboardAdmin(profile: { id?: string; email?: string }): Promise<boolean> {
     const allowedAdmins = (process.env.S3MINI_OIDC_ADMIN_EMAILS || "")
       .split(",")
       .map((email) => email.trim().toLowerCase())
@@ -563,30 +420,19 @@ export async function registerRoutes(
     return record?.role === "admin";
   }
 
-  async function authorizeAdmin(
-    request: FastifyRequest,
-    requiredRole: DashboardRole,
-  ): Promise<void> {
-    if (
-      process.env.S3MINI_TEST_DISABLE_OIDC === "1" &&
-      getCookie(request, "s3mini_test_admin") === "dev-admin"
-    ) {
+  async function authorizeAdmin(request: FastifyRequest, requiredRole: DashboardRole): Promise<void> {
+    if (process.env.S3MINI_TEST_DISABLE_OIDC === "1" && getCookie(request, "s3mini_test_admin") === "dev-admin") {
       return;
     }
     const configuredToken = process.env.S3MINI_ADMIN_TOKEN;
     const suppliedToken = request.headers.authorization?.startsWith("Bearer ")
       ? request.headers.authorization.slice(7)
       : undefined;
-    if (
-      !oidcConfigured() &&
-      configuredToken &&
-      suppliedToken &&
-      timingSafeTokenEqual(suppliedToken, configuredToken)
-    ) {
-      const oidcToken = getCookie(request, "s3mini_oidc_token");
-      if (oidcToken) {
+    if (!oidcConfigured() && configuredToken && suppliedToken && timingSafeTokenEqual(suppliedToken, configuredToken)) {
+      const oidcSession = await getOidcSession(request);
+      if (oidcSession) {
         try {
-          const profile = await getOidcProfile(oidcToken);
+          const profile = await getOidcProfile(oidcSession.accessToken);
           if (profile) {
             await s3.associateAdminToken(configuredToken, profile);
           }
@@ -596,8 +442,7 @@ export async function registerRoutes(
       }
       return;
     }
-    const bearerToken =
-      request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    const bearerToken = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
     if (bearerToken && !oidcConfigured()) {
       try {
         const introspection = await introspectOidcToken(
@@ -606,14 +451,11 @@ export async function registerRoutes(
           oidcClientId()!,
           oidcClientSecret()!,
         );
-        if (
-          introspection.active &&
-          hasOidcScope(introspection.scopes, "s3:admin")
-        ) {
-          const oidcToken = getCookie(request, "s3mini_oidc_token");
-          if (oidcToken) {
+        if (introspection.active && hasOidcScope(introspection.scopes, "s3:admin")) {
+          const oidcSession = await getOidcSession(request);
+          if (oidcSession) {
             try {
-              const profile = await getOidcProfile(oidcToken);
+              const profile = await getOidcProfile(oidcSession.accessToken);
               if (profile) {
                 await s3.associateAdminToken(bearerToken, profile);
               }
@@ -627,10 +469,12 @@ export async function registerRoutes(
         // Fall through to the standard access-denied response.
       }
     }
-    const oidcToken = getCookie(request, "s3mini_oidc_token");
-    if (oidcToken && oidcConfigured()) {
+    const oidcSession = await getOidcSession(request);
+    let authenticatedOidcUser = false;
+    if (oidcSession && oidcConfigured()) {
       try {
-        const profile = await getOidcProfile(oidcToken);
+        const profile = await getOidcProfile(oidcSession.accessToken);
+        authenticatedOidcUser = Boolean(profile);
         const role = profile && (await getOidcRole(profile));
         if (role && meetsRole(role, requiredRole)) {
           return;
@@ -638,6 +482,13 @@ export async function registerRoutes(
       } catch {
         // An invalid or expired browser session is not authorized.
       }
+    }
+    if (
+      oidcConfigured() &&
+      !authenticatedOidcUser &&
+      (getCookie(request, "s3mini_oidc_session") || getCookie(request, "s3mini_oidc_token"))
+    ) {
+      throw new S3Error("AccessDenied", "The OIDC session has expired.", 401);
     }
     throw new S3Error("AccessDenied", "The admin token is invalid.", 403);
   }
@@ -677,22 +528,15 @@ export async function registerRoutes(
   }
 
   function oidcClientSecret(): string | undefined {
-    return (
-      process.env.OIDC_CLIENT_SECRET || process.env.S3MINI_OIDC_CLIENT_SECRET
-    );
+    return process.env.OIDC_CLIENT_SECRET || process.env.S3MINI_OIDC_CLIENT_SECRET;
   }
 
   function requestBaseUrl(request: FastifyRequest): string {
-    const protocol = String(
-      request.headers["x-forwarded-proto"] || "http",
-    ).split(",")[0];
+    const protocol = String(request.headers["x-forwarded-proto"] || "http").split(",")[0];
     return `${protocol}://${request.headers.host || "localhost"}`;
   }
 
-  function getCookie(
-    request: FastifyRequest,
-    name: string,
-  ): string | undefined {
+  function getCookie(request: FastifyRequest, name: string): string | undefined {
     const value = String(request.headers.cookie || "")
       .split(";")
       .map((item) => item.trim())
@@ -700,161 +544,243 @@ export async function registerRoutes(
     return value ? decodeURIComponent(value.slice(name.length + 1)) : undefined;
   }
 
+  async function getOidcSession(request: FastifyRequest): Promise<BrowserOidcSession | undefined> {
+    const sessionId = getCookie(request, "s3mini_oidc_session");
+    if (!sessionId) {
+      // Allow already-issued one-hour access-token cookies to age out during rollout.
+      const legacyToken = getCookie(request, "s3mini_oidc_token");
+      if (!legacyToken) {
+        return undefined;
+      }
+      try {
+        const claims = JSON.parse(Buffer.from(legacyToken.split(".")[1] || "", "base64url").toString("utf8")) as {
+          exp?: number;
+        };
+        return {
+          accessToken: legacyToken,
+          expiresAt: typeof claims.exp === "number" ? claims.exp * 1000 : Date.now() + 3600_000,
+        };
+      } catch {
+        return { accessToken: legacyToken, expiresAt: Date.now() + 3600_000 };
+      }
+    }
+    const storedSession = await s3.getOidcSession(sessionId);
+    if (!storedSession || storedSession.expiresAt <= Date.now()) {
+      if (storedSession) {
+        await s3.deleteOidcSession(sessionId);
+      }
+      return undefined;
+    }
+    let session: BrowserOidcSession;
+    try {
+      session = decryptOidcSession(storedSession.encryptedSession);
+    } catch {
+      await s3.deleteOidcSession(sessionId);
+      return undefined;
+    }
+    if (session.expiresAt > Date.now() + 60_000) {
+      return session;
+    }
+    if (!session.refreshToken) {
+      await s3.deleteOidcSession(sessionId);
+      return undefined;
+    }
+    let refreshing = oidcRefreshes.get(sessionId);
+    if (!refreshing) {
+      refreshing = (async () => {
+        let refreshLockAcquired = false;
+        const refreshLockUntil = Date.now() + 30_000;
+        try {
+          refreshLockAcquired = await s3.tryLockOidcSessionRefresh(sessionId, refreshLockUntil);
+          if (!refreshLockAcquired) {
+            throw new S3Error("ServiceUnavailable", "OIDC session renewal is already in progress.", 503);
+          }
+          const latestStoredSession = await s3.getOidcSession(sessionId);
+          if (!latestStoredSession) {
+            return undefined;
+          }
+          const latestSession = decryptOidcSession(latestStoredSession.encryptedSession);
+          if (latestSession.expiresAt > Date.now() + 60_000) {
+            return latestSession;
+          }
+          if (!latestSession.refreshToken) {
+            await s3.deleteOidcSession(sessionId);
+            return undefined;
+          }
+          const response = await fetch(`${oidcBaseUrl()}/token`, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              grant_type: "refresh_token",
+              refresh_token: latestSession.refreshToken,
+              client_id: oidcClientId()!,
+              client_secret: oidcClientSecret()!,
+            }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!response.ok) {
+            if ([400, 401, 403].includes(response.status)) {
+              await s3.deleteOidcSession(sessionId);
+              return undefined;
+            }
+            throw new S3Error("ServiceUnavailable", "The OIDC provider is temporarily unavailable.", 503);
+          }
+          let result: {
+            access_token?: string;
+            refresh_token?: string;
+            expires_in?: number;
+          };
+          try {
+            result = (await response.json()) as typeof result;
+          } catch {
+            throw new S3Error("ServiceUnavailable", "The OIDC provider returned an invalid refresh response.", 503);
+          }
+          if (typeof result.access_token !== "string" || !result.access_token) {
+            throw new S3Error("ServiceUnavailable", "The OIDC provider returned an incomplete refresh response.", 503);
+          }
+          const next: BrowserOidcSession = {
+            accessToken: result.access_token,
+            refreshToken:
+              typeof result.refresh_token === "string" && result.refresh_token
+                ? result.refresh_token
+                : latestSession.refreshToken,
+            sessionExpiresAt: latestSession.sessionExpiresAt || latestStoredSession.expiresAt,
+            expiresAt:
+              Date.now() +
+              (typeof result.expires_in === "number" && result.expires_in > 0 ? result.expires_in : 3600) * 1000,
+          };
+          const updated = await s3.updateOidcSessionAfterRefresh(
+            sessionId,
+            encryptOidcSession(next),
+            next.sessionExpiresAt || latestStoredSession.expiresAt,
+            refreshLockUntil,
+          );
+          if (!updated) {
+            return undefined;
+          }
+          return next;
+        } catch (error) {
+          if (error instanceof S3Error) {
+            throw error;
+          }
+          throw new S3Error("ServiceUnavailable", "The OIDC provider is temporarily unavailable.", 503);
+        } finally {
+          if (refreshLockAcquired) {
+            await s3.unlockOidcSessionRefresh(sessionId);
+          }
+          oidcRefreshes.delete(sessionId);
+        }
+      })();
+      oidcRefreshes.set(sessionId, refreshing);
+    }
+    return refreshing;
+  }
+
   fastify.get("/admin", async (request, reply) => {
     if (process.env.S3MINI_TEST_DISABLE_OIDC === "1") {
-      reply.header(
-        "Set-Cookie",
-        "s3mini_test_admin=dev-admin; HttpOnly; Path=/; SameSite=Strict",
-      );
+      reply.header("Set-Cookie", "s3mini_test_admin=dev-admin; HttpOnly; Path=/; SameSite=Strict");
     }
     if (oidcConfigured()) {
-      const token = getCookie(request, "s3mini_oidc_token");
-      if (!token) {
+      const session = await getOidcSession(request);
+      if (!session) {
         return reply.redirect("/admin/login");
       }
-      const isAdmin = await getOidcProfile(token)
+      const isAdmin = await getOidcProfile(session.accessToken)
         .then((profile) => (profile ? isDashboardAdmin(profile) : false))
         .catch(() => false);
       if (!isAdmin) {
-        return reply
-          .header("Cache-Control", "no-store")
-          .type("text/html")
-          .code(403)
-          .send(DASHBOARD_ACCESS_ERROR_HTML);
+        return reply.header("Cache-Control", "no-store").type("text/html").code(403).send(DASHBOARD_ACCESS_ERROR_HTML);
       }
     }
     return reply.type("text/html").send(CONTROL_PLANE_HTML);
   });
   fastify.get("/admin/tailwind.css", async (_request, reply) => {
+    return reply.type("text/css").send(await readFile(path.join(process.cwd(), "dist", "ui", "tailwind.css"), "utf8"));
+  });
+  fastify.get("/admin/profile", { preHandler: requireViewer }, async (request, reply) => {
+    const profileSession = await getOidcSession(request);
+    if (profileSession) {
+      const profile = await getOidcProfile(profileSession.accessToken);
+      if (profile) {
+        const adminToken =
+          request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1] || process.env.S3MINI_ADMIN_TOKEN;
+        return reply.send({
+          ...profile,
+          meUrl: oidcProvider() ? `${oidcBaseUrl()}/me` : "",
+          role: (await getOidcRole(profile)) || "viewer",
+          adminTokenOwner: adminToken ? await s3.getAdminTokenOwner(adminToken) : undefined,
+        });
+      }
+    }
+    const token = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1] || process.env.S3MINI_ADMIN_TOKEN;
+    return reply.send({
+      name: "Administrator",
+      email: "",
+      photo: "",
+      meUrl: oidcProvider() ? `${oidcBaseUrl()}/me` : "",
+      role: "admin",
+      adminTokenOwner: token ? await s3.getAdminTokenOwner(token) : undefined,
+    });
+  });
+  fastify.get("/admin/users", { preHandler: requireAdmin }, async (_request, reply) =>
+    reply.send(await s3.listAdminUserRoles()),
+  );
+  fastify.put("/admin/users/:userId", { preHandler: requireAdmin }, async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    const body = request.body as {
+      role?: string;
+      email?: string;
+      name?: string;
+    };
+    if (
+      !userId.trim() ||
+      userId !== userId.trim() ||
+      userId.length > 256 ||
+      !["viewer", "operator", "admin"].includes(body?.role || "") ||
+      (body.email !== undefined && typeof body.email !== "string") ||
+      (body.name !== undefined && typeof body.name !== "string")
+    ) {
+      throw new S3Error("InvalidRequest", "A valid user ID and dashboard role are required.", 400);
+    }
     return reply
-      .type("text/css")
+      .code(200)
       .send(
-        await readFile(
-          path.join(process.cwd(), "dist", "ui", "tailwind.css"),
-          "utf8",
+        await s3.setAdminUserRole(
+          userId,
+          body.email?.trim().slice(0, 320),
+          body.name?.trim().slice(0, 256),
+          body.role as Exclude<AdminUserRole, "revoked">,
         ),
       );
   });
-  fastify.get(
-    "/admin/profile",
-    { preHandler: requireViewer },
-    async (request, reply) => {
-      const profileToken = getCookie(request, "s3mini_oidc_token");
-      if (profileToken) {
-        const profile = await getOidcProfile(profileToken);
-        if (profile) {
-          const adminToken =
-            request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ||
-            process.env.S3MINI_ADMIN_TOKEN;
-          return reply.send({
-            ...profile,
-            meUrl: oidcProvider() ? `${oidcBaseUrl()}/me` : "",
-            role: (await getOidcRole(profile)) || "viewer",
-            adminTokenOwner: adminToken
-              ? await s3.getAdminTokenOwner(adminToken)
-              : undefined,
-          });
-        }
-      }
-      const token =
-        request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ||
-        process.env.S3MINI_ADMIN_TOKEN;
-      return reply.send({
-        name: "Administrator",
-        email: "",
-        photo: "",
-        meUrl: oidcProvider() ? `${oidcBaseUrl()}/me` : "",
-        role: "admin",
-        adminTokenOwner: token ? await s3.getAdminTokenOwner(token) : undefined,
-      });
-    },
-  );
-  fastify.get(
-    "/admin/users",
-    { preHandler: requireAdmin },
-    async (_request, reply) => reply.send(await s3.listAdminUserRoles()),
-  );
-  fastify.put(
-    "/admin/users/:userId",
-    { preHandler: requireAdmin },
-    async (request, reply) => {
-      const { userId } = request.params as { userId: string };
-      const body = request.body as {
-        role?: string;
-        email?: string;
-        name?: string;
-      };
-      if (
-        !userId.trim() ||
-        userId !== userId.trim() ||
-        userId.length > 256 ||
-        !["viewer", "operator", "admin"].includes(body?.role || "") ||
-        (body.email !== undefined && typeof body.email !== "string") ||
-        (body.name !== undefined && typeof body.name !== "string")
-      ) {
-        throw new S3Error(
-          "InvalidRequest",
-          "A valid user ID and dashboard role are required.",
-          400,
-        );
-      }
-      return reply
-        .code(200)
-        .send(
-          await s3.setAdminUserRole(
-            userId,
-            body.email?.trim().slice(0, 320),
-            body.name?.trim().slice(0, 256),
-            body.role as Exclude<AdminUserRole, "revoked">,
-          ),
-        );
-    },
-  );
-  fastify.delete(
-    "/admin/users/:userId",
-    { preHandler: requireAdmin },
-    async (request, reply) => {
-      const { userId } = request.params as { userId: string };
-      if (!userId.trim() || userId !== userId.trim() || userId.length > 256) {
-        throw new S3Error(
-          "InvalidRequest",
-          "A valid user ID is required.",
-          400,
-        );
-      }
-      await s3.revokeAdminUserRole(userId);
-      return reply.code(204).send();
-    },
-  );
+  fastify.delete("/admin/users/:userId", { preHandler: requireAdmin }, async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!userId.trim() || userId !== userId.trim() || userId.length > 256) {
+      throw new S3Error("InvalidRequest", "A valid user ID is required.", 400);
+    }
+    await s3.revokeAdminUserRole(userId);
+    return reply.code(204).send();
+  });
   fastify.get("/admin/login", async (request, reply) => {
     if (!oidcConfigured()) {
       throw new S3Error("AccessDenied", "OIDC is not configured.", 403);
     }
     const verifier = crypto.randomBytes(32).toString("base64url");
     const state = crypto.randomBytes(24).toString("base64url");
-    const challenge = crypto
-      .createHash("sha256")
-      .update(verifier)
-      .digest("base64url");
+    const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
     const redirectUri =
       process.env.OIDC_REDIRECT_URI ||
       process.env.S3MINI_OIDC_REDIRECT_URI ||
       `${requestBaseUrl(request)}/auth/callback`;
-    const stateCookie = Buffer.from(
-      JSON.stringify({ state, verifier }),
-      "utf8",
-    ).toString("base64url");
-    reply.header(
-      "Set-Cookie",
-      `s3mini_oidc_state=${stateCookie}; HttpOnly; Path=/; SameSite=Lax; Max-Age=600`,
-    );
+    const stateCookie = Buffer.from(JSON.stringify({ state, verifier }), "utf8").toString("base64url");
+    reply.header("Set-Cookie", `s3mini_oidc_state=${stateCookie}; HttpOnly; Path=/; SameSite=Lax; Max-Age=600`);
     const url = new URL(`${oidcBaseUrl()}/authorize`);
     url.search = new URLSearchParams({
       response_type: "code",
       client_id: oidcClientId()!,
       redirect_uri: redirectUri,
       state,
-      scope: "openid profile email",
+      scope: "openid profile email offline_access",
       code_challenge: challenge,
       code_challenge_method: "S256",
     }).toString();
@@ -871,11 +797,7 @@ export async function registerRoutes(
     };
     const saved = getCookie(request, "s3mini_oidc_state");
     if (!saved || !query.code || !query.state) {
-      throw new S3Error(
-        "AccessDenied",
-        query.error || "The OIDC callback is invalid.",
-        403,
-      );
+      throw new S3Error("AccessDenied", query.error || "The OIDC callback is invalid.", 403);
     }
     let state: { state: string; verifier: string };
     try {
@@ -905,61 +827,67 @@ export async function registerRoutes(
     if (!tokenResponse.ok) {
       throw new S3Error("AccessDenied", "The OIDC token exchange failed.", 403);
     }
-    const token = ((await tokenResponse.json()) as { access_token?: string })
-      .access_token;
-    if (!token) {
-      throw new S3Error(
-        "AccessDenied",
-        "The OIDC token response was incomplete.",
-        403,
-      );
+    const tokenResult = (await tokenResponse.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+    if (!tokenResult.access_token) {
+      throw new S3Error("AccessDenied", "The OIDC token response was incomplete.", 403);
     }
-    reply.header(
-      "Set-Cookie",
-      `s3mini_oidc_token=${encodeURIComponent(token)}; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=3600`,
-    );
+    const sessionId = crypto.randomBytes(32).toString("base64url");
+    const session: BrowserOidcSession = {
+      accessToken: tokenResult.access_token,
+      refreshToken: typeof tokenResult.refresh_token === "string" ? tokenResult.refresh_token : undefined,
+      sessionExpiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      expiresAt:
+        Date.now() +
+        (typeof tokenResult.expires_in === "number" && tokenResult.expires_in > 0 ? tokenResult.expires_in : 3600) *
+          1000,
+    };
+    await s3.putOidcSession(sessionId, encryptOidcSession(session), session.sessionExpiresAt!);
+    const secure = requestBaseUrl(request).startsWith("https://") ? "; Secure" : "";
+    reply.header("Set-Cookie", [
+      `s3mini_oidc_session=${sessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000${secure}`,
+      "s3mini_oidc_state=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0",
+      "s3mini_oidc_token=; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=0",
+    ]);
     return reply.redirect("/admin");
   });
-  const reservedAuthPath = async (
-    request: FastifyRequest,
-    reply: FastifyReply,
-  ) =>
+  const reservedAuthPath = async (request: FastifyRequest, reply: FastifyReply) =>
     reply
       .type("application/xml")
       .code(404)
-      .send(
-        new S3Error(
-          "NoSuchKey",
-          "The authentication path is reserved.",
-          404,
-        ).toResponseXml(request.id),
-      );
-  const clearDashboardSession = (reply: FastifyReply) =>
+      .send(new S3Error("NoSuchKey", "The authentication path is reserved.", 404).toResponseXml(request.id));
+  const clearDashboardSession = async (request: FastifyRequest, reply: FastifyReply) => {
+    const sessionId = getCookie(request, "s3mini_oidc_session");
+    if (sessionId) {
+      await oidcRefreshes.get(sessionId)?.catch(() => undefined);
+      await s3.deleteOidcSession(sessionId);
+      oidcRefreshes.delete(sessionId);
+    }
     reply.header("Set-Cookie", [
+      "s3mini_oidc_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0",
       "s3mini_oidc_token=; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=0",
       "s3mini_oidc_state=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0",
     ]);
-  const logoutPage = async (_request: FastifyRequest, reply: FastifyReply) => {
-    clearDashboardSession(reply);
-    return reply
-      .header("Cache-Control", "no-store")
-      .type("text/html")
-      .send(SIGNED_OUT_HTML);
+  };
+  const logoutPage = async (request: FastifyRequest, reply: FastifyReply) => {
+    await clearDashboardSession(request, reply);
+    return reply.header("Cache-Control", "no-store").type("text/html").send(SIGNED_OUT_HTML);
   };
   fastify.get("/auth/logout", logoutPage);
   fastify.post("/auth/logout", logoutPage);
   fastify.all("/auth", reservedAuthPath);
   fastify.all("/auth/*", reservedAuthPath);
-  fastify.post("/admin/logout", async (_request, reply) => {
-    clearDashboardSession(reply);
+  fastify.post("/admin/logout", async (request, reply) => {
+    await clearDashboardSession(request, reply);
     return reply.code(204).send();
   });
 
   async function getOidcProfile(
     token: string,
-  ): Promise<
-    { id?: string; name?: string; email?: string; photo?: string } | undefined
-  > {
+  ): Promise<{ id?: string; name?: string; email?: string; photo?: string } | undefined> {
     const audience = process.env.S3MINI_OIDC_AUDIENCE || oidcClientId()!;
     const claims = await verifyOidcToken(token, oidcBaseUrl(), audience);
     const response = await fetch(`${oidcBaseUrl()}/userinfo`, {
@@ -981,62 +909,36 @@ export async function registerRoutes(
   }
 
   async function authorizeProvisioning(request: FastifyRequest): Promise<void> {
-    const bearerToken =
-      request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    const bearerToken = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
     if (!bearerToken || !oidcConfigured()) {
-      throw new S3Error(
-        "AccessDenied",
-        "A bearer token with s3:provision is required.",
-        403,
-      );
+      throw new S3Error("AccessDenied", "A bearer token with s3:provision is required.", 403);
     }
     try {
-      const token = await introspectOidcToken(
-        bearerToken,
-        oidcBaseUrl(),
-        oidcClientId()!,
-        oidcClientSecret()!,
-      );
+      const token = await introspectOidcToken(bearerToken, oidcBaseUrl(), oidcClientId()!, oidcClientSecret()!);
       if (token.active && token.scopes.includes("s3:provision")) {
         return;
       }
     } catch {
       // Return a uniform authorization failure for invalid tokens.
     }
-    throw new S3Error(
-      "AccessDenied",
-      "The bearer token lacks the required s3:provision scope.",
-      403,
-    );
+    throw new S3Error("AccessDenied", "The bearer token lacks the required s3:provision scope.", 403);
   }
 
-  fastify.get(
-    "/provisioning/accounts",
-    { preHandler: authorizeProvisioning },
-    async (_request, reply) => reply.send(await s3.listStorageAccounts()),
+  fastify.get("/provisioning/accounts", { preHandler: authorizeProvisioning }, async (_request, reply) =>
+    reply.send(await s3.listStorageAccounts()),
   );
-  fastify.post(
-    "/provisioning/accounts",
-    { preHandler: authorizeProvisioning },
-    async (request, reply) => {
-      const body = request.body as {
-        externalId?: string;
-        displayName?: string;
-      };
-      if (typeof body?.externalId !== "string" || !body.externalId.trim()) {
-        throw new S3Error("InvalidRequest", "externalId is required.", 400);
-      }
-      const defaultQuota =
-        Number(process.env.S3MINI_DEFAULT_ACCOUNT_QUOTA_BYTES) ||
-        10 * 1024 * 1024 * 1024;
-      const account = await s3.createStorageAccount(
-        body.externalId,
-        body.displayName || "",
-        defaultQuota,
-      );
-      return reply.code(201).send(account);
-    },
-  );
+  fastify.post("/provisioning/accounts", { preHandler: authorizeProvisioning }, async (request, reply) => {
+    const body = request.body as {
+      externalId?: string;
+      displayName?: string;
+    };
+    if (typeof body?.externalId !== "string" || !body.externalId.trim()) {
+      throw new S3Error("InvalidRequest", "externalId is required.", 400);
+    }
+    const defaultQuota = Number(process.env.S3MINI_DEFAULT_ACCOUNT_QUOTA_BYTES) || 10 * 1024 * 1024 * 1024;
+    const account = await s3.createStorageAccount(body.externalId, body.displayName || "", defaultQuota);
+    return reply.code(201).send(account);
+  });
   fastify.post(
     "/provisioning/accounts/:accountId/access-keys",
     { preHandler: authorizeProvisioning },
@@ -1046,20 +948,13 @@ export async function registerRoutes(
         throw new S3Error("NoSuchAccount", "Storage account not found.", 404);
       }
       const body = request.body as { displayName?: string } | undefined;
-      return reply
-        .code(201)
-        .send(await s3.createAccessKey(body?.displayName || "", accountId));
+      return reply.code(201).send(await s3.createAccessKey(body?.displayName || "", accountId));
     },
   );
   fastify.get(
     "/provisioning/accounts/:accountId/access-keys",
     { preHandler: authorizeProvisioning },
-    async (request, reply) =>
-      reply.send(
-        await s3.listAccessKeys(
-          (request.params as { accountId: string }).accountId,
-        ),
-      ),
+    async (request, reply) => reply.send(await s3.listAccessKeys((request.params as { accountId: string }).accountId)),
   );
   fastify.delete(
     "/provisioning/accounts/:accountId/access-keys/:accessKeyId",
@@ -1091,30 +986,16 @@ export async function registerRoutes(
         locationConstraint?: string;
       };
       if (typeof body?.name !== "string") {
-        throw new S3Error(
-          "InvalidBucketName",
-          "A bucket name is required.",
-          400,
-        );
+        throw new S3Error("InvalidBucketName", "A bucket name is required.", 400);
       }
-      await s3.createBucket(
-        body.name,
-        body.locationConstraint,
-        accountId,
-        account.quotaBytes,
-      );
+      await s3.createBucket(body.name, body.locationConstraint, accountId, account.quotaBytes);
       return reply.code(201).send({ name: body.name, accountId });
     },
   );
   fastify.get(
     "/provisioning/accounts/:accountId/buckets",
     { preHandler: authorizeProvisioning },
-    async (request, reply) =>
-      reply.send(
-        await s3.listBuckets(
-          (request.params as { accountId: string }).accountId,
-        ),
-      ),
+    async (request, reply) => reply.send(await s3.listBuckets((request.params as { accountId: string }).accountId)),
   );
   fastify.delete(
     "/provisioning/accounts/:accountId/buckets/:bucket",
@@ -1139,12 +1020,7 @@ export async function registerRoutes(
       };
       await s3.assertBucketAccount(bucket, accountId);
       if (!request.body || typeof request.body !== "object") {
-        throw new S3Error(
-          "MalformedPolicy",
-          "A JSON bucket policy is required.",
-          400,
-          bucket,
-        );
+        throw new S3Error("MalformedPolicy", "A JSON bucket policy is required.", 400, bucket);
       }
       await s3.putBucketConfiguration(bucket, "policy", request.body);
       return reply.code(204).send();
@@ -1165,311 +1041,175 @@ export async function registerRoutes(
     },
   );
 
-  fastify.get(
-    "/admin/accounts",
-    { preHandler: requireAdmin },
-    async (_request, reply) => reply.send(await s3.listStorageAccounts()),
+  fastify.get("/admin/accounts", { preHandler: requireAdmin }, async (_request, reply) =>
+    reply.send(await s3.listStorageAccounts()),
   );
-  fastify.put(
-    "/admin/accounts/:accountId/quota",
-    { preHandler: requireAdmin },
-    async (request, reply) => {
-      const body = request.body as { quotaBytes?: number };
-      await s3.setStorageAccountQuota(
-        (request.params as { accountId: string }).accountId,
-        body?.quotaBytes as number,
-      );
-      return reply.code(204).send();
-    },
-  );
-  fastify.post(
-    "/admin/oidc/api-tokens",
-    { preHandler: requireAdmin },
-    async (request, reply) => {
-      const apiToken = process.env.OIDC_API_TOKEN?.trim();
-      const clientId = oidcClientId();
-      if (!apiToken || !clientId || !oidcProvider()) {
-        return reply.code(503).send({
-          error:
-            "OIDC token issuance is not configured. Set OIDC_API_TOKEN and the OIDC client settings.",
-        });
-      }
-
-      const body = request.body as {
-        label?: unknown;
-        scopes?: unknown;
-      };
-      const label = typeof body?.label === "string" ? body.label.trim() : "";
-      const scopes = body?.scopes;
-      const allowedScopes = new Set([
-        "s3:read",
-        "s3:write",
-        "s3:admin",
-        "s3:provision",
-      ]);
-      if (
-        !label ||
-        label.length > 128 ||
-        !Array.isArray(scopes) ||
-        scopes.length === 0 ||
-        scopes.length > allowedScopes.size ||
-        scopes.some(
-          (scope) => typeof scope !== "string" || !allowedScopes.has(scope),
-        ) ||
-        new Set(scopes).size !== scopes.length
-      ) {
-        return reply.code(400).send({
-          error:
-            "A label and one or more distinct supported S3 scopes are required.",
-        });
-      }
-
-      let upstream: Response;
-      try {
-        upstream = await fetch(
-          new URL(
-            `/api-tokens/${encodeURIComponent(clientId)}/issue`,
-            oidcBaseUrl(),
-          ),
-          {
-            method: "POST",
-            headers: {
-              authorization: `Bearer ${apiToken}`,
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({ label, scopes }),
-          },
-        );
-      } catch {
-        return reply
-          .code(502)
-          .send({ error: "The OIDC token service could not be reached." });
-      }
-
-      if (upstream.status === 400) {
-        return reply.code(400).send({
-          error:
-            "The OIDC provider rejected the requested scopes. Check the scopes allowed for this client.",
-        });
-      }
-      if (!upstream.ok) {
-        return reply.code(502).send({
-          error:
-            upstream.status === 401
-              ? "The OIDC provider rejected OIDC_API_TOKEN."
-              : "The OIDC provider could not issue a token.",
-        });
-      }
-
-      let result: Record<string, unknown>;
-      try {
-        const parsed: unknown = await upstream.json();
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new Error("Invalid token response shape");
-        }
-        result = parsed as Record<string, unknown>;
-      } catch {
-        return reply.code(502).send({
-          error: "The OIDC provider returned an invalid token response.",
-        });
-      }
-      const token = [
-        result.token,
-        result.access_token,
-        result.api_token,
-        result.apiToken,
-        result.value,
-      ].find(
-        (value): value is string =>
-          typeof value === "string" && value.length > 0,
-      );
-      if (!token) {
-        return reply
-          .code(502)
-          .send({ error: "The OIDC provider returned no token value." });
-      }
-      const expiry =
-        result.expiresAt ?? result.expires_at ?? result.expiration ?? null;
-      const expiresIn = result.expiresIn ?? result.expires_in ?? null;
-
-      return reply.code(201).send({
-        token,
-        label,
-        scopes,
-        ...(typeof expiry === "string" || typeof expiry === "number"
-          ? { expiresAt: expiry }
-          : {}),
-        ...(typeof expiresIn === "string" || typeof expiresIn === "number"
-          ? { expiresIn }
-          : {}),
+  fastify.put("/admin/accounts/:accountId/quota", { preHandler: requireAdmin }, async (request, reply) => {
+    const body = request.body as { quotaBytes?: number };
+    await s3.setStorageAccountQuota((request.params as { accountId: string }).accountId, body?.quotaBytes as number);
+    return reply.code(204).send();
+  });
+  fastify.post("/admin/oidc/api-tokens", { preHandler: requireAdmin }, async (request, reply) => {
+    const apiToken = process.env.OIDC_API_TOKEN?.trim();
+    const clientId = oidcClientId();
+    if (!apiToken || !clientId || !oidcProvider()) {
+      return reply.code(503).send({
+        error: "OIDC token issuance is not configured. Set OIDC_API_TOKEN and the OIDC client settings.",
       });
-    },
-  );
-  fastify.put(
-    "/admin/buckets/:bucket/quota",
-    { preHandler: requireAdmin },
-    async (request, reply) => {
-      const body = request.body as { quotaBytes?: number };
-      await s3.setBucketQuota(
-        (request.params as { bucket: string }).bucket,
-        body?.quotaBytes as number,
-      );
-      return reply.code(204).send();
-    },
-  );
-  fastify.get(
-    "/admin/replication/health",
-    { preHandler: requireViewer },
-    async (_request, reply) => reply.send(replication?.getPeerHealth() || []),
-  );
-  fastify.get(
-    "/admin/replication/summary",
-    { preHandler: requireViewer },
-    async (_request, reply) => {
-      const peers = (process.env.S3MINI_REPLICATION_PEERS || "")
-        .split(",")
-        .map((peer) => peer.trim())
-        .filter(Boolean);
-      const quorum = Math.max(
-        0,
-        Math.min(
-          peers.length,
-          Number(process.env.S3MINI_REPLICATION_QUORUM) || 0,
-        ),
-      );
-      return reply.send(await s3.getReplicationSummary(peers, quorum));
-    },
-  );
-  fastify.get(
-    "/admin/replication/events",
-    { preHandler: requireViewer },
-    async (request, reply) => {
-      const query = request.query as { status?: string; limit?: string };
-      const statuses = [
-        "Pending",
-        "Delivered",
-        "Failed",
-        "DeadLetter",
-      ] as const;
-      const status = statuses.includes(
-        query.status as (typeof statuses)[number],
-      )
-        ? (query.status as (typeof statuses)[number])
-        : undefined;
-      return reply.send(
-        await s3.listReplicationEvents(Number(query.limit) || 100, status),
-      );
-    },
-  );
-  fastify.post(
-    "/admin/replication/events/:id/retry",
-    { preHandler: requireOperator },
-    async (request, reply) => {
-      await s3.retryReplicationEvent(
-        Number((request.params as { id: string }).id),
-      );
-      return reply.code(204).send();
-    },
-  );
-  fastify.get(
-    "/admin/access-keys",
-    { preHandler: requireViewer },
-    async (_request, reply) => {
-      return reply.send(await s3.listAccessKeys());
-    },
-  );
-  fastify.post(
-    "/admin/access-keys",
-    { preHandler: requireOperator },
-    async (request, reply) => {
-      const body =
-        request.body && typeof request.body === "object"
-          ? (request.body as { displayName?: string })
-          : {};
-      return reply
-        .code(201)
-        .send(await s3.createAccessKey(body.displayName || ""));
-    },
-  );
-  fastify.delete(
-    "/admin/access-keys/:accessKeyId",
-    { preHandler: requireOperator },
-    async (request, reply) => {
-      const { accessKeyId } = request.params as { accessKeyId: string };
-      await s3.setAccessKeyStatus(accessKeyId, "Disabled");
-      return reply.code(204).send();
-    },
-  );
-  fastify.get(
-    "/admin/buckets",
-    { preHandler: requireViewer },
-    async (_request, reply) => reply.send(await s3.listBuckets()),
-  );
-  fastify.post(
-    "/admin/buckets",
-    { preHandler: requireOperator },
-    async (request, reply) => {
-      const body =
-        request.body && typeof request.body === "object"
-          ? (request.body as { name?: string; locationConstraint?: string })
-          : {};
-      if (!body.name) {
-        throw new S3Error(
-          "InvalidBucketName",
-          "A bucket name is required.",
-          400,
-        );
+    }
+
+    const body = request.body as {
+      label?: unknown;
+      scopes?: unknown;
+    };
+    const label = typeof body?.label === "string" ? body.label.trim() : "";
+    const scopes = body?.scopes;
+    const allowedScopes = new Set(["s3:read", "s3:write", "s3:admin", "s3:provision"]);
+    if (
+      !label ||
+      label.length > 128 ||
+      !Array.isArray(scopes) ||
+      scopes.length === 0 ||
+      scopes.length > allowedScopes.size ||
+      scopes.some((scope) => typeof scope !== "string" || !allowedScopes.has(scope)) ||
+      new Set(scopes).size !== scopes.length
+    ) {
+      return reply.code(400).send({
+        error: "A label and one or more distinct supported S3 scopes are required.",
+      });
+    }
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(new URL(`/api-tokens/${encodeURIComponent(clientId)}/issue`, oidcBaseUrl()), {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${apiToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ label, scopes }),
+      });
+    } catch {
+      return reply.code(502).send({ error: "The OIDC token service could not be reached." });
+    }
+
+    if (upstream.status === 400) {
+      return reply.code(400).send({
+        error: "The OIDC provider rejected the requested scopes. Check the scopes allowed for this client.",
+      });
+    }
+    if (!upstream.ok) {
+      return reply.code(502).send({
+        error:
+          upstream.status === 401
+            ? "The OIDC provider rejected OIDC_API_TOKEN."
+            : "The OIDC provider could not issue a token.",
+      });
+    }
+
+    let result: Record<string, unknown>;
+    try {
+      const parsed: unknown = await upstream.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Invalid token response shape");
       }
-      await s3.createBucket(body.name, body.locationConstraint);
-      return reply.code(201).send({ name: body.name });
-    },
+      result = parsed as Record<string, unknown>;
+    } catch {
+      return reply.code(502).send({
+        error: "The OIDC provider returned an invalid token response.",
+      });
+    }
+    const token = [result.token, result.access_token, result.api_token, result.apiToken, result.value].find(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    );
+    if (!token) {
+      return reply.code(502).send({ error: "The OIDC provider returned no token value." });
+    }
+    const expiry = result.expiresAt ?? result.expires_at ?? result.expiration ?? null;
+    const expiresIn = result.expiresIn ?? result.expires_in ?? null;
+
+    return reply.code(201).send({
+      token,
+      label,
+      scopes,
+      ...(typeof expiry === "string" || typeof expiry === "number" ? { expiresAt: expiry } : {}),
+      ...(typeof expiresIn === "string" || typeof expiresIn === "number" ? { expiresIn } : {}),
+    });
+  });
+  fastify.put("/admin/buckets/:bucket/quota", { preHandler: requireAdmin }, async (request, reply) => {
+    const body = request.body as { quotaBytes?: number };
+    await s3.setBucketQuota((request.params as { bucket: string }).bucket, body?.quotaBytes as number);
+    return reply.code(204).send();
+  });
+  fastify.get("/admin/replication/health", { preHandler: requireViewer }, async (_request, reply) =>
+    reply.send(replication?.getPeerHealth() || []),
   );
-  fastify.delete(
-    "/admin/buckets/:bucket",
-    { preHandler: requireOperator },
-    async (request, reply) => {
-      await s3.deleteBucket((request.params as { bucket: string }).bucket);
-      return reply.code(204).send();
-    },
+  fastify.get("/admin/replication/summary", { preHandler: requireViewer }, async (_request, reply) => {
+    const peers = (process.env.S3MINI_REPLICATION_PEERS || "")
+      .split(",")
+      .map((peer) => peer.trim())
+      .filter(Boolean);
+    const quorum = Math.max(0, Math.min(peers.length, Number(process.env.S3MINI_REPLICATION_QUORUM) || 0));
+    return reply.send(await s3.getReplicationSummary(peers, quorum));
+  });
+  fastify.get("/admin/replication/events", { preHandler: requireViewer }, async (request, reply) => {
+    const query = request.query as { status?: string; limit?: string };
+    const statuses = ["Pending", "Delivered", "Failed", "DeadLetter"] as const;
+    const status = statuses.includes(query.status as (typeof statuses)[number])
+      ? (query.status as (typeof statuses)[number])
+      : undefined;
+    return reply.send(await s3.listReplicationEvents(Number(query.limit) || 100, status));
+  });
+  fastify.post("/admin/replication/events/:id/retry", { preHandler: requireOperator }, async (request, reply) => {
+    await s3.retryReplicationEvent(Number((request.params as { id: string }).id));
+    return reply.code(204).send();
+  });
+  fastify.get("/admin/access-keys", { preHandler: requireViewer }, async (_request, reply) => {
+    return reply.send(await s3.listAccessKeys());
+  });
+  fastify.post("/admin/access-keys", { preHandler: requireOperator }, async (request, reply) => {
+    const body = request.body && typeof request.body === "object" ? (request.body as { displayName?: string }) : {};
+    return reply.code(201).send(await s3.createAccessKey(body.displayName || ""));
+  });
+  fastify.delete("/admin/access-keys/:accessKeyId", { preHandler: requireOperator }, async (request, reply) => {
+    const { accessKeyId } = request.params as { accessKeyId: string };
+    await s3.setAccessKeyStatus(accessKeyId, "Disabled");
+    return reply.code(204).send();
+  });
+  fastify.get("/admin/buckets", { preHandler: requireViewer }, async (_request, reply) =>
+    reply.send(await s3.listBuckets()),
   );
-  fastify.get(
-    "/admin/buckets/:bucket/policy",
-    { preHandler: requireViewer },
-    async (request, reply) => {
-      const bucket = (request.params as { bucket: string }).bucket;
-      return reply.send(
-        (await s3.getBucketConfiguration(bucket, "policy")) || {},
-      );
-    },
-  );
-  fastify.put(
-    "/admin/buckets/:bucket/policy",
-    { preHandler: requireOperator },
-    async (request, reply) => {
-      const bucket = (request.params as { bucket: string }).bucket;
-      if (!request.body || typeof request.body !== "object") {
-        throw new S3Error(
-          "MalformedPolicy",
-          "A JSON bucket policy is required.",
-          400,
-          bucket,
-        );
-      }
-      await s3.putBucketConfiguration(bucket, "policy", request.body);
-      return reply.code(204).send();
-    },
-  );
-  fastify.delete(
-    "/admin/buckets/:bucket/policy",
-    { preHandler: requireOperator },
-    async (request, reply) => {
-      await s3.deleteBucketConfiguration(
-        (request.params as { bucket: string }).bucket,
-        "policy",
-      );
-      return reply.code(204).send();
-    },
-  );
+  fastify.post("/admin/buckets", { preHandler: requireOperator }, async (request, reply) => {
+    const body =
+      request.body && typeof request.body === "object"
+        ? (request.body as { name?: string; locationConstraint?: string })
+        : {};
+    if (!body.name) {
+      throw new S3Error("InvalidBucketName", "A bucket name is required.", 400);
+    }
+    await s3.createBucket(body.name, body.locationConstraint);
+    return reply.code(201).send({ name: body.name });
+  });
+  fastify.delete("/admin/buckets/:bucket", { preHandler: requireOperator }, async (request, reply) => {
+    await s3.deleteBucket((request.params as { bucket: string }).bucket);
+    return reply.code(204).send();
+  });
+  fastify.get("/admin/buckets/:bucket/policy", { preHandler: requireViewer }, async (request, reply) => {
+    const bucket = (request.params as { bucket: string }).bucket;
+    return reply.send((await s3.getBucketConfiguration(bucket, "policy")) || {});
+  });
+  fastify.put("/admin/buckets/:bucket/policy", { preHandler: requireOperator }, async (request, reply) => {
+    const bucket = (request.params as { bucket: string }).bucket;
+    if (!request.body || typeof request.body !== "object") {
+      throw new S3Error("MalformedPolicy", "A JSON bucket policy is required.", 400, bucket);
+    }
+    await s3.putBucketConfiguration(bucket, "policy", request.body);
+    return reply.code(204).send();
+  });
+  fastify.delete("/admin/buckets/:bucket/policy", { preHandler: requireOperator }, async (request, reply) => {
+    await s3.deleteBucketConfiguration((request.params as { bucket: string }).bucket, "policy");
+    return reply.code(204).send();
+  });
 
   // --- Bucket Operations ---
 
@@ -1483,9 +1223,7 @@ export async function registerRoutes(
         CreationDate: b.creationDate.toISOString(),
       })),
     };
-    reply
-      .type("application/xml")
-      .send(wrapXml("ListAllMyBucketsResult", response));
+    reply.type("application/xml").send(wrapXml("ListAllMyBucketsResult", response));
   }
 
   async function putBucket(request: FastifyRequest, reply: FastifyReply) {
@@ -1493,15 +1231,9 @@ export async function registerRoutes(
     const query = request.query as Record<string, string | undefined>;
     if (query.versioning !== undefined) {
       const body = String(request.body || "");
-      const status = readXmlTag(body, "Status") as
-        "Enabled" | "Suspended" | undefined;
+      const status = readXmlTag(body, "Status") as "Enabled" | "Suspended" | undefined;
       if (!status) {
-        throw new S3Error(
-          "MalformedXML",
-          "Versioning status is required.",
-          400,
-          params.bucket,
-        );
+        throw new S3Error("MalformedXML", "Versioning status is required.", 400, params.bucket);
       }
       await s3.putVersioning(params.bucket, status);
       return reply.code(200).send();
@@ -1514,18 +1246,12 @@ export async function registerRoutes(
     const configuration = configurationQuery(query);
     if (configuration) {
       const value =
-        configuration === "lifecycleConfiguration"
-          ? parseLifecycleXml(request.body)
-          : parseJsonOrXml(request.body);
+        configuration === "lifecycleConfiguration" ? parseLifecycleXml(request.body) : parseJsonOrXml(request.body);
       await s3.putBucketConfiguration(params.bucket, configuration, value);
       return reply.code(200).send();
     }
     const credentials = await resolveCredentials(s3, request, false);
-    await s3.createBucket(
-      params.bucket,
-      query.locationConstraint,
-      credentials?.accountId || "legacy",
-    );
+    await s3.createBucket(params.bucket, query.locationConstraint, credentials?.accountId || "legacy");
     reply.code(200).send();
   }
 
@@ -1559,25 +1285,13 @@ export async function registerRoutes(
     const params = request.params as { bucket: string };
     const query = request.query as Record<string, string | undefined>;
     if (query.delete === undefined) {
-      throw new S3Error(
-        "InvalidRequest",
-        "The delete query parameter is required.",
-        400,
-        params.bucket,
-      );
+      throw new S3Error("InvalidRequest", "The delete query parameter is required.", 400, params.bucket);
     }
-    const keys = [
-      ...String(request.body || "").matchAll(
-        /<Object\b[^>]*>\s*<Key>([^<]*)<\/Key>/g,
-      ),
-    ].map((match) => unescapeXml(match[1]));
+    const keys = [...String(request.body || "").matchAll(/<Object\b[^>]*>\s*<Key>([^<]*)<\/Key>/g)].map((match) =>
+      unescapeXml(match[1]),
+    );
     if (!keys.length) {
-      throw new S3Error(
-        "MalformedXML",
-        "At least one object key is required.",
-        400,
-        params.bucket,
-      );
+      throw new S3Error("MalformedXML", "At least one object key is required.", 400, params.bucket);
     }
     const result = await s3.deleteObjects(params.bucket, keys);
     return reply.type("application/xml").send(
@@ -1600,12 +1314,8 @@ export async function registerRoutes(
       rules?: Array<Record<string, unknown>>;
     }>(params.bucket, "corsConfiguration");
     const rule = configuration?.rules?.find((candidate) => {
-      const origins = Array.isArray(candidate.allowedOrigins)
-        ? candidate.allowedOrigins
-        : [];
-      const methods = Array.isArray(candidate.allowedMethods)
-        ? candidate.allowedMethods
-        : [];
+      const origins = Array.isArray(candidate.allowedOrigins) ? candidate.allowedOrigins : [];
+      const methods = Array.isArray(candidate.allowedMethods) ? candidate.allowedMethods : [];
       return (
         !!origin &&
         (origins.includes("*") || origins.includes(origin)) &&
@@ -1613,33 +1323,16 @@ export async function registerRoutes(
       );
     });
     if (!rule) {
-      throw new S3Error(
-        "AccessDenied",
-        "CORS request is not allowed.",
-        403,
-        params.bucket,
-      );
+      throw new S3Error("AccessDenied", "CORS request is not allowed.", 403, params.bucket);
     }
-    const origins = Array.isArray(rule.allowedOrigins)
-      ? rule.allowedOrigins
-      : [];
-    const methods = Array.isArray(rule.allowedMethods)
-      ? rule.allowedMethods
-      : [];
-    const allowedHeaders = Array.isArray(rule.allowedHeaders)
-      ? rule.allowedHeaders
-      : [];
+    const origins = Array.isArray(rule.allowedOrigins) ? rule.allowedOrigins : [];
+    const methods = Array.isArray(rule.allowedMethods) ? rule.allowedMethods : [];
+    const allowedHeaders = Array.isArray(rule.allowedHeaders) ? rule.allowedHeaders : [];
     return reply
       .code(204)
-      .header(
-        "Access-Control-Allow-Origin",
-        origins.includes("*") ? "*" : (origin as string),
-      )
+      .header("Access-Control-Allow-Origin", origins.includes("*") ? "*" : (origin as string))
       .header("Access-Control-Allow-Methods", methods.join(","))
-      .header(
-        "Access-Control-Allow-Headers",
-        requestedHeaders || allowedHeaders.join(","),
-      )
+      .header("Access-Control-Allow-Headers", requestedHeaders || allowedHeaders.join(","))
       .header("Access-Control-Max-Age", String(rule.maxAgeSeconds || 0))
       .send();
   });
@@ -1651,36 +1344,20 @@ export async function registerRoutes(
     const key = normalizeObjectKey((request.params as any)["*"] as string);
     const query = request.query as Record<string, string | undefined>;
     if (!key) {
-      if (
-        query.versioning !== undefined ||
-        query.tagging !== undefined ||
-        configurationQuery(query)
-      ) {
+      if (query.versioning !== undefined || query.tagging !== undefined || configurationQuery(query)) {
         return putBucket(request, reply);
       }
       const credentials = await resolveCredentials(s3, request, false);
-      await s3.createBucket(
-        params.bucket,
-        query.locationConstraint,
-        credentials?.accountId || "legacy",
-      );
+      await s3.createBucket(params.bucket, query.locationConstraint, credentials?.accountId || "legacy");
       return reply.code(200).send();
     }
     if (query.uploadId && query.partNumber) {
       const copySource = request.headers["x-amz-copy-source"];
       if (copySource) {
-        const source = decodeURIComponent(String(copySource))
-          .replace(/^\//, "")
-          .split("/");
+        const source = decodeURIComponent(String(copySource)).replace(/^\//, "").split("/");
         const sourceBucket = source.shift();
         if (!sourceBucket || !source.length) {
-          throw new S3Error(
-            "InvalidRequest",
-            "x-amz-copy-source is invalid.",
-            400,
-            params.bucket,
-            key,
-          );
+          throw new S3Error("InvalidRequest", "x-amz-copy-source is invalid.", 400, params.bucket, key);
         }
         const part = await s3.uploadPartCopy(
           params.bucket,
@@ -1710,45 +1387,24 @@ export async function registerRoutes(
       return reply.code(200).header("ETag", part.etag).send();
     }
     if (query.tagging !== undefined) {
-      await s3.putObjectTags(
-        params.bucket,
-        key,
-        parseTagXml(String(request.body || "")),
-        query.versionId,
-      );
+      await s3.putObjectTags(params.bucket, key, parseTagXml(String(request.body || "")), query.versionId);
       return reply.code(200).send();
     }
     if (query.acl !== undefined) {
-      const canned =
-        request.headers["x-amz-acl"] ||
-        readXmlTag(String(request.body || ""), "CannedACL") ||
-        "private";
+      const canned = request.headers["x-amz-acl"] || readXmlTag(String(request.body || ""), "CannedACL") || "private";
       const body = String(request.body || "");
-      const acl = body.includes("<Grant>")
-        ? parseAclXml(body)
-        : { CannedACL: canned };
+      const acl = body.includes("<Grant>") ? parseAclXml(body) : { CannedACL: canned };
       await s3.putObjectAcl(params.bucket, key, acl, query.versionId);
       return reply.code(200).send();
     }
     const copySource = request.headers["x-amz-copy-source"];
     if (copySource) {
-      const source = decodeURIComponent(String(copySource))
-        .replace(/^\//, "")
-        .split("/");
+      const source = decodeURIComponent(String(copySource)).replace(/^\//, "").split("/");
       const sourceBucket = source.shift();
       if (!sourceBucket || !source.length) {
-        throw new S3Error(
-          "InvalidRequest",
-          "x-amz-copy-source is invalid.",
-          400,
-        );
+        throw new S3Error("InvalidRequest", "x-amz-copy-source is invalid.", 400);
       }
-      const obj = await s3.copyObject(
-        sourceBucket,
-        source.join("/"),
-        params.bucket,
-        key,
-      );
+      const obj = await s3.copyObject(sourceBucket, source.join("/"), params.bucket, key);
       return reply
         .type("application/xml")
         .code(200)
@@ -1765,15 +1421,8 @@ export async function registerRoutes(
     const body = request.body as Buffer;
     const checksum = request.headers["x-amz-checksum-sha256"];
     const contentSha256 = request.headers["x-amz-content-sha256"];
-    const contentSha256Digest = crypto
-      .createHash("sha256")
-      .update(body)
-      .digest("hex");
-    if (
-      contentSha256 &&
-      contentSha256 !== "UNSIGNED-PAYLOAD" &&
-      String(contentSha256) !== contentSha256Digest
-    ) {
+    const contentSha256Digest = crypto.createHash("sha256").update(body).digest("hex");
+    if (contentSha256 && contentSha256 !== "UNSIGNED-PAYLOAD" && String(contentSha256) !== contentSha256Digest) {
       throw new S3Error(
         "BadDigest",
         "The x-amz-content-sha256 checksum did not match the request body.",
@@ -1784,11 +1433,7 @@ export async function registerRoutes(
     }
     const b2Sha1 = request.headers["x-bz-content-sha1"];
     const b2Sha1Digest = crypto.createHash("sha1").update(body).digest("hex");
-    if (
-      b2Sha1 &&
-      b2Sha1 !== "do_not_verify" &&
-      String(b2Sha1) !== b2Sha1Digest
-    ) {
+    if (b2Sha1 && b2Sha1 !== "do_not_verify" && String(b2Sha1) !== b2Sha1Digest) {
       throw new S3Error(
         "BadDigest",
         "The x-bz-content-sha1 checksum did not match the request body.",
@@ -1798,10 +1443,7 @@ export async function registerRoutes(
       );
     }
     const contentMd5 = request.headers["content-md5"];
-    const contentMd5Digest = crypto
-      .createHash("md5")
-      .update(body)
-      .digest("base64");
+    const contentMd5Digest = crypto.createHash("md5").update(body).digest("base64");
     if (contentMd5 && String(contentMd5) !== contentMd5Digest) {
       throw new S3Error(
         "BadDigest",
@@ -1811,33 +1453,15 @@ export async function registerRoutes(
         key,
       );
     }
-    const checksumSha256 = crypto
-      .createHash("sha256")
-      .update(body)
-      .digest("base64");
+    const checksumSha256 = crypto.createHash("sha256").update(body).digest("base64");
     if (checksum && checksum !== checksumSha256) {
-      throw new S3Error(
-        "BadDigest",
-        "The SHA-256 checksum did not match the request body.",
-        400,
-        params.bucket,
-        key,
-      );
+      throw new S3Error("BadDigest", "The SHA-256 checksum did not match the request body.", 400, params.bucket, key);
     }
 
     const meta: any = {};
     const storageClass = request.headers["x-amz-storage-class"];
-    if (
-      storageClass &&
-      !VALID_STORAGE_CLASSES.includes(String(storageClass) as any)
-    ) {
-      throw new S3Error(
-        "InvalidStorageClass",
-        "The storage class is not supported.",
-        400,
-        params.bucket,
-        key,
-      );
+    if (storageClass && !VALID_STORAGE_CLASSES.includes(String(storageClass) as any)) {
+      throw new S3Error("InvalidStorageClass", "The storage class is not supported.", 400, params.bucket, key);
     }
     if (storageClass) {
       meta.storageClass = storageClass;
@@ -1869,8 +1493,7 @@ export async function registerRoutes(
         ]),
     );
     const encryption = request.headers["x-amz-server-side-encryption"];
-    const kmsKeyId =
-      request.headers["x-amz-server-side-encryption-aws-kms-key-id"];
+    const kmsKeyId = request.headers["x-amz-server-side-encryption-aws-kms-key-id"];
     if (encryption && encryption !== "AES256" && encryption !== "aws:kms") {
       throw new S3Error(
         "InvalidEncryptionAlgorithmError",
@@ -1899,31 +1522,13 @@ export async function registerRoutes(
     const retainUntil = request.headers["x-amz-object-lock-retain-until-date"];
     const legalHold = request.headers["x-amz-object-lock-legal-hold"];
     if (lockMode && lockMode !== "GOVERNANCE" && lockMode !== "COMPLIANCE") {
-      throw new S3Error(
-        "InvalidRequest",
-        "Unsupported object lock mode.",
-        400,
-        params.bucket,
-        key,
-      );
+      throw new S3Error("InvalidRequest", "Unsupported object lock mode.", 400, params.bucket, key);
     }
     if (retainUntil && Number.isNaN(Date.parse(String(retainUntil)))) {
-      throw new S3Error(
-        "InvalidRequest",
-        "Invalid retention date.",
-        400,
-        params.bucket,
-        key,
-      );
+      throw new S3Error("InvalidRequest", "Invalid retention date.", 400, params.bucket, key);
     }
     if (legalHold && legalHold !== "ON" && legalHold !== "OFF") {
-      throw new S3Error(
-        "InvalidRequest",
-        "Invalid legal hold status.",
-        400,
-        params.bucket,
-        key,
-      );
+      throw new S3Error("InvalidRequest", "Invalid legal hold status.", 400, params.bucket, key);
     }
     if (lockMode) {
       meta.objectLockMode = lockMode;
@@ -1963,9 +1568,7 @@ export async function registerRoutes(
         bucket: params.bucket,
         key,
         uploadId: query.uploadId,
-        partNumberMarker: query["part-number-marker"]
-          ? Number(query["part-number-marker"])
-          : undefined,
+        partNumberMarker: query["part-number-marker"] ? Number(query["part-number-marker"]) : undefined,
       });
       return reply.type("application/xml").send(
         wrapXml("ListPartsResult", {
@@ -1993,14 +1596,8 @@ export async function registerRoutes(
       );
     }
     if (query.acl !== undefined) {
-      const acl = await s3.getObjectAcl<Record<string, unknown>>(
-        params.bucket,
-        key,
-        query.versionId,
-      );
-      return reply
-        .type("application/xml")
-        .send(wrapXml("AccessControlPolicy", acl));
+      const acl = await s3.getObjectAcl<Record<string, unknown>>(params.bucket, key, query.versionId);
+      return reply.type("application/xml").send(wrapXml("AccessControlPolicy", acl));
     }
     const original = await s3.getObject(params.bucket, key, query.versionId);
     const ifMatch = request.headers["if-match"];
@@ -2037,12 +1634,8 @@ export async function registerRoutes(
     const ifUnmodifiedSince = request.headers["if-unmodified-since"]
       ? Date.parse(String(request.headers["if-unmodified-since"]))
       : NaN;
-    const lastModifiedSeconds =
-      Math.floor(original.metadata.lastModified.getTime() / 1000) * 1000;
-    if (
-      Number.isFinite(ifUnmodifiedSince) &&
-      lastModifiedSeconds > ifUnmodifiedSince
-    ) {
+    const lastModifiedSeconds = Math.floor(original.metadata.lastModified.getTime() / 1000) * 1000;
+    if (Number.isFinite(ifUnmodifiedSince) && lastModifiedSeconds > ifUnmodifiedSince) {
       throw new S3Error(
         "PreconditionFailed",
         "At least one of the preconditions you specified did not hold.",
@@ -2051,10 +1644,7 @@ export async function registerRoutes(
         key,
       );
     }
-    if (
-      Number.isFinite(ifModifiedSince) &&
-      lastModifiedSeconds <= ifModifiedSince
-    ) {
+    if (Number.isFinite(ifModifiedSince) && lastModifiedSeconds <= ifModifiedSince) {
       return reply
         .code(304)
         .header("ETag", original.metadata.etag)
@@ -2063,61 +1653,29 @@ export async function registerRoutes(
     }
     let data = original.data;
     let metadata = original.metadata;
-    let checksumSha256 = crypto
-      .createHash("sha256")
-      .update(original.data)
-      .digest("base64");
+    let checksumSha256 = crypto.createHash("sha256").update(original.data).digest("base64");
     let status = 200;
     const range = request.headers.range;
     let contentRange: string | undefined;
     if (range) {
       const match = /^bytes=(\d*)-(\d*)$/.exec(String(range));
       if (!match) {
-        throw new S3Error(
-          "InvalidRange",
-          "The requested range is not satisfiable.",
-          416,
-          params.bucket,
-          key,
-        );
+        throw new S3Error("InvalidRange", "The requested range is not satisfiable.", 416, params.bucket, key);
       }
       if (!match[1] && !match[2]) {
-        throw new S3Error(
-          "InvalidRange",
-          "The requested range is not satisfiable.",
-          416,
-          params.bucket,
-          key,
-        );
+        throw new S3Error("InvalidRange", "The requested range is not satisfiable.", 416, params.bucket, key);
       }
       const totalSize = original.data.length;
       const suffixLength = match[1] ? undefined : Number(match[2]);
-      const start =
-        suffixLength !== undefined
-          ? Math.max(0, totalSize - suffixLength)
-          : Number(match[1]);
-      const end =
-        suffixLength !== undefined
-          ? totalSize - 1
-          : match[2]
-            ? Number(match[2])
-            : undefined;
+      const start = suffixLength !== undefined ? Math.max(0, totalSize - suffixLength) : Number(match[1]);
+      const end = suffixLength !== undefined ? totalSize - 1 : match[2] ? Number(match[2]) : undefined;
       if (start >= totalSize || (end !== undefined && end < start)) {
-        throw new S3Error(
-          "InvalidRange",
-          "The requested range is not satisfiable.",
-          416,
-          params.bucket,
-          key,
-        );
+        throw new S3Error("InvalidRange", "The requested range is not satisfiable.", 416, params.bucket, key);
       }
       const ranged = await s3.getObjectRange(params.bucket, key, start, end);
       data = ranged.data;
       contentRange = `bytes ${start}-${start + data.length - 1}/${ranged.totalSize}`;
-      checksumSha256 = crypto
-        .createHash("sha256")
-        .update(data)
-        .digest("base64");
+      checksumSha256 = crypto.createHash("sha256").update(data).digest("base64");
       status = 206;
     }
 
@@ -2136,34 +1694,22 @@ export async function registerRoutes(
       .header("Accept-Ranges", "bytes")
       .code(status);
     if (metadata.serverSideEncryption) {
-      reply.header(
-        "x-amz-server-side-encryption",
-        metadata.serverSideEncryption,
-      );
+      reply.header("x-amz-server-side-encryption", metadata.serverSideEncryption);
     }
     if (metadata.expires) {
       reply.header("Expires", metadata.expires.toUTCString());
     }
     if (metadata.sseKmsKeyId) {
-      reply.header(
-        "x-amz-server-side-encryption-aws-kms-key-id",
-        metadata.sseKmsKeyId,
-      );
+      reply.header("x-amz-server-side-encryption-aws-kms-key-id", metadata.sseKmsKeyId);
     }
     if (metadata.objectLockMode) {
       reply.header("x-amz-object-lock-mode", metadata.objectLockMode);
     }
     if (metadata.objectLockRetainUntilDate) {
-      reply.header(
-        "x-amz-object-lock-retain-until-date",
-        metadata.objectLockRetainUntilDate.toUTCString(),
-      );
+      reply.header("x-amz-object-lock-retain-until-date", metadata.objectLockRetainUntilDate.toUTCString());
     }
     if (metadata.objectLockLegalHold !== undefined) {
-      reply.header(
-        "x-amz-object-lock-legal-hold",
-        metadata.objectLockLegalHold ? "ON" : "OFF",
-      );
+      reply.header("x-amz-object-lock-legal-hold", metadata.objectLockLegalHold ? "ON" : "OFF");
     }
     for (const [name, value] of Object.entries(metadata.userMetadata)) {
       reply.header(`x-amz-meta-${name}`, value);
@@ -2194,41 +1740,26 @@ export async function registerRoutes(
       .header("Cache-Control", metadata.cacheControl || "")
       .header("Content-Disposition", metadata.contentDisposition || "")
       .header("Content-Encoding", metadata.contentEncoding || "")
-      .header(
-        "x-amz-checksum-sha256",
-        crypto.createHash("sha256").update(object.data).digest("base64"),
-      )
+      .header("x-amz-checksum-sha256", crypto.createHash("sha256").update(object.data).digest("base64"))
       .header("x-amz-storage-class", metadata.storageClass)
       .header("x-amz-version-id", metadata.versionId);
     if (metadata.expires) {
       reply.header("Expires", metadata.expires.toUTCString());
     }
     if (metadata.serverSideEncryption) {
-      reply.header(
-        "x-amz-server-side-encryption",
-        metadata.serverSideEncryption,
-      );
+      reply.header("x-amz-server-side-encryption", metadata.serverSideEncryption);
     }
     if (metadata.sseKmsKeyId) {
-      reply.header(
-        "x-amz-server-side-encryption-aws-kms-key-id",
-        metadata.sseKmsKeyId,
-      );
+      reply.header("x-amz-server-side-encryption-aws-kms-key-id", metadata.sseKmsKeyId);
     }
     if (metadata.objectLockMode) {
       reply.header("x-amz-object-lock-mode", metadata.objectLockMode);
     }
     if (metadata.objectLockRetainUntilDate) {
-      reply.header(
-        "x-amz-object-lock-retain-until-date",
-        metadata.objectLockRetainUntilDate.toUTCString(),
-      );
+      reply.header("x-amz-object-lock-retain-until-date", metadata.objectLockRetainUntilDate.toUTCString());
     }
     if (metadata.objectLockLegalHold !== undefined) {
-      reply.header(
-        "x-amz-object-lock-legal-hold",
-        metadata.objectLockLegalHold ? "ON" : "OFF",
-      );
+      reply.header("x-amz-object-lock-legal-hold", metadata.objectLockLegalHold ? "ON" : "OFF");
     }
     for (const [name, value] of Object.entries(metadata.userMetadata)) {
       reply.header(`x-amz-meta-${name}`, value);
@@ -2290,9 +1821,7 @@ export async function registerRoutes(
       const result = await s3.listMultipartUploads({
         bucket: params.bucket,
         prefix: query.prefix,
-        maxUploads: query["max-uploads"]
-          ? Number(query["max-uploads"])
-          : undefined,
+        maxUploads: query["max-uploads"] ? Number(query["max-uploads"]) : undefined,
       });
       return reply.type("application/xml").send(
         wrapXml("ListMultipartUploadsResult", {
@@ -2308,20 +1837,13 @@ export async function registerRoutes(
     }
     if (query.location !== undefined) {
       const location = await s3.getBucketLocation(params.bucket);
-      return reply
-        .type("application/xml")
-        .send(wrapXml("LocationConstraint", location));
+      return reply.type("application/xml").send(wrapXml("LocationConstraint", location));
     }
     if (query.versioning !== undefined) {
       const versioning = await s3.getVersioning(params.bucket);
       return reply
         .type("application/xml")
-        .send(
-          wrapXml(
-            "VersioningConfiguration",
-            versioning.status ? { Status: versioning.status } : {},
-          ),
-        );
+        .send(wrapXml("VersioningConfiguration", versioning.status ? { Status: versioning.status } : {}));
     }
     if (query.tagging !== undefined) {
       const tags = await s3.getBucketTags(params.bucket);
@@ -2335,13 +1857,8 @@ export async function registerRoutes(
     }
     const configuration = configurationQuery(query);
     if (configuration) {
-      const value = await s3.getBucketConfiguration<Record<string, unknown>>(
-        params.bucket,
-        configuration,
-      );
-      return reply
-        .type("application/xml")
-        .send(wrapXml(configuration, value || {}));
+      const value = await s3.getBucketConfiguration<Record<string, unknown>>(params.bucket, configuration);
+      return reply.type("application/xml").send(wrapXml(configuration, value || {}));
     }
     const listType = query["list-type"];
     if (listType === "1") {
@@ -2351,16 +1868,12 @@ export async function registerRoutes(
         prefix: query.prefix,
         delimiter: query.delimiter,
         maxKeys: query["max-keys"] ? Number(query["max-keys"]) : undefined,
-        continuationToken: marker
-          ? Buffer.from(marker).toString("base64url")
-          : undefined,
+        continuationToken: marker ? Buffer.from(marker).toString("base64url") : undefined,
         encodingType: query["encoding-type"] === "url" ? "url" : undefined,
       });
-      const encodeListValue = (value: string) =>
-        result.encodingType === "url" ? encodeURIComponent(value) : value;
+      const encodeListValue = (value: string) => (result.encodingType === "url" ? encodeURIComponent(value) : value);
       const lastKey = result.contents[result.contents.length - 1]?.key;
-      const lastPrefix =
-        result.commonPrefixes[result.commonPrefixes.length - 1];
+      const lastPrefix = result.commonPrefixes[result.commonPrefixes.length - 1];
       const nextMarker = lastPrefix || lastKey;
       return reply.type("application/xml").send(
         wrapXml("ListBucketResult", {
@@ -2394,8 +1907,7 @@ export async function registerRoutes(
       encodingType: query["encoding-type"] === "url" ? "url" : undefined,
     });
 
-    const encodeListValue = (value: string) =>
-      result.encodingType === "url" ? encodeURIComponent(value) : value;
+    const encodeListValue = (value: string) => (result.encodingType === "url" ? encodeURIComponent(value) : value);
     const response = {
       Name: params.bucket,
       Prefix: result.prefix,
@@ -2416,9 +1928,7 @@ export async function registerRoutes(
       })),
       EncodingType: result.encodingType,
     };
-    reply
-      .type("application/xml")
-      .send(wrapXml("ListObjectsV2Result", response));
+    reply.type("application/xml").send(wrapXml("ListObjectsV2Result", response));
   }
 
   fastify.put("/:bucket/*", putObject);
@@ -2427,18 +1937,11 @@ export async function registerRoutes(
     const key = normalizeObjectKey((request.params as any)["*"] as string);
     const query = request.query as Record<string, string | undefined>;
     if (!key && query.delete !== undefined) {
-      const keys = [
-        ...String(request.body || "").matchAll(
-          /<Object\b[^>]*>\s*<Key>([^<]*)<\/Key>/g,
-        ),
-      ].map((match) => unescapeXml(match[1]));
+      const keys = [...String(request.body || "").matchAll(/<Object\b[^>]*>\s*<Key>([^<]*)<\/Key>/g)].map((match) =>
+        unescapeXml(match[1]),
+      );
       if (!keys.length) {
-        throw new S3Error(
-          "MalformedXML",
-          "At least one object key is required.",
-          400,
-          params.bucket,
-        );
+        throw new S3Error("MalformedXML", "At least one object key is required.", 400, params.bucket);
       }
       const result = await s3.deleteObjects(params.bucket, keys);
       return reply.type("application/xml").send(
@@ -2453,15 +1956,10 @@ export async function registerRoutes(
     }
     if (query.restore !== undefined) {
       await s3.restoreObject(params.bucket, key);
-      return reply
-        .code(202)
-        .header("x-amz-restore", 'ongoing-request="false"')
-        .send();
+      return reply.code(202).header("x-amz-restore", 'ongoing-request="false"').send();
     }
     if (query.select !== undefined) {
-      const expression =
-        readXmlTag(String(request.body || ""), "Expression") ||
-        "SELECT * FROM S3Object";
+      const expression = readXmlTag(String(request.body || ""), "Expression") || "SELECT * FROM S3Object";
       const body = await s3.selectObjectContent(params.bucket, key, expression);
       return reply.type("application/octet-stream").send(body);
     }
@@ -2480,27 +1978,14 @@ export async function registerRoutes(
       );
     }
     if (!query.uploadId) {
-      throw new S3Error(
-        "InvalidRequest",
-        "uploadId is required.",
-        400,
-        params.bucket,
-        key,
-      );
+      throw new S3Error("InvalidRequest", "uploadId is required.", 400, params.bucket, key);
     }
-    const parts = [
-      ...String(request.body || "").matchAll(
-        /<Part\b[^>]*>([\s\S]*?)<\/Part>/g,
-      ),
-    ]
+    const parts = [...String(request.body || "").matchAll(/<Part\b[^>]*>([\s\S]*?)<\/Part>/g)]
       .map((match) => ({
         partNumber: Number(readXmlTag(match[1], "PartNumber")),
         etag: unescapeXml(readXmlTag(match[1], "ETag") || ""),
       }))
-      .filter(
-        (part) =>
-          Number.isInteger(part.partNumber) && part.partNumber > 0 && part.etag,
-      );
+      .filter((part) => Number.isInteger(part.partNumber) && part.partNumber > 0 && part.etag);
     const result = await s3.completeMultipartUpload({
       bucket: params.bucket,
       key,
@@ -2527,9 +2012,7 @@ export async function registerRoutes(
 }
 
 function hasOidcScope(scopes: string[], required: string): boolean {
-  return (
-    scopes.includes("*") || scopes.includes("s3:*") || scopes.includes(required)
-  );
+  return scopes.includes("*") || scopes.includes("s3:*") || scopes.includes(required);
 }
 
 function requiredOidcScope(request: FastifyRequest): string {
@@ -2545,9 +2028,7 @@ function requiredOidcScope(request: FastifyRequest): string {
   ) {
     return "s3:admin";
   }
-  return ["GET", "HEAD", "OPTIONS"].includes(request.method)
-    ? "s3:read"
-    : "s3:write";
+  return ["GET", "HEAD", "OPTIONS"].includes(request.method) ? "s3:read" : "s3:write";
 }
 
 function toXml(obj: any): string {
@@ -2592,15 +2073,7 @@ function normalizeObjectKey(key: string): string {
 
 function wrapXml(root: string, content: any): string {
   const body = toXml(content);
-  return (
-    '<?xml version="1.0" encoding="UTF-8"?>\n<' +
-    root +
-    ">\n" +
-    body +
-    "\n</" +
-    root +
-    ">"
-  );
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<' + root + ">\n" + body + "\n</" + root + ">";
 }
 
 function readXmlTag(body: string, tag: string): string | undefined {
@@ -2609,9 +2082,7 @@ function readXmlTag(body: string, tag: string): string | undefined {
 
 function parseTagXml(body: string): Record<string, string> {
   const tags: Record<string, string> = {};
-  for (const match of body.matchAll(
-    /<Tag\b[^>]*>\s*<Key>([^<]*)<\/Key>\s*<Value>([^<]*)<\/Value>\s*<\/Tag>/g,
-  )) {
+  for (const match of body.matchAll(/<Tag\b[^>]*>\s*<Key>([^<]*)<\/Key>\s*<Value>([^<]*)<\/Value>\s*<\/Tag>/g)) {
     tags[match[1]] = match[2];
   }
   return tags;
@@ -2653,57 +2124,51 @@ function parseJsonOrXml(body: unknown): unknown {
 
 function parseLifecycleXml(body: unknown): Record<string, unknown> {
   const text = String(body || "");
-  const rules = [...text.matchAll(/<Rule\b[^>]*>([\s\S]*?)<\/Rule>/g)].map(
-    (match) => {
-      const ruleBody = match[1];
-      const rule: Record<string, unknown> = {
-        id: readXmlTag(ruleBody, "ID"),
-        status: readXmlTag(ruleBody, "Status"),
-        filter: { prefix: readXmlTag(ruleBody, "Prefix") || "" },
-      };
-      const expiration: Record<string, string> = {};
-      const expirationBody =
-        ruleBody.match(
-          /<Expiration(?:Configuration)?\b[^>]*>([\s\S]*?)<\/(?:Expiration|ExpirationConfiguration)>/,
-        )?.[1] || ruleBody;
-      const days = readXmlTag(expirationBody, "Days");
-      const date = readXmlTag(expirationBody, "Date");
-      if (days) {
-        expiration.days = days;
-      }
-      if (date) {
-        expiration.date = date;
-      }
-      if (Object.keys(expiration).length) {
-        rule.expiration = expiration;
-      }
-      rule.transitions = [
-        ...ruleBody.matchAll(/<Transition\b[^>]*>([\s\S]*?)<\/Transition>/g),
-      ].map((item) => ({
-        days: readXmlTag(item[1], "Days"),
-        date: readXmlTag(item[1], "Date"),
-        storageClass: readXmlTag(item[1], "StorageClass"),
-      }));
-      rule.noncurrentVersionTransitions = [
-        ...ruleBody.matchAll(
-          /<NoncurrentVersionTransition\b[^>]*>([\s\S]*?)<\/NoncurrentVersionTransition>/g,
-        ),
-      ].map((item) => ({
-        noncurrentDays: readXmlTag(item[1], "NoncurrentDays"),
-        storageClass: readXmlTag(item[1], "StorageClass"),
-      }));
-      const noncurrentExpirationBody = ruleBody.match(
-        /<NoncurrentVersionExpiration\b[^>]*>([\s\S]*?)<\/NoncurrentVersionExpiration>/,
-      )?.[1];
-      const noncurrentDays = noncurrentExpirationBody
-        ? readXmlTag(noncurrentExpirationBody, "NoncurrentDays")
-        : undefined;
-      if (noncurrentDays) {
-        rule.noncurrentVersionExpiration = { noncurrentDays };
-      }
-      return rule;
-    },
-  );
+  const rules = [...text.matchAll(/<Rule\b[^>]*>([\s\S]*?)<\/Rule>/g)].map((match) => {
+    const ruleBody = match[1];
+    const rule: Record<string, unknown> = {
+      id: readXmlTag(ruleBody, "ID"),
+      status: readXmlTag(ruleBody, "Status"),
+      filter: { prefix: readXmlTag(ruleBody, "Prefix") || "" },
+    };
+    const expiration: Record<string, string> = {};
+    const expirationBody =
+      ruleBody.match(
+        /<Expiration(?:Configuration)?\b[^>]*>([\s\S]*?)<\/(?:Expiration|ExpirationConfiguration)>/,
+      )?.[1] || ruleBody;
+    const days = readXmlTag(expirationBody, "Days");
+    const date = readXmlTag(expirationBody, "Date");
+    if (days) {
+      expiration.days = days;
+    }
+    if (date) {
+      expiration.date = date;
+    }
+    if (Object.keys(expiration).length) {
+      rule.expiration = expiration;
+    }
+    rule.transitions = [...ruleBody.matchAll(/<Transition\b[^>]*>([\s\S]*?)<\/Transition>/g)].map((item) => ({
+      days: readXmlTag(item[1], "Days"),
+      date: readXmlTag(item[1], "Date"),
+      storageClass: readXmlTag(item[1], "StorageClass"),
+    }));
+    rule.noncurrentVersionTransitions = [
+      ...ruleBody.matchAll(/<NoncurrentVersionTransition\b[^>]*>([\s\S]*?)<\/NoncurrentVersionTransition>/g),
+    ].map((item) => ({
+      noncurrentDays: readXmlTag(item[1], "NoncurrentDays"),
+      storageClass: readXmlTag(item[1], "StorageClass"),
+    }));
+    const noncurrentExpirationBody = ruleBody.match(
+      /<NoncurrentVersionExpiration\b[^>]*>([\s\S]*?)<\/NoncurrentVersionExpiration>/,
+    )?.[1];
+    const noncurrentDays = noncurrentExpirationBody
+      ? readXmlTag(noncurrentExpirationBody, "NoncurrentDays")
+      : undefined;
+    if (noncurrentDays) {
+      rule.noncurrentVersionExpiration = { noncurrentDays };
+    }
+    return rule;
+  });
   return { rules };
 }
 
@@ -2731,8 +2196,7 @@ function configurationQuery(
     replication: "replicationConfiguration",
     acl: "acl",
   } as const;
-  const key = Object.keys(map).find((name) => query[name] !== undefined) as
-    keyof typeof map | undefined;
+  const key = Object.keys(map).find((name) => query[name] !== undefined) as keyof typeof map | undefined;
   return key ? map[key] : undefined;
 }
 
@@ -2740,10 +2204,7 @@ async function resolveCredentials(
   s3: S3Mini,
   request: FastifyRequest,
   hasPresign: boolean,
-): Promise<
-  | { accessKeyId: string; secretAccessKey: string; accountId: string }
-  | undefined
-> {
+): Promise<{ accessKeyId: string; secretAccessKey: string; accountId: string } | undefined> {
   const authorization = request.headers.authorization;
   if (!authorization && !hasPresign) {
     return undefined;
@@ -2758,10 +2219,7 @@ async function resolveCredentials(
   if (!accessKeyId) {
     return undefined;
   }
-  if (
-    accessKeyId === process.env.S3MINI_ACCESS_KEY &&
-    process.env.S3MINI_SECRET_KEY
-  ) {
+  if (accessKeyId === process.env.S3MINI_ACCESS_KEY && process.env.S3MINI_SECRET_KEY) {
     return {
       accessKeyId,
       secretAccessKey: process.env.S3MINI_SECRET_KEY,
@@ -2775,10 +2233,7 @@ async function resolveCredentials(
 function timingSafeTokenEqual(left: string, right: string): boolean {
   const leftBytes = Buffer.from(left);
   const rightBytes = Buffer.from(right);
-  return (
-    leftBytes.length === rightBytes.length &&
-    crypto.timingSafeEqual(leftBytes, rightBytes)
-  );
+  return leftBytes.length === rightBytes.length && crypto.timingSafeEqual(leftBytes, rightBytes);
 }
 
 const ADMIN_HTML = `<!doctype html>

@@ -69,9 +69,7 @@ describe("S3 HTTP routes", () => {
   });
 
   it("supports bucket and object CRUD over HTTP", async () => {
-    expect(
-      (await app.inject({ method: "PUT", url: `/${bucket}` })).statusCode,
-    ).toBe(200);
+    expect((await app.inject({ method: "PUT", url: `/${bucket}` })).statusCode).toBe(200);
     const put = await app.inject({
       method: "PUT",
       url: `/${bucket}/hello.txt`,
@@ -93,14 +91,8 @@ describe("S3 HTTP routes", () => {
     expect(get.body).toBe("hello");
     expect(get.headers.etag).toBeTruthy();
 
-    expect(
-      (await app.inject({ method: "HEAD", url: `/${bucket}/hello.txt` }))
-        .statusCode,
-    ).toBe(200);
-    expect(
-      (await app.inject({ method: "DELETE", url: `/${bucket}/hello.txt` }))
-        .statusCode,
-    ).toBe(204);
+    expect((await app.inject({ method: "HEAD", url: `/${bucket}/hello.txt` })).statusCode).toBe(200);
+    expect((await app.inject({ method: "DELETE", url: `/${bucket}/hello.txt` })).statusCode).toBe(204);
   });
 
   it("accepts arbitrary media types for binary S3 uploads", async () => {
@@ -140,17 +132,14 @@ describe("S3 HTTP routes", () => {
     const buckets = await app.inject({ method: "GET", url: "/" });
     expect(buckets.statusCode).toBe(200);
     expect(buckets.body).toContain(`<Name>${bucket}</Name>`);
-    expect(
-      (await app.inject({ method: "HEAD", url: `/${bucket}` })).statusCode,
-    ).toBe(200);
+    expect((await app.inject({ method: "HEAD", url: `/${bucket}` })).statusCode).toBe(200);
 
     const location = await app.inject({
       method: "GET",
       url: `/${bucket}?location`,
     });
     expect(location.body).toContain("eu-west-1");
-    const tags =
-      "<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value></Tag></TagSet></Tagging>";
+    const tags = "<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value></Tag></TagSet></Tagging>";
     expect(
       (
         await app.inject({
@@ -161,13 +150,8 @@ describe("S3 HTTP routes", () => {
         })
       ).statusCode,
     ).toBe(200);
-    expect(
-      (await app.inject({ method: "GET", url: `/${bucket}?tagging` })).body,
-    ).toContain("<Value>storage</Value>");
-    expect(
-      (await app.inject({ method: "DELETE", url: `/${bucket}?tagging` }))
-        .statusCode,
-    ).toBe(204);
+    expect((await app.inject({ method: "GET", url: `/${bucket}?tagging` })).body).toContain("<Value>storage</Value>");
+    expect((await app.inject({ method: "DELETE", url: `/${bucket}?tagging` })).statusCode).toBe(204);
     expect(
       (
         await app.inject({
@@ -178,13 +162,10 @@ describe("S3 HTTP routes", () => {
         })
       ).statusCode,
     ).toBe(200);
-    expect(
-      (await app.inject({ method: "GET", url: `/${bucket}?acl` })).body,
-    ).toContain("<CannedACL>private</CannedACL>");
-    expect(
-      (await app.inject({ method: "DELETE", url: `/${bucket}?acl` }))
-        .statusCode,
-    ).toBe(204);
+    expect((await app.inject({ method: "GET", url: `/${bucket}?acl` })).body).toContain(
+      "<CannedACL>private</CannedACL>",
+    );
+    expect((await app.inject({ method: "DELETE", url: `/${bucket}?acl` })).statusCode).toBe(204);
     expect(
       (
         await app.inject({
@@ -195,13 +176,10 @@ describe("S3 HTTP routes", () => {
         })
       ).statusCode,
     ).toBe(200);
-    expect(
-      (await app.inject({ method: "GET", url: `/${bucket}?website` })).body,
-    ).toContain("<index>index.html</index>");
-    expect(
-      (await app.inject({ method: "DELETE", url: `/${bucket}?website` }))
-        .statusCode,
-    ).toBe(204);
+    expect((await app.inject({ method: "GET", url: `/${bucket}?website` })).body).toContain(
+      "<index>index.html</index>",
+    );
+    expect((await app.inject({ method: "DELETE", url: `/${bucket}?website` })).statusCode).toBe(204);
   });
 
   it("supports listing, ranges, and conditional requests", async () => {
@@ -313,8 +291,7 @@ describe("S3 HTTP routes", () => {
           method: "PUT",
           url: `/${bucket}?versioning`,
           headers: { "content-type": "text/xml" },
-          payload:
-            "<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>",
+          payload: "<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>",
         })
       ).statusCode,
     ).toBe(200);
@@ -324,8 +301,7 @@ describe("S3 HTTP routes", () => {
     });
     expect(versioning.body).toContain("<Status>Enabled</Status>");
 
-    const tagging =
-      "<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value></Tag></TagSet></Tagging>";
+    const tagging = "<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value></Tag></TagSet></Tagging>";
     expect(
       (
         await app.inject({
@@ -357,10 +333,7 @@ describe("S3 HTTP routes", () => {
       headers: { "content-type": "text/plain" },
       payload: "expired",
     });
-    expect(
-      (await app.inject({ method: "GET", url: `/${bucket}/tmp/expired.txt` }))
-        .statusCode,
-    ).toBe(404);
+    expect((await app.inject({ method: "GET", url: `/${bucket}/tmp/expired.txt` })).statusCode).toBe(404);
   });
 
   it("supports multipart uploads over HTTP", async () => {
@@ -388,9 +361,7 @@ describe("S3 HTTP routes", () => {
       payload: `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>${etag}</ETag></Part></CompleteMultipartUpload>`,
     });
     expect(completed.statusCode).toBe(200);
-    expect(
-      (await app.inject({ method: "GET", url: `/${bucket}/multi.bin` })).body,
-    ).toBe("multipart");
+    expect((await app.inject({ method: "GET", url: `/${bucket}/multi.bin` })).body).toBe("multipart");
   });
 
   it("lists and aborts multipart uploads over HTTP", async () => {
@@ -468,11 +439,7 @@ describe("S3 HTTP routes", () => {
       payload: body,
     });
     expect(put.statusCode).toBe(200);
-    expect(
-      (await app.inject({ method: "HEAD", url: `/${bucket}/md5.txt` })).headers[
-        "content-language"
-      ],
-    ).toBe("en-US");
+    expect((await app.inject({ method: "HEAD", url: `/${bucket}/md5.txt` })).headers["content-language"]).toBe("en-US");
     const bad = await app.inject({
       method: "PUT",
       url: `/${bucket}/bad-md5.txt`,
@@ -572,9 +539,7 @@ describe("S3 HTTP routes", () => {
       headers: {
         "content-type": "text/plain",
         "x-amz-object-lock-mode": "COMPLIANCE",
-        "x-amz-object-lock-retain-until-date": new Date(
-          Date.now() + 60_000,
-        ).toISOString(),
+        "x-amz-object-lock-retain-until-date": new Date(Date.now() + 60_000).toISOString(),
       },
       payload: "retained",
     });
@@ -593,8 +558,7 @@ describe("S3 HTTP routes", () => {
       method: "PUT",
       url: `/${bucket}?versioning`,
       headers: { "content-type": "text/xml" },
-      payload:
-        "<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>",
+      payload: "<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>",
     });
     await app.inject({
       method: "PUT",
@@ -643,9 +607,7 @@ describe("S3 HTTP routes", () => {
       },
     });
     expect(allowed.statusCode).toBe(204);
-    expect(allowed.headers["access-control-allow-origin"]).toBe(
-      "https://client.example",
-    );
+    expect(allowed.headers["access-control-allow-origin"]).toBe("https://client.example");
     const denied = await app.inject({
       method: "OPTIONS",
       url: `/${bucket}/object`,
@@ -741,11 +703,8 @@ describe("S3 HTTP routes", () => {
       headers: { "x-amz-copy-source": `/${bucket}/source.txt` },
     });
     expect(copied.statusCode).toBe(200);
-    expect(
-      (await app.inject({ method: "GET", url: `/${bucket}/copy.txt` })).body,
-    ).toBe("source");
-    const tagXml =
-      "<Tagging><TagSet><Tag><Key>temporary</Key><Value>true</Value></Tag></TagSet></Tagging>";
+    expect((await app.inject({ method: "GET", url: `/${bucket}/copy.txt` })).body).toBe("source");
+    const tagXml = "<Tagging><TagSet><Tag><Key>temporary</Key><Value>true</Value></Tag></TagSet></Tagging>";
     await app.inject({
       method: "PUT",
       url: `/${bucket}/copy.txt?tagging`,
@@ -764,8 +723,7 @@ describe("S3 HTTP routes", () => {
       method: "POST",
       url: `/${bucket}?delete`,
       headers: { "content-type": "application/xml" },
-      payload:
-        "<Delete><Object><Key>source.txt</Key></Object><Object><Key>copy.txt</Key></Object></Delete>",
+      payload: "<Delete><Object><Key>source.txt</Key></Object><Object><Key>copy.txt</Key></Object></Delete>",
     });
     expect(deleted.statusCode).toBe(200);
     expect(deleted.body).toContain("<Key>source.txt</Key>");
@@ -843,14 +801,7 @@ describe("S3 HTTP routes", () => {
       headers: { "content-type": "text/plain" },
       payload: "acl",
     });
-    expect(
-      await s3.isObjectRequestDenied(
-        bucket,
-        "acl.txt",
-        "GetObject",
-        "anonymous",
-      ),
-    ).toBe(true);
+    expect(await s3.isObjectRequestDenied(bucket, "acl.txt", "GetObject", "anonymous")).toBe(true);
     await app.inject({
       method: "PUT",
       url: `/${bucket}/acl.txt?acl`,
@@ -879,10 +830,7 @@ describe("S3 HTTP routes", () => {
       headers: { "content-type": "application/xml" },
       payload: acl,
     });
-    expect(
-      (await app.inject({ method: "GET", url: `/${bucket}/grant.txt` }))
-        .statusCode,
-    ).toBe(200);
+    expect((await app.inject({ method: "GET", url: `/${bucket}/grant.txt` })).statusCode).toBe(200);
   });
 
   it("protects the access-key control plane with an admin bearer token", async () => {
@@ -1000,13 +948,8 @@ describe("S3 HTTP routes", () => {
       });
       expect(issued.body).not.toContain("private-oidc-api-token");
       expect(fetchMock).toHaveBeenCalledOnce();
-      const [url, options] = fetchMock.mock.calls[0] as unknown as [
-        URL,
-        RequestInit,
-      ];
-      expect(url.toString()).toBe(
-        "https://auth.example.com/api-tokens/s3mini-dashboard/issue",
-      );
+      const [url, options] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+      expect(url.toString()).toBe("https://auth.example.com/api-tokens/s3mini-dashboard/issue");
       expect(options.headers).toMatchObject({
         authorization: "Bearer private-oidc-api-token",
         "content-type": "application/json",
@@ -1016,9 +959,7 @@ describe("S3 HTTP routes", () => {
         scopes: ["s3:provision"],
       });
 
-      fetchMock.mockImplementationOnce(
-        async () => new Response("secret details", { status: 401 }),
-      );
+      fetchMock.mockImplementationOnce(async () => new Response("secret details", { status: 401 }));
       const rejectedApiToken = await app.inject({
         method: "POST",
         url: "/admin/oidc/api-tokens",
@@ -1093,11 +1034,7 @@ describe("S3 HTTP routes", () => {
           headers: { authorization: "Bearer test-admin-token" },
         })
       ).json(),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: managedBucket }),
-      ]),
-    );
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ name: managedBucket })]));
     expect(
       (
         await app.inject({
@@ -1164,9 +1101,7 @@ describe("S3 HTTP routes", () => {
     process.env.S3MINI_ADMIN_TOKEN = "test-admin-token";
     await s3.createBucket(bucket);
     await s3.putObject(bucket, "dead-letter.txt", Buffer.from("event"), {});
-    const event = (await s3.listReplicationEvents()).find(
-      (item) => item.key === "dead-letter.txt",
-    );
+    const event = (await s3.listReplicationEvents()).find((item) => item.key === "dead-letter.txt");
     await s3.updateReplicationEvent(event!.id, "DeadLetter", 8);
     const listed = await app.inject({
       method: "GET",
@@ -1175,9 +1110,7 @@ describe("S3 HTTP routes", () => {
     });
     expect(listed.statusCode).toBe(200);
     expect(listed.json()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: event!.id, status: "DeadLetter" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ id: event!.id, status: "DeadLetter" })]),
     );
     expect(
       (
@@ -1188,10 +1121,7 @@ describe("S3 HTTP routes", () => {
         })
       ).statusCode,
     ).toBe(204);
-    expect(
-      (await s3.listReplicationEvents()).find((item) => item.id === event!.id)
-        ?.status,
-    ).toBe("Pending");
+    expect((await s3.listReplicationEvents()).find((item) => item.id === event!.id)?.status).toBe("Pending");
     delete process.env.S3MINI_ADMIN_TOKEN;
   });
 
@@ -1234,9 +1164,7 @@ describe("S3 HTTP routes", () => {
     expect(dashboard.body).toContain("bucket-policy-dialog");
     expect(dashboard.body).toContain("saveDialogPolicy");
     expect(dashboard.body).not.toContain("view === 'settings'");
-    expect(dashboard.body).not.toContain(
-      "document.querySelector('#peer-table').innerHTML",
-    );
+    expect(dashboard.body).not.toContain("document.querySelector('#peer-table').innerHTML");
     expect(dashboard.body).toContain("setMenuOpen(true)");
     expect(dashboard.body).toContain("setMenuOpen(false)");
     expect(dashboard.body).toContain("/admin/profile");
@@ -1255,9 +1183,8 @@ describe("S3 HTTP routes", () => {
     expect(response.headers.location).toBe("/admin/login");
     const login = await app.inject({ method: "GET", url: "/admin/login" });
     expect(login.statusCode).toBe(302);
-    expect(login.headers.location).toContain(
-      "https://auth.example.com/authorize",
-    );
+    expect(login.headers.location).toContain("https://auth.example.com/authorize");
+    expect(new URL(login.headers.location!).searchParams.get("scope")).toContain("offline_access");
     expect(login.headers["set-cookie"]).toContain("s3mini_oidc_state=");
     expect(login.headers["set-cookie"]).toContain("Path=/;");
     delete process.env.S3MINI_OIDC_CLIENT_ID;
@@ -1293,13 +1220,9 @@ describe("S3 HTTP routes", () => {
     process.env.OIDC_REDIRECT_URI = "https://storage.example.com/auth/callback";
     const login = await app.inject({ method: "GET", url: "/admin/login" });
     expect(login.statusCode).toBe(302);
-    expect(login.headers.location).toContain(
-      "https://auth.example.com/authorize",
-    );
+    expect(login.headers.location).toContain("https://auth.example.com/authorize");
     expect(login.headers.location).toContain("client_id=live-client");
-    expect(login.headers.location).toContain(
-      "redirect_uri=https%3A%2F%2Fstorage.example.com%2Fauth%2Fcallback",
-    );
+    expect(login.headers.location).toContain("redirect_uri=https%3A%2F%2Fstorage.example.com%2Fauth%2Fcallback");
     delete process.env.AUTH_PROVIDER;
     delete process.env.OIDC_CLIENT_ID;
     delete process.env.OIDC_CLIENT_SECRET;
@@ -1311,23 +1234,12 @@ describe("S3 HTTP routes", () => {
     process.env.S3MINI_OIDC_CLIENT_ID = "s3mini-dashboard";
     process.env.S3MINI_OIDC_CLIENT_SECRET = "secret";
     const login = await app.inject({ method: "GET", url: "/admin/login" });
-    const stateCookie = String(login.headers["set-cookie"]).match(
-      /s3mini_oidc_state=([^;]+)/,
-    )?.[1];
+    const stateCookie = String(login.headers["set-cookie"]).match(/s3mini_oidc_state=([^;]+)/)?.[1];
     expect(stateCookie).toBeTruthy();
-    const state = JSON.parse(
-      Buffer.from(stateCookie!, "base64url").toString("utf8"),
-    ) as { state: string };
+    const state = JSON.parse(Buffer.from(stateCookie!, "base64url").toString("utf8")) as { state: string };
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(
-            JSON.stringify({ access_token: "issued-access-token" }),
-            { status: 200 },
-          ),
-        ),
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ access_token: "issued-access-token" }), { status: 200 })),
     );
     const callback = await app.inject({
       method: "GET",
@@ -1336,14 +1248,144 @@ describe("S3 HTTP routes", () => {
     });
     expect(callback.statusCode).toBe(302);
     expect(callback.headers.location).toBe("/admin");
-    expect(callback.headers["set-cookie"]).toContain(
-      "s3mini_oidc_token=issued-access-token",
-    );
+    const callbackCookies = String(callback.headers["set-cookie"]);
+    expect(callbackCookies).toContain("s3mini_oidc_session=");
+    expect(callbackCookies).not.toContain("issued-access-token");
+    expect(callbackCookies).not.toContain("refresh-token");
     vi.unstubAllGlobals();
     delete process.env.S3MINI_OIDC_CLIENT_ID;
     delete process.env.S3MINI_OIDC_CLIENT_SECRET;
     delete process.env.AUTH_PROVIDER;
   });
+
+  it("renews an OIDC dashboard session with its refresh token", async () => {
+    process.env.AUTH_PROVIDER = "https://auth.example.com";
+    process.env.S3MINI_OIDC_CLIENT_ID = "s3mini-dashboard";
+    process.env.S3MINI_OIDC_CLIENT_SECRET = "secret";
+    process.env.S3MINI_OIDC_ADMIN_EMAILS = "admin@example.com";
+    const keys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicJwk = keys.publicKey.export({ format: "jwk" }) as JsonWebKey;
+    const jwt = (sub: string) => {
+      const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "refresh-key" })).toString("base64url");
+      const payload = Buffer.from(
+        JSON.stringify({
+          iss: "https://auth.example.com",
+          aud: "s3mini-dashboard",
+          sub,
+          exp: Math.floor(Date.now() / 1000) + 300,
+        }),
+      ).toString("base64url");
+      const content = `${header}.${payload}`;
+      const signature = crypto.createSign("RSA-SHA256").update(content).sign(keys.privateKey).toString("base64url");
+      return `${content}.${signature}`;
+    };
+    const originalAccess = jwt("user-refresh");
+    const renewedAccess = jwt("user-refresh");
+    let refreshRequests = 0;
+    const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/token")) {
+        const form = new URLSearchParams(String(init?.body || ""));
+        if (form.get("grant_type") === "authorization_code") {
+          return new Response(
+            JSON.stringify({ access_token: originalAccess, refresh_token: "initial-refresh-token", expires_in: 1 }),
+            { status: 200 },
+          );
+        }
+        expect(form.get("grant_type")).toBe("refresh_token");
+        expect(form.get("refresh_token")).toBe(
+          refreshRequests === 0 ? "initial-refresh-token" : "rotated-refresh-token",
+        );
+        refreshRequests += 1;
+        if (refreshRequests === 2) {
+          return new Response("temporarily unavailable", { status: 503 });
+        }
+        return new Response(
+          JSON.stringify({
+            access_token: renewedAccess,
+            refresh_token: "rotated-refresh-token",
+            expires_in: refreshRequests === 1 ? 1 : 3600,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith("/jwks.json")) {
+        return new Response(JSON.stringify({ keys: [{ ...publicJwk, kid: "refresh-key", kty: "RSA" }] }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ sub: "user-refresh", email: "admin@example.com" }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const login = await app.inject({ method: "GET", url: "/admin/login" });
+      const stateCookie = String(login.headers["set-cookie"]).match(/s3mini_oidc_state=([^;]+)/)?.[1];
+      const { state } = JSON.parse(Buffer.from(stateCookie!, "base64url").toString("utf8"));
+      const callback = await app.inject({
+        method: "GET",
+        url: `/auth/callback?code=authorization-code&state=${encodeURIComponent(state)}`,
+        headers: { cookie: `s3mini_oidc_state=${stateCookie}` },
+      });
+      const sessionCookie = String(callback.headers["set-cookie"]).match(/s3mini_oidc_session=([^;]+)/)?.[1];
+      expect(sessionCookie).toBeTruthy();
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      const dashboard = await app.inject({
+        method: "GET",
+        url: "/admin",
+        headers: { cookie: `s3mini_oidc_session=${sessionCookie}` },
+      });
+      expect(dashboard.statusCode).toBe(200);
+      expect(refreshRequests).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      const transientFailure = await app.inject({
+        method: "GET",
+        url: "/admin",
+        headers: { cookie: `s3mini_oidc_session=${sessionCookie}` },
+      });
+      expect(transientFailure.statusCode).toBe(503);
+      expect(refreshRequests).toBe(2);
+      const renewedAgain = await app.inject({
+        method: "GET",
+        url: "/admin",
+        headers: { cookie: `s3mini_oidc_session=${sessionCookie}` },
+      });
+      expect(renewedAgain.statusCode).toBe(200);
+      expect(refreshRequests).toBe(3);
+      await app.close();
+      app = Fastify();
+      await registerRoutes(app, s3);
+      const afterRestart = await app.inject({
+        method: "GET",
+        url: "/admin",
+        headers: { cookie: `s3mini_oidc_session=${sessionCookie}` },
+      });
+      expect(afterRestart.statusCode).toBe(200);
+      const logout = await app.inject({
+        method: "GET",
+        url: "/auth/logout",
+        headers: { cookie: `s3mini_oidc_session=${sessionCookie}` },
+      });
+      expect(logout.statusCode).toBe(200);
+      const afterLogout = await app.inject({
+        method: "GET",
+        url: "/admin",
+        headers: { cookie: `s3mini_oidc_session=${sessionCookie}` },
+      });
+      expect(afterLogout.statusCode).toBe(302);
+      const apiAfterLogout = await app.inject({
+        method: "GET",
+        url: "/admin/profile",
+        headers: { cookie: `s3mini_oidc_session=${sessionCookie}` },
+      });
+      expect(apiAfterLogout.statusCode).toBe(401);
+    } finally {
+      vi.unstubAllGlobals();
+      delete process.env.AUTH_PROVIDER;
+      delete process.env.S3MINI_OIDC_CLIENT_ID;
+      delete process.env.S3MINI_OIDC_CLIENT_SECRET;
+      delete process.env.S3MINI_OIDC_ADMIN_EMAILS;
+    }
+  }, 15_000);
 
   it("authorizes OIDC dashboard API requests with the authenticated user", async () => {
     process.env.AUTH_PROVIDER = "https://auth.example.com";
@@ -1352,9 +1394,7 @@ describe("S3 HTTP routes", () => {
     process.env.S3MINI_OIDC_ADMIN_EMAILS = "admin@example.com";
     const keys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
     const publicJwk = keys.publicKey.export({ format: "jwk" }) as JsonWebKey;
-    const header = Buffer.from(
-      JSON.stringify({ alg: "RS256", kid: "test-key" }),
-    ).toString("base64url");
+    const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: "test-key" })).toString("base64url");
     const issueToken = (sub: string) => {
       const payload = Buffer.from(
         JSON.stringify({
@@ -1365,11 +1405,7 @@ describe("S3 HTTP routes", () => {
         }),
       ).toString("base64url");
       const signed = `${header}.${payload}`;
-      const signature = crypto
-        .createSign("RSA-SHA256")
-        .update(signed)
-        .sign(keys.privateKey)
-        .toString("base64url");
+      const signature = crypto.createSign("RSA-SHA256").update(signed).sign(keys.privateKey).toString("base64url");
       return `${signed}.${signature}`;
     };
     const token = issueToken("user-1");
@@ -1395,12 +1431,9 @@ describe("S3 HTTP routes", () => {
             ),
           );
         }
-        const authorization = (init?.headers as Record<string, string>)
-          ?.authorization;
+        const authorization = (init?.headers as Record<string, string>)?.authorization;
         const profile = tokenProfiles.get(authorization?.slice(7) || "");
-        return Promise.resolve(
-          new Response(JSON.stringify(profile), { status: 200 }),
-        );
+        return Promise.resolve(new Response(JSON.stringify(profile), { status: 200 }));
       }),
     );
     const response = await app.inject({
@@ -1567,8 +1600,7 @@ describe("S3 HTTP routes", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((_input: string | URL, init?: RequestInit) => {
-        const token =
-          new URLSearchParams(String(init?.body || "")).get("token") || "";
+        const token = new URLSearchParams(String(init?.body || "")).get("token") || "";
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -1807,16 +1839,8 @@ describe("S3 HTTP routes", () => {
       payload: body,
     });
     expect(replicated.statusCode).toBe(204);
-    expect(
-      (
-        await s3.getObject(bucket, "replica.txt", "replica-version+")
-      ).data.toString(),
-    ).toBe("replicated body");
-    expect(
-      (await s3.listReplicationEvents()).some(
-        (event) => event.key === "replica.txt",
-      ),
-    ).toBe(false);
+    expect((await s3.getObject(bucket, "replica.txt", "replica-version+")).data.toString()).toBe("replicated body");
+    expect((await s3.listReplicationEvents()).some((event) => event.key === "replica.txt")).toBe(false);
     const inventory = await app.inject({
       method: "GET",
       url: "/internal/replication/inventory",
@@ -1847,9 +1871,7 @@ describe("S3 HTTP routes", () => {
       },
     });
     expect(deleted.statusCode).toBe(204);
-    await expect(
-      s3.getObject(bucket, "replica.txt", "replica-version+"),
-    ).rejects.toMatchObject({ code: "NoSuchKey" });
+    await expect(s3.getObject(bucket, "replica.txt", "replica-version+")).rejects.toMatchObject({ code: "NoSuchKey" });
     delete process.env.S3MINI_REPLICATION_TOKEN;
   });
 

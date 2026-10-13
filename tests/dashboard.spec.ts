@@ -42,6 +42,21 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await page.goto("/admin", { waitUntil: "networkidle" });
   await expect(page.locator("control-plane-app")).toBeAttached();
   await expect(page.getByText("Overview")).toBeVisible();
+  await expect(page.getByText("Object storage control plane")).toHaveCount(0);
+  const sidebar = page.locator("aside");
+  await expect(sidebar.locator("a").first()).toBeVisible();
+  await expect(sidebar.locator("span").filter({ hasText: /^admin$/i })).toHaveCount(0);
+  const sidebarChrome = await sidebar.evaluate((element) => ({
+    borderRight: globalThis.getComputedStyle(element).borderRightWidth,
+    headerBorder: globalThis.getComputedStyle(element.firstElementChild!).borderBottomWidth,
+  }));
+  expect(sidebarChrome).toEqual({ borderRight: "0px", headerBorder: "0px" });
+  expect(
+    await sidebar
+      .locator(":scope > a")
+      .first()
+      .evaluate((card) => card.nextElementSibling?.tagName),
+  ).toBe("NAV");
   const sidebarIcons = page.locator("aside nav button lucide-icon");
   await expect(sidebarIcons).toHaveCount(6);
   await expect.poll(() => sidebarIcons.locator("svg").count()).toBe(6);
