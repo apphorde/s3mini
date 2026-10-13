@@ -44,19 +44,21 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await expect(page.getByText("Overview")).toBeVisible();
   await expect(page.getByText("Object storage control plane")).toHaveCount(0);
   const sidebar = page.locator("aside");
-  await expect(sidebar.locator("a").first()).toBeVisible();
+  await expect(sidebar.getByText("s3mini.")).toBeVisible();
+  await expect(page.locator(".topbar-profile")).toBeVisible();
+  const topbarBounds = await page.locator(".dashboard-topbar").boundingBox();
+  const profileBounds = await page.locator(".topbar-profile").boundingBox();
+  expect(topbarBounds?.height).toBeLessThanOrEqual(64);
+  expect(profileBounds).not.toBeNull();
+  expect(profileBounds!.x + profileBounds!.width).toBeGreaterThan(1100);
+  await expect(sidebar.locator("a")).toHaveCount(0);
   await expect(sidebar.locator("span").filter({ hasText: /^admin$/i })).toHaveCount(0);
   const sidebarChrome = await sidebar.evaluate((element) => ({
     borderRight: globalThis.getComputedStyle(element).borderRightWidth,
     headerBorder: globalThis.getComputedStyle(element.firstElementChild!).borderBottomWidth,
   }));
   expect(sidebarChrome).toEqual({ borderRight: "0px", headerBorder: "0px" });
-  expect(
-    await sidebar
-      .locator(":scope > a")
-      .first()
-      .evaluate((card) => card.nextElementSibling?.tagName),
-  ).toBe("NAV");
+  await expect(sidebar.locator("nav")).toBeVisible();
   const sidebarIcons = page.locator("aside nav button lucide-icon");
   await expect(sidebarIcons).toHaveCount(6);
   await expect.poll(() => sidebarIcons.locator("svg").count()).toBe(6);
@@ -172,6 +174,8 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   expect([...errors, ...failedResponses]).toEqual([]);
 
   await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.locator(".topbar-profile")).toBeVisible();
+  await expect(page.locator(".mobile-brand")).toBeVisible();
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.locator("aside.control-sidebar-open")).toBeVisible();
   await page.getByRole("button", { name: "Close navigation overlay" }).click({ position: { x: 300, y: 200 } });

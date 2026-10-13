@@ -4,8 +4,8 @@
 @source "./control-plane.ts";
 
 @theme {
-  --color-brand: #3b714b;
-  --color-brand-hover: #2f563b;
+  --color-brand: #1e3a2f;
+  --color-brand-hover: #13271f;
   --color-app-bg: #eef2ec;
 }
 
@@ -75,7 +75,7 @@ control-plane-app {
   height: 1.5rem;
   place-items: center;
   border-radius: 0.5rem;
-  background: #3b714b;
+  background: #1e3a2f;
   color: white;
   font-size: 0.75rem;
   font-weight: 700;
@@ -261,4 +261,133 @@ textarea:focus-visible {
   main.control-main table {
     min-width: 36rem;
   }
+}
+
+/* Full-height dashboard shell, with the account card kept in the slim topbar. */
+.dashboard-topbar {
+  display: flex;
+  min-height: 3.5rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 0.375rem 1rem;
+}
+
+.topbar-leading,
+.topbar-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.topbar-profile {
+  min-width: 0;
+  gap: 0.625rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  color: #1c201e;
+  text-decoration: none;
+}
+.topbar-profile:hover {
+  background: #f3f4f1;
+}
+.profile-avatar {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  place-items: center;
+  border-radius: 50%;
+  background: #d6ecc9;
+  color: #2c533c;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.profile-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.profile-copy strong,
+.profile-copy small {
+  overflow: hidden;
+  max-width: 13rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-copy strong {
+  font-size: 0.8rem;
+}
+.profile-copy small {
+  color: #6b7280;
+  font-size: 0.68rem;
+}
+.mobile-brand {
+  color: #1e3a2f;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+.mobile-brand span {
+  color: #34a36b;
+}
+.topbar-breadcrumb {
+  color: #6b7280;
+  font-size: 0.8125rem;
+}
+.topbar-breadcrumb b {
+  color: #1c201e;
+  font-weight: 600;
+}
+.control-sidebar {
+  width: 15rem;
+  flex-basis: 15rem;
+}
+.nav-item-active,
+.nav-item-active:hover {
+  border-color: #1e3a2f;
+  color: #1e3a2f;
+}
+.nav-item-active .nav-icon {
+  color: #1e3a2f;
+}
+main.control-main {
+  padding: 0;
+}
+main.control-main > .content-canvas {
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+@media (min-width: 768px) {
+  .dashboard-topbar {
+    padding: 0.375rem 1.5rem;
+  }
+  .menu-toggle,
+  .mobile-brand {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .topbar-breadcrumb,
+  .profile-copy,
+  .topbar-profile > lucide-icon {
+    display: none;
+  }
+  .topbar-profile {
+    padding: 0.25rem;
+  }
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-color: #1e3a2f;
 }
