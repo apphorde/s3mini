@@ -270,8 +270,7 @@ textarea:focus-visible {
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e5e7eb;
-  background: #fff;
+  background: #eef2ec;
   padding: 0.375rem 1rem;
 }
 
@@ -288,6 +287,9 @@ textarea:focus-visible {
   padding: 0.25rem 0.5rem;
   color: #1c201e;
   text-decoration: none;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(28 32 30 / 6%);
 }
 .topbar-profile:hover {
   background: #f3f4f1;
@@ -354,13 +356,14 @@ textarea:focus-visible {
   color: #1e3a2f;
 }
 main.control-main {
-  padding: 0;
+  gap: 0;
+  padding: 0 1rem 1rem;
 }
 main.control-main > .content-canvas {
   max-width: none;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px rgb(28 32 30 / 5%);
 }
 
 @media (min-width: 768px) {
@@ -370,6 +373,9 @@ main.control-main > .content-canvas {
   .menu-toggle,
   .mobile-brand {
     display: none;
+  }
+  main.control-main {
+    padding: 0 1.5rem 1.5rem;
   }
 }
 
@@ -381,6 +387,9 @@ main.control-main > .content-canvas {
   }
   .topbar-profile {
     padding: 0.25rem;
+  }
+  main.control-main {
+    padding: 0 0.75rem 0.75rem;
   }
 }
 

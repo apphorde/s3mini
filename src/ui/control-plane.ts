@@ -161,7 +161,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace('message="{{ status }}"', 'bind-message="status"')
   .replace(
     /<header[\s\S]*?<\/header>/,
-    '<header class="dashboard-topbar"><div class="topbar-leading"><button class="menu-toggle" aria-label="Open navigation" on-click="setMenuOpen(true)"><lucide-icon icon="menu" size="20" icon-classes="nav-icon-svg" aria-hidden="true"></lucide-icon><span class="sr-only">Open menu</span></button><strong class="mobile-brand">s3mini<span>.</span></strong><span class="topbar-breadcrumb">Workspace <b>S3MINI</b></span></div><a class="topbar-profile" bind-href="profile.meUrl" target="_blank" rel="noreferrer"><span class="profile-avatar">{{ profile.initials }}</span><span class="profile-copy"><strong>{{ profile.name }}</strong><small>{{ profile.email }}</small></span><lucide-icon icon="chevron-down" size="16" icon-classes="nav-icon-svg" aria-hidden="true"></lucide-icon></a></header>',
+    '<header class="dashboard-topbar"><div class="topbar-leading"><button class="menu-toggle" aria-label="Open navigation" on-click="setMenuOpen(true)"><lucide-icon icon="menu" size="20" icon-classes="nav-icon-svg" aria-hidden="true"></lucide-icon><span class="sr-only">Open menu</span></button><strong class="mobile-brand">s3mini<span>.</span></strong></div><a class="topbar-profile" bind-href="profile.meUrl" target="_blank" rel="noreferrer"><span class="profile-avatar">{{ profile.initials }}</span><span class="profile-copy"><strong>{{ profile.name }}</strong><small>{{ profile.email }}</small></span><lucide-icon icon="chevron-down" size="16" icon-classes="nav-icon-svg" aria-hidden="true"></lucide-icon></a></header>',
   )
   .replace(/<table class="/g, '<table class="bg-white ')
   .replace(

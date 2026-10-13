@@ -46,6 +46,7 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   const sidebar = page.locator("aside");
   await expect(sidebar.getByText("s3mini.")).toBeVisible();
   await expect(page.locator(".topbar-profile")).toBeVisible();
+  await expect(page.getByText("Workspace S3MINI")).toHaveCount(0);
   const topbarBounds = await page.locator(".dashboard-topbar").boundingBox();
   const profileBounds = await page.locator(".topbar-profile").boundingBox();
   expect(topbarBounds?.height).toBeLessThanOrEqual(64);
