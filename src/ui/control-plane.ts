@@ -165,7 +165,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   )
   .replace(/<table class="/g, '<table class="bg-white ')
   .replace(
-    /<button class="block w-full rounded-lg bg-[#edf5ee][^>]*on-click="setView\('overview'\)">/,
+    /<button class="[^"]*" on-click="setView\('overview'\)">/,
     "<button bind-class=\"view === 'overview' ? 'nav-item nav-item-active' : 'nav-item'\" on-click=\"setView('overview')\">",
   )
   .replace(

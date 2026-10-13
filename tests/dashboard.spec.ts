@@ -45,6 +45,13 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   const sidebarIcons = page.locator("aside nav button lucide-icon");
   await expect(sidebarIcons).toHaveCount(6);
   await expect.poll(() => sidebarIcons.locator("svg").count()).toBe(6);
+  const dashboardLink = page.getByRole("button", { name: "Dashboard" });
+  await expect(dashboardLink).toHaveClass(/nav-item-active/);
+  const navigationButtons = page.locator("aside nav button");
+  await expect(navigationButtons).toHaveCount(6);
+  for (const navigationButton of await navigationButtons.all()) {
+    await expect(navigationButton).toHaveClass(/nav-item/);
+  }
   const desktopLayout = await page.evaluate(() => {
     const sidebar = globalThis.document.querySelector("aside")!.getBoundingClientRect();
     const main = globalThis.document.querySelector("main")!.getBoundingClientRect();
