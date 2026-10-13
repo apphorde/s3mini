@@ -535,11 +535,7 @@ export async function registerRoutes(
     id?: string;
     email?: string;
   }): Promise<DashboardRole | undefined> {
-    const allowedAdmins = (process.env.S3MINI_OIDC_ADMIN_EMAILS || "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean);
-    if (profile.email && allowedAdmins.includes(profile.email.toLowerCase())) {
+    if (await isDashboardAdmin(profile)) {
       return "admin";
     }
     if (!profile.id) {
@@ -547,6 +543,24 @@ export async function registerRoutes(
     }
     const record = await s3.getAdminUserRole(profile.id);
     return record && record.role !== "revoked" ? record.role : undefined;
+  }
+
+  async function isDashboardAdmin(profile: {
+    id?: string;
+    email?: string;
+  }): Promise<boolean> {
+    const allowedAdmins = (process.env.S3MINI_OIDC_ADMIN_EMAILS || "")
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    if (profile.email && allowedAdmins.includes(profile.email.toLowerCase())) {
+      return true;
+    }
+    if (!profile.id) {
+      return false;
+    }
+    const record = await s3.getAdminUserRole(profile.id);
+    return record?.role === "admin";
   }
 
   async function authorizeAdmin(
@@ -698,14 +712,10 @@ export async function registerRoutes(
       if (!token) {
         return reply.redirect("/admin/login");
       }
-      let role: DashboardRole | undefined;
-      try {
-        const profile = await getOidcProfile(token);
-        role = profile && (await getOidcRole(profile));
-      } catch {
-        role = undefined;
-      }
-      if (role !== "admin") {
+      const isAdmin = await getOidcProfile(token)
+        .then((profile) => (profile ? isDashboardAdmin(profile) : false))
+        .catch(() => false);
+      if (!isAdmin) {
         return reply
           .header("Cache-Control", "no-store")
           .type("text/html")

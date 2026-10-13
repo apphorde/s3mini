@@ -110,6 +110,7 @@ control-plane-app {
   text-align: left;
   font-size: 0.875rem;
   font-weight: 500;
+  line-height: 1.25;
   transition:
     background-color 150ms ease,
     color 150ms ease,
@@ -136,10 +137,13 @@ control-plane-app {
   align-items: center;
   justify-content: center;
   color: #6b7280;
+  line-height: 1;
 }
 
 .nav-icon-svg {
   display: block;
+  width: 18px;
+  height: 18px;
 }
 
 .nav-item-active .nav-icon {
