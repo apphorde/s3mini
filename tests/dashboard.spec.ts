@@ -55,6 +55,30 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   expect(topbarBounds?.height).toBeLessThanOrEqual(64);
   expect(profileBounds).not.toBeNull();
   expect(profileBounds!.x + profileBounds!.width).toBeGreaterThan(1100);
+  expect(await page.locator(".dashboard-topbar").evaluate((element) => getComputedStyle(element).paddingRight)).toBe(
+    "0px",
+  );
+  expect(await userCard.evaluate((element) => getComputedStyle(element).paddingRight)).toBe("16px");
+  expect(profileBounds!.x + profileBounds!.width).toBe(topbarBounds!.x + topbarBounds!.width);
+  await page.getByRole("button", { name: "Toggle light and dark theme" }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect
+    .poll(() => page.locator("body").evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe("rgb(17, 24, 39)");
+  await expect
+    .poll(() => sidebar.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe("rgb(17, 24, 39)");
+  await expect
+    .poll(() =>
+      page.getByRole("button", { name: "Dashboard" }).evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
+    .toBe("rgb(31, 41, 55)");
+  await page.screenshot({ path: "test-results/dashboard-dark-theme.png", fullPage: true });
+  expect(await page.evaluate(() => localStorage.getItem("s3mini-theme"))).toBe("dark");
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.getByRole("button", { name: "Toggle light and dark theme" }).click();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
   await expect(sidebar.locator("a")).toHaveCount(0);
   await expect(sidebar.locator("span").filter({ hasText: /^admin$/i })).toHaveCount(0);
   const sidebarChrome = await sidebar.evaluate((element) => ({
@@ -76,9 +100,10 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   const desktopLayout = await page.evaluate(() => {
     const sidebar = globalThis.document.querySelector("aside")!.getBoundingClientRect();
     const main = globalThis.document.querySelector("main")!.getBoundingClientRect();
-    return { sidebarRight: sidebar.right, mainLeft: main.left, mainWidth: main.width };
+    return { sidebarRight: sidebar.right, sidebarWidth: sidebar.width, mainLeft: main.left, mainWidth: main.width };
   });
   expect(desktopLayout.sidebarRight).toBe(desktopLayout.mainLeft);
+  expect(desktopLayout.sidebarWidth).toBe(256);
   expect(desktopLayout.mainWidth).toBeGreaterThan(900);
   await page.screenshot({
     path: "test-results/dashboard-overview.png",
@@ -104,10 +129,23 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await expect(userCard.getByText("H", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Buckets" }).click();
   await expect(page.getByRole("heading", { name: "Buckets" })).toBeVisible();
+  const bucketSearch = page.getByPlaceholder("Search");
+  const bucketForm = page.locator("section form").first();
+  const searchBounds = await bucketSearch.boundingBox();
+  const formBounds = await bucketForm.boundingBox();
+  expect(searchBounds).not.toBeNull();
+  expect(formBounds).not.toBeNull();
+  expect(searchBounds!.x).toBeLessThan(formBounds!.x);
+  expect(await bucketForm.evaluate((form) => getComputedStyle(form.parentElement!).justifyContent)).toBe(
+    "space-between",
+  );
+  await page.screenshot({ path: "test-results/dashboard-buckets-layout.png", fullPage: true });
   const bucketName = `ui-smoke-${Date.now()}`;
   await page.getByPlaceholder("Bucket name").fill(bucketName);
   await page.getByRole("button", { name: "Create bucket" }).click();
   await expect(page.getByText(bucketName), requests.join("\n")).toBeVisible();
+  await bucketSearch.fill(bucketName);
+  await expect(page.getByText(bucketName)).toBeVisible();
   await page.getByRole("button", { name: "Accounts" }).click();
   await expect(page).toHaveURL(/page=accounts/);
   await page.getByPlaceholder("Display name").fill("ui-smoke-account");
@@ -196,7 +234,15 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   expect([...errors, ...failedResponses]).toEqual([]);
 
   await page.setViewportSize({ width: 375, height: 812 });
-  await expect(page.getByRole("group", { name: "Signed-in user" })).toBeVisible();
+  const mobileUserCard = page.getByRole("group", { name: "Signed-in user" });
+  await expect(mobileUserCard).toBeVisible();
+  expect(await mobileUserCard.evaluate((element) => getComputedStyle(element).paddingRight)).toBe("6px");
+  const mobileCardBounds = await mobileUserCard.boundingBox();
+  const mobileTopbarBounds = await page.locator(".dashboard-topbar").boundingBox();
+  expect(mobileCardBounds).not.toBeNull();
+  expect(mobileTopbarBounds).not.toBeNull();
+  expect(mobileCardBounds!.x).toBeGreaterThan(100);
+  expect(mobileCardBounds!.x + mobileCardBounds!.width).toBe(mobileTopbarBounds!.x + mobileTopbarBounds!.width);
   await expect(page.locator(".mobile-brand")).toBeVisible();
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.locator("aside.control-sidebar-open")).toBeVisible();

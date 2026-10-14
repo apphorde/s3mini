@@ -46,8 +46,6 @@ control-plane-app {
   inset: 0 auto 0 0;
   z-index: 40;
   display: none;
-  width: 16rem;
-  flex: 0 0 16rem;
   flex-direction: column;
   justify-content: space-between;
   overflow-y: auto;
@@ -270,14 +268,30 @@ textarea:focus-visible {
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
+  margin-right: -1rem;
   background: #eef2ec;
-  padding: 0.375rem 1rem;
+  padding: 0.375rem 0 0.375rem 1rem;
 }
 
 .topbar-leading {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+.theme-toggle {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: #6b7280;
+}
+.theme-toggle:hover {
+  background: rgb(203 213 225 / 45%);
+  color: #1e3a2f;
 }
 .profile-photo {
   position: absolute;
@@ -294,18 +308,6 @@ textarea:focus-visible {
 }
 .mobile-brand span {
   color: #34a36b;
-}
-.topbar-breadcrumb {
-  color: #6b7280;
-  font-size: 0.8125rem;
-}
-.topbar-breadcrumb b {
-  color: #1c201e;
-  font-weight: 600;
-}
-.control-sidebar {
-  width: 15rem;
-  flex-basis: 15rem;
 }
 .nav-item-active,
 .nav-item-active:hover {
@@ -328,7 +330,8 @@ main.control-main > .content-canvas {
 
 @media (min-width: 768px) {
   .dashboard-topbar {
-    padding: 0.375rem 1.5rem;
+    margin-right: -1.5rem;
+    padding: 0.375rem 0 0.375rem 1.5rem;
   }
   .menu-toggle,
   .mobile-brand {
@@ -340,6 +343,9 @@ main.control-main > .content-canvas {
 }
 
 @media (max-width: 639px) {
+  .dashboard-topbar {
+    margin-right: -0.75rem;
+  }
   main.control-main {
     padding: 0 0.75rem 0.75rem;
   }
@@ -351,4 +357,92 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   outline-color: #1e3a2f;
+}
+
+.dark body {
+  background: #111827;
+  color: #f3f4f6;
+}
+.dark .dashboard-topbar,
+.dark .control-sidebar {
+  background: #111827;
+}
+.dark .control-sidebar .text-gray-900,
+.dark .control-sidebar .text-gray-600,
+.dark .control-sidebar .text-gray-500 {
+  color: #d1d5db;
+}
+.dark .control-sidebar strong {
+  color: #d1d5db;
+}
+.dark .nav-item {
+  color: #d1d5db;
+}
+.dark .nav-item:hover {
+  background: #1f2937;
+}
+.dark .nav-item-active,
+.dark .nav-item-active:hover {
+  border-color: #3b714b;
+  background: #1f2937;
+  color: #c1e1c2;
+}
+.dark .nav-item-active .nav-icon {
+  color: #c1e1c2;
+}
+.dark main.control-main > .content-canvas {
+  border-color: #374151;
+  background: #111827;
+  color: #f3f4f6;
+}
+.dark .content-canvas .bg-white {
+  background: #1f2937;
+}
+.dark .content-canvas .bg-gray-50,
+.dark .content-canvas .bg-gray-100 {
+  background: #1f2937;
+}
+.dark .content-canvas .text-gray-900,
+.dark .content-canvas .text-gray-800,
+.dark .content-canvas .text-gray-700 {
+  color: #f3f4f6;
+}
+.dark .content-canvas .text-gray-600,
+.dark .content-canvas .text-gray-500,
+.dark .content-canvas .text-gray-400 {
+  color: #9ca3af;
+}
+.dark .content-canvas .border-gray-100,
+.dark .content-canvas .border-gray-200,
+.dark .content-canvas .border-gray-300,
+.dark .content-canvas .divide-gray-100 > :not(:last-child) {
+  border-color: #374151;
+}
+.dark .content-canvas input:not([type="checkbox"]),
+.dark .content-canvas select,
+.dark .content-canvas textarea {
+  border-color: #4b5563;
+  background: #1f2937;
+  color: #f3f4f6;
+}
+.dark .content-canvas table thead {
+  background: #1f2937;
+  color: #d1d5db;
+}
+.dark .theme-toggle {
+  color: #d1d5db;
+}
+.dark .theme-toggle:hover {
+  background: #1f2937;
+  color: #fff;
+}
+.dark .dashboard-topbar [aria-label="Signed-in user"] {
+  border-color: #374151;
+  background: #1f2937;
+}
+.dark .dashboard-topbar .text-gray-900 {
+  color: #f9fafb;
+}
+.dark .dashboard-topbar .text-gray-500 {
+  color: #9ca3af;
 }
