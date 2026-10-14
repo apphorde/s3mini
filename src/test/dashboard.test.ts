@@ -22,11 +22,11 @@ describe("control-plane dashboard smoke test", () => {
   it("boots the Li3 app shell with reactive bucket and policy views", async () => {
     const response = await app.inject({ method: "GET", url: "/admin" });
     expect(response.statusCode).toBe(200);
-    expect(response.body).toContain("<control-plane-app></control-plane-app>");
-    expect(response.body).toContain('<template component="control-plane-app">');
     expect(response.body).toContain(
-      "import { computed, ref, onInit } from '@li3/web';",
+      '<control-plane-app class="flex h-full w-full min-h-0 min-w-0 overflow-hidden"></control-plane-app>',
     );
+    expect(response.body).toContain('<template component="control-plane-app">');
+    expect(response.body).toContain("import { computed, ref, onInit } from '@li3/web';");
     expect(response.body).toContain('template for="[bucket] of buckets"');
     expect(response.body).toContain("bucket-policy-dialog");
     expect(response.body).toContain("Policy syntax help");

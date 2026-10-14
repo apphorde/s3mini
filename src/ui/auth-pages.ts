@@ -1,7 +1,7 @@
 const AUTH_STYLESHEET = '<link rel="stylesheet" href="/admin/tailwind.css">';
 
 export const DASHBOARD_ACCESS_ERROR_HTML = `<!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +9,7 @@ export const DASHBOARD_ACCESS_ERROR_HTML = `<!doctype html>
     <title>Dashboard access needs attention · S3MINI</title>
     ${AUTH_STYLESHEET}
   </head>
-  <body class="auth-page bg-app-bg text-[#1c201e]">
+  <body class="grid h-auto min-h-dvh place-items-center overflow-auto bg-[#eef2ec] p-4 font-sans text-[#1c201e] [color-scheme:light]">
     <main class="w-full max-w-xl px-4 py-10 sm:px-6">
       <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-9">
         <div class="mb-8 flex items-center gap-3">
@@ -35,7 +35,7 @@ export const DASHBOARD_ACCESS_ERROR_HTML = `<!doctype html>
 </html>`;
 
 export const SIGNED_OUT_HTML = `<!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -43,7 +43,7 @@ export const SIGNED_OUT_HTML = `<!doctype html>
     <title>Signed out · S3MINI</title>
     ${AUTH_STYLESHEET}
   </head>
-  <body class="auth-page bg-app-bg text-[#1c201e]">
+  <body class="grid h-auto min-h-dvh place-items-center overflow-auto bg-[#eef2ec] p-4 font-sans text-[#1c201e] [color-scheme:light]">
     <main class="w-full max-w-xl px-4 py-10 sm:px-6">
       <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-9">
         <div class="mb-8 flex items-center gap-3">

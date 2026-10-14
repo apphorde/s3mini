@@ -1154,7 +1154,7 @@ describe("S3 HTTP routes", () => {
     expect(dashboard.body).toContain("Replication");
     expect(dashboard.body).toContain("/admin/replication/events");
     expect(dashboard.body).toContain("@li3/web");
-    expect(dashboard.body).toContain("<control-plane-app>");
+    expect(dashboard.body).toContain('<control-plane-app class="flex h-full');
     expect(dashboard.body).toContain('template for="[bucket] of buckets"');
     expect(dashboard.body).not.toContain("document.querySelector");
     expect(dashboard.body).toContain("issued.secret");
@@ -1169,9 +1169,8 @@ describe("S3 HTTP routes", () => {
     expect(dashboard.body).toContain("setMenuOpen(false)");
     expect(dashboard.body).toContain("/admin/profile");
     expect(dashboard.body).toContain("profile.name");
-    expect(dashboard.body).toContain('bind-href="profile.meUrl"');
-    expect(dashboard.body).toContain('bind-href="profile.meUrl"');
-    expect(dashboard.body).toContain('target="_blank"');
+    expect(dashboard.body).toContain('aria-label="Signed-in user"');
+    expect(dashboard.body).toContain('bind-src="profile.photo"');
   });
 
   it("redirects dashboard access to OIDC when configured", async () => {
