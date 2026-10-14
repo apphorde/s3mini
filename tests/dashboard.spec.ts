@@ -70,13 +70,13 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect
     .poll(() => page.locator("body").evaluate((element) => getComputedStyle(element).backgroundColor))
-    .toBe("rgb(14, 21, 17)");
+    .toBe("rgb(12, 20, 16)");
   await expect
     .poll(() => sidebar.evaluate((element) => getComputedStyle(element).backgroundColor))
-    .toBe("rgb(14, 21, 17)");
+    .toBe("rgb(12, 20, 16)");
   await expect
     .poll(() => page.locator("main > div").evaluate((element) => getComputedStyle(element).backgroundColor))
-    .toBe("rgb(24, 34, 27)");
+    .toBe("rgb(24, 35, 27)");
   await expect
     .poll(() =>
       page.getByRole("button", { name: "Dashboard" }).evaluate((element) => getComputedStyle(element).backgroundColor),
@@ -108,6 +108,8 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   const dashboardLink = page.getByRole("button", { name: "Dashboard" });
   await expect(dashboardLink).toHaveClass(/cursor-pointer/);
   await expect(dashboardLink).toHaveClass(/border-brand/);
+  await expect(dashboardLink).toHaveClass(/rounded-lg/);
+  await expect(dashboardLink).toHaveClass(/text-brand/);
   const navigationButtons = page.locator("aside nav button");
   await expect(navigationButtons).toHaveCount(6);
   for (const navigationButton of await navigationButtons.all()) {
