@@ -66,6 +66,7 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   const themeToggle = page.getByRole("button", { name: "Toggle light and dark theme" });
   await expect(themeToggle).toHaveClass(/rounded-full/);
   await expect(themeToggle).toHaveClass(/border/);
+  await expect(themeToggle).toHaveClass(/bg-white/);
   await page.getByRole("button", { name: "Toggle light and dark theme" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect
