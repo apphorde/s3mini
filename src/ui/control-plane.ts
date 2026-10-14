@@ -217,7 +217,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace(/<template if="view === 'settings'">[\s\S]*?<\/section><\/template>/, "")
   .replace(
     /<button class="cursor-pointer text-red-600" on-click="deleteBucket\(bucket.name\)">Delete<\/button>/,
-    '<button class="cursor-pointer mr-3 text-brand" on-click="openPolicy(bucket.name)">Policy</button><button class="cursor-pointer text-red-600" on-click="deleteBucket(bucket.name)">Delete</button>',
+    '<button class="cursor-pointer mr-2 rounded-lg border border-brand bg-white px-3 py-1.5 text-xs font-medium text-brand hover:bg-green-50" on-click="openPolicy(bucket.name)">Policy</button><button class="cursor-pointer rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100" on-click="deleteBucket(bucket.name)">Delete</button>',
   )
   .replace(
     '<button class="cursor-pointer rounded-lg bg-brand px-3.5 py-2 text-sm font-medium text-white" on-click="setView(\'buckets\')">+ New bucket</button>',

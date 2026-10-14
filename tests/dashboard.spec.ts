@@ -176,6 +176,15 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await page.getByPlaceholder("Bucket name").fill(bucketName);
   await page.getByRole("button", { name: "Create bucket" }).click();
   await expect(page.getByText(bucketName), requests.join("\n")).toBeVisible();
+  const createdBucketRow = page.locator("tr").filter({ hasText: bucketName });
+  const policyButton = createdBucketRow.getByRole("button", { name: "Policy" });
+  const deleteButton = createdBucketRow.getByRole("button", { name: "Delete" });
+  await expect(policyButton).toHaveClass(/rounded-lg/);
+  await expect(policyButton).toHaveClass(/border-brand/);
+  await expect(policyButton).toHaveClass(/bg-white/);
+  await expect(deleteButton).toHaveClass(/rounded-lg/);
+  await expect(deleteButton).toHaveClass(/bg-red-50/);
+  await expect(deleteButton).toHaveClass(/text-red-700/);
   await bucketSearch.fill(bucketName);
   await expect(page.getByText(bucketName)).toBeVisible();
   await page.getByRole("button", { name: "Accounts" }).click();
