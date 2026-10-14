@@ -64,10 +64,13 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect
     .poll(() => page.locator("body").evaluate((element) => getComputedStyle(element).backgroundColor))
-    .toBe("oklch(0.21 0.034 264.665)");
+    .toBe("rgb(14, 21, 17)");
   await expect
     .poll(() => sidebar.evaluate((element) => getComputedStyle(element).backgroundColor))
-    .toBe("oklch(0.21 0.034 264.665)");
+    .toBe("rgb(14, 21, 17)");
+  await expect
+    .poll(() => page.locator("main > div").evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe("rgb(24, 34, 27)");
   await expect
     .poll(() =>
       page.getByRole("button", { name: "Dashboard" }).evaluate((element) => getComputedStyle(element).backgroundColor),
