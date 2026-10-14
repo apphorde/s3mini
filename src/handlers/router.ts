@@ -904,8 +904,9 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
       name?: string;
       email?: string;
       photo?: string;
+      picture?: string;
     };
-    return { ...profile, id: claims.sub };
+    return { ...profile, photo: profile.photo || profile.picture, id: claims.sub };
   }
 
   async function authorizeProvisioning(request: FastifyRequest): Promise<void> {

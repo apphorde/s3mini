@@ -45,10 +45,13 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await expect(page.getByText("Object storage control plane")).toHaveCount(0);
   const sidebar = page.locator("aside");
   await expect(sidebar.getByText("s3mini.")).toBeVisible();
-  await expect(page.locator(".topbar-profile")).toBeVisible();
+  const userCard = page.getByRole("group", { name: "Signed-in user" });
+  await expect(userCard).toBeVisible();
+  await expect(userCard.getByText("H", { exact: true })).toBeVisible();
+  await expect(userCard.getByText("Administrator", { exact: true })).toBeVisible();
   await expect(page.getByText("Workspace S3MINI")).toHaveCount(0);
   const topbarBounds = await page.locator(".dashboard-topbar").boundingBox();
-  const profileBounds = await page.locator(".topbar-profile").boundingBox();
+  const profileBounds = await userCard.boundingBox();
   expect(topbarBounds?.height).toBeLessThanOrEqual(64);
   expect(profileBounds).not.toBeNull();
   expect(profileBounds!.x + profileBounds!.width).toBeGreaterThan(1100);
@@ -81,6 +84,24 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
     path: "test-results/dashboard-overview.png",
     fullPage: true,
   });
+  const photoUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+  await page.route("**/admin/profile", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ name: "Homebots Inc", email: "homebots.inc@gmail.com", photo: photoUrl, role: "admin" }),
+    });
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(userCard.getByText("Homebots Inc", { exact: true })).toBeVisible();
+  await expect(userCard.getByText("homebots.inc@gmail.com", { exact: true })).toBeVisible();
+  const profilePhoto = userCard.locator("img");
+  await expect(profilePhoto).toHaveAttribute("src", photoUrl);
+  await expect(profilePhoto).toBeVisible();
+  await expect.poll(() => profilePhoto.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await expect(userCard.getByText("H", { exact: true })).toBeHidden();
+  await page.unroute("**/admin/profile");
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(userCard.getByText("H", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Buckets" }).click();
   await expect(page.getByRole("heading", { name: "Buckets" })).toBeVisible();
   const bucketName = `ui-smoke-${Date.now()}`;
@@ -175,7 +196,7 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   expect([...errors, ...failedResponses]).toEqual([]);
 
   await page.setViewportSize({ width: 375, height: 812 });
-  await expect(page.locator(".topbar-profile")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Signed-in user" })).toBeVisible();
   await expect(page.locator(".mobile-brand")).toBeVisible();
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.locator("aside.control-sidebar-open")).toBeVisible();

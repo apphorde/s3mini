@@ -40,7 +40,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
       const view = ref(['overview', 'buckets', 'accounts', 'allocations', 'users', 'tokens'].includes(requestedView) ? requestedView : 'overview');
       const menuOpen = ref(false);
       const status = ref('');
-      const profile = ref({ name: 'Administrator', email: '', initials: 'S3', meUrl: '' });
+      const profile = ref({ name: 'Administrator', email: '', photo: '', meUrl: '' });
       const buckets = ref([]);
       const keys = ref([]);
       const peers = ref([]);
@@ -95,7 +95,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
         peers.value = peerData;
         events.value = eventData;
         const profileName = profileData.name || profileData.email || 'Administrator';
-        profile.value = { name: profileName, email: profileData.email || '', initials: profileName.split(/\\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase(), meUrl: profileData.meUrl || '', role: profileData.role || '' };
+        profile.value = { name: profileName, email: profileData.email || '', photo: profileData.photo || '', meUrl: profileData.meUrl || '', role: profileData.role || '' };
         const nextPolicies = {};
         for (const bucket of buckets.value) nextPolicies[bucket.name] = JSON.stringify(await readJson('/admin/buckets/' + encodeURIComponent(bucket.name) + '/policy', {}), null, 2);
         policies.value = nextPolicies;
@@ -161,7 +161,7 @@ export const CONTROL_PLANE_HTML = String.raw`<!doctype html>
   .replace('message="{{ status }}"', 'bind-message="status"')
   .replace(
     /<header[\s\S]*?<\/header>/,
-    '<header class="dashboard-topbar"><div class="topbar-leading"><button class="menu-toggle" aria-label="Open navigation" on-click="setMenuOpen(true)"><lucide-icon icon="menu" size="20" icon-classes="nav-icon-svg" aria-hidden="true"></lucide-icon><span class="sr-only">Open menu</span></button><strong class="mobile-brand">s3mini<span>.</span></strong></div><a class="topbar-profile" bind-href="profile.meUrl" target="_blank" rel="noreferrer"><span class="profile-avatar">{{ profile.initials }}</span><span class="profile-copy"><strong>{{ profile.name }}</strong><small>{{ profile.email }}</small></span><lucide-icon icon="chevron-down" size="16" icon-classes="nav-icon-svg" aria-hidden="true"></lucide-icon></a></header>',
+    '<header class="dashboard-topbar"><div class="topbar-leading"><button class="menu-toggle" aria-label="Open navigation" on-click="setMenuOpen(true)"><lucide-icon icon="menu" size="20" icon-classes="nav-icon-svg" aria-hidden="true"></lucide-icon><span class="sr-only">Open menu</span></button><strong class="mobile-brand">s3mini<span>.</span></strong></div><div class="flex cursor-pointer items-center gap-4 rounded-full border border-gray-200 bg-white py-1.5 pl-1.5 pr-4 shadow-sm transition-shadow hover:shadow-md" role="group" aria-label="Signed-in user"><div class="relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-brand text-sm font-bold text-white"><img bind-src="profile.photo" bind-class="profile.photo ? \'profile-photo\' : \'hidden\'" referrerpolicy="no-referrer" alt=""><span bind-class="profile.photo ? \'hidden\' : \'block\'" aria-hidden="true">H</span></div><div class="hidden flex-col justify-center sm:flex"><span class="text-sm font-semibold leading-tight text-gray-900">{{ profile.name }}</span><span class="text-[10px] leading-tight text-gray-500">{{ profile.email }}</span></div></div></header>',
   )
   .replace(/<table class="/g, '<table class="bg-white ')
   .replace(

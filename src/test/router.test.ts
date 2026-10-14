@@ -1413,7 +1413,10 @@ describe("S3 HTTP routes", () => {
     const roleToken = issueToken(roleUserId);
     const unassignedToken = issueToken(`unassigned-${Date.now()}`);
     const tokenProfiles = new Map([
-      [token, { sub: "user-1", email: "admin@example.com" }],
+      [
+        token,
+        { sub: "user-1", name: "Homebots Inc", email: "admin@example.com", picture: "https://auth.example.com/photo" },
+      ],
       [roleToken, { sub: roleUserId, email: "role-user@example.com" }],
       [unassignedToken, { sub: "unassigned", email: "unassigned@example.com" }],
     ]);
@@ -1448,7 +1451,11 @@ describe("S3 HTTP routes", () => {
       headers: { cookie: `s3mini_oidc_token=${token}` },
     });
     expect(profile.statusCode).toBe(200);
-    expect(profile.json()).toMatchObject({ email: "admin@example.com" });
+    expect(profile.json()).toMatchObject({
+      email: "admin@example.com",
+      name: "Homebots Inc",
+      photo: "https://auth.example.com/photo",
+    });
 
     const assigned = await app.inject({
       method: "PUT",
