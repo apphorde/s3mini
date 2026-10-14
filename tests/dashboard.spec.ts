@@ -44,7 +44,10 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await expect(page.getByText("Overview")).toBeVisible();
   await expect(page.getByText("Object storage control plane")).toHaveCount(0);
   const sidebar = page.locator("aside");
-  await expect(sidebar.getByText("s3mini.")).toBeVisible();
+  const brand = sidebar.getByText("s3mini.");
+  await expect(brand).toBeVisible();
+  await expect(brand).toHaveClass(/text-2xl/);
+  await expect(brand).toHaveClass(/font-black/);
   const userCard = page.getByRole("group", { name: "Signed-in user" });
   await expect(userCard).toBeVisible();
   await expect(userCard.getByText("H", { exact: true })).toBeVisible();
@@ -60,6 +63,9 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   expect(await page.locator("main > header").evaluate((element) => getComputedStyle(element).paddingRight)).toBe("0px");
   expect(await userCard.evaluate((element) => getComputedStyle(element).paddingRight)).toBe("16px");
   expect(profileBounds!.x + profileBounds!.width).toBe(topbarBounds!.x + topbarBounds!.width);
+  const themeToggle = page.getByRole("button", { name: "Toggle light and dark theme" });
+  await expect(themeToggle).toHaveClass(/rounded-full/);
+  await expect(themeToggle).toHaveClass(/border/);
   await page.getByRole("button", { name: "Toggle light and dark theme" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect
