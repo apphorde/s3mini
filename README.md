@@ -120,6 +120,18 @@ s3:provision account, S3-key, bucket, bucket-policy, and bucket-quota APIs only
 
 `s3:provision` must be explicitly allowed for the S3MINI OIDC client at the
 provider. It never grants dashboard, object-data, or replication access.
+
+Clients can read bucket statistics with `GET /metadata/buckets/{bucket}/stats`.
+Authenticate with an account-scoped S3 access key using SigV4. Anonymous
+requests and OIDC bearer tokens are not accepted. Account isolation and bucket
+policy checks apply. The JSON response
+contains `bucket`, `locationConstraint`, `creationDate`, `storageBytes`,
+`objectCount`, and `quotaBytes`; quota `0` means unlimited. `storageBytes`
+includes stored object versions and uploaded multipart parts. `objectCount` is
+the number of stored object records, including retained versions and delete
+markers, not the number of unique current keys. See `openapi-s3mini.json` for
+the response schema and error contract.
+
 Provisioning is intended for a trusted service such as Filebin; that service
 maintains the mapping from its OIDC users to S3MINI account IDs. Provisioned
 accounts start with the `S3MINI_DEFAULT_ACCOUNT_QUOTA_BYTES` aggregate allocation

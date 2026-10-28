@@ -53,6 +53,7 @@ describe("S3 HTTP routes", () => {
         paths: expect.objectContaining({
           "/internal/replication/user-role": expect.any(Object),
           "/admin/users/{userId}": expect.any(Object),
+          "/metadata/buckets/{bucket}/stats": expect.objectContaining({ get: expect.any(Object) }),
         }),
       });
       expect(fetchMock).not.toHaveBeenCalled();
@@ -1026,13 +1027,69 @@ describe("S3 HTTP routes", () => {
       payload: JSON.stringify({ name: managedBucket }),
     });
     expect(created.statusCode).toBe(201);
+    const statsBucket = `${managedBucket}-stats`;
+    await s3.createBucket(statsBucket);
+    await s3.putObject(statsBucket, "stats.bin", Buffer.from("bucket stats"), {});
+    process.env.S3MINI_ACCESS_KEY = "stats-client";
+    process.env.S3MINI_SECRET_KEY = "stats-client-secret";
+    const statsPath = `/metadata/buckets/${statsBucket}/stats`;
+    const now = new Date();
+    const date = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+    const dateStamp = date.slice(0, 8);
+    const scope = `${dateStamp}/local/s3/aws4_request`;
+    const canonicalHeaders = `host:localhost:80\nx-amz-date:${date}\n`;
+    const signedHeaders = "host;x-amz-date";
+    const canonicalRequest = ["GET", statsPath, "", canonicalHeaders, signedHeaders, "UNSIGNED-PAYLOAD"].join("\n");
+    const stringToSign = [
+      "AWS4-HMAC-SHA256",
+      date,
+      scope,
+      crypto.createHash("sha256").update(canonicalRequest).digest("hex"),
+    ].join("\n");
+    const hmac = (key: Buffer | string, value: string) => crypto.createHmac("sha256", key).update(value).digest();
+    const signingKey = [dateStamp, "local", "s3", "aws4_request"].reduce<Buffer>(
+      (key, value) => hmac(key, value),
+      Buffer.from(`AWS4${process.env.S3MINI_SECRET_KEY}`),
+    );
+    const signature = hmac(signingKey, stringToSign).toString("hex");
+    const stats = await app.inject({
+      method: "GET",
+      url: statsPath,
+      headers: {
+        host: "localhost:80",
+        "x-amz-date": date,
+        authorization: `AWS4-HMAC-SHA256 Credential=stats-client/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+      },
+    });
+    expect(stats.statusCode, stats.body).toBe(200);
+    expect(stats.headers["cache-control"]).toBe("private, no-store");
+    expect(stats.json()).toMatchObject({
+      bucket: statsBucket,
+      storageBytes: Buffer.byteLength("bucket stats"),
+      objectCount: 1,
+      quotaBytes: 0,
+    });
+    expect(stats.json().creationDate).toBeTypeOf("string");
+    expect(stats.json().locationConstraint).toBe("local");
+    expect((await app.inject({ method: "GET", url: statsPath })).statusCode).toBe(403);
+    delete process.env.S3MINI_ACCESS_KEY;
+    delete process.env.S3MINI_SECRET_KEY;
+    await s3.deleteObject(statsBucket, "stats.bin");
+    await s3.deleteBucket(statsBucket);
     const details = await app.inject({
       method: "GET",
       url: `/admin/buckets/${managedBucket}/details`,
       headers: { authorization: "Bearer test-admin-token" },
     });
     expect(details.statusCode).toBe(200);
-    expect(details.json()).toMatchObject({ name: managedBucket, storageBytes: 0, objectCount: 0, policy: {} });
+    expect(details.json()).toMatchObject({
+      bucket: managedBucket,
+      storageBytes: 0,
+      objectCount: 0,
+      policy: {},
+    });
+    const missingStats = await app.inject({ method: "GET", url: `/metadata/buckets/${managedBucket}-missing/stats` });
+    expect(missingStats.statusCode).toBe(404);
     expect(
       (
         await app.inject({

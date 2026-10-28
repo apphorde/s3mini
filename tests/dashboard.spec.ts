@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("dashboard boots, renders, and has no browser errors", async ({ page }) => {
+test("dashboard boots, renders, and has no browser errors", async ({
+  page,
+}) => {
   const errors: string[] = [];
   const requests: string[] = [];
   const failedResponses: string[] = [];
@@ -10,7 +12,9 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
     }
   });
   page.on("pageerror", (error) => errors.push(error.message));
-  page.on("request", (request) => requests.push(request.method() + " " + request.url()));
+  page.on("request", (request) =>
+    requests.push(request.method() + " " + request.url()),
+  );
   page.on("response", (response) => {
     if (response.status() >= 500) {
       failedResponses.push(response.status() + " " + response.url());
@@ -22,7 +26,8 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
       status: response.status,
       body: await response.text(),
       headers: {
-        "content-type": response.headers.get("content-type") || "text/javascript",
+        "content-type":
+          response.headers.get("content-type") || "text/javascript",
         "access-control-allow-origin": "*",
       },
     });
@@ -33,7 +38,8 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
       status: response.status,
       body: await response.text(),
       headers: {
-        "content-type": response.headers.get("content-type") || "text/javascript",
+        "content-type":
+          response.headers.get("content-type") || "text/javascript",
         "access-control-allow-origin": "*",
       },
     });
@@ -48,58 +54,101 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await expect(brand).toBeVisible();
   await expect(brand).toHaveClass(/text-2xl/);
   await expect(brand).toHaveClass(/font-black/);
-  const userCard = page.getByRole("group", { name: "Signed-in user" });
+  const userCard = page.getByRole("button", { name: "Signed-in user" });
   await expect(userCard).toBeVisible();
   await expect(userCard.getByText("H", { exact: true })).toBeVisible();
-  await expect(userCard.getByText("Administrator", { exact: true })).toBeVisible();
+  await expect(
+    userCard.getByText("Administrator", { exact: true }),
+  ).toBeVisible();
+  await userCard.click();
+  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+  await expect(page.getByText("OIDC subject", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Dashboard" }).click();
   await expect(page.getByText("Workspace S3MINI")).toHaveCount(0);
   const firstOverviewCard = page.locator("main section .grid > div").first();
-  const lightCardBackground = await firstOverviewCard.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const lightCardBackground = await firstOverviewCard.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
   const topbarBounds = await page.locator("main > header").boundingBox();
   const profileBounds = await userCard.boundingBox();
   expect(topbarBounds?.height).toBeLessThanOrEqual(64);
   expect(profileBounds).not.toBeNull();
   expect(profileBounds!.x + profileBounds!.width).toBeGreaterThan(1100);
-  expect(await page.locator("main > header").evaluate((element) => getComputedStyle(element).paddingRight)).toBe("0px");
-  expect(await userCard.evaluate((element) => getComputedStyle(element).paddingRight)).toBe("16px");
-  expect(profileBounds!.x + profileBounds!.width).toBe(topbarBounds!.x + topbarBounds!.width);
-  const themeToggle = page.getByRole("button", { name: "Toggle light and dark theme" });
+  expect(
+    await page
+      .locator("main > header")
+      .evaluate((element) => getComputedStyle(element).paddingRight),
+  ).toBe("0px");
+  expect(
+    await userCard.evaluate(
+      (element) => getComputedStyle(element).paddingRight,
+    ),
+  ).toBe("16px");
+  expect(profileBounds!.x + profileBounds!.width).toBe(
+    topbarBounds!.x + topbarBounds!.width,
+  );
+  const themeToggle = page.getByRole("button", {
+    name: "Toggle light and dark theme",
+  });
   await expect(themeToggle).toHaveClass(/rounded-full/);
   await expect(themeToggle).toHaveClass(/border/);
   await expect(themeToggle).toHaveClass(/bg-white/);
-  await page.getByRole("button", { name: "Toggle light and dark theme" }).click();
+  await page
+    .getByRole("button", { name: "Toggle light and dark theme" })
+    .click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expect
-    .poll(() => page.locator("body").evaluate((element) => getComputedStyle(element).backgroundColor))
+    .poll(() =>
+      page
+        .locator("body")
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
     .toBe("rgb(12, 20, 16)");
   await expect
-    .poll(() => sidebar.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .poll(() =>
+      sidebar.evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
     .toBe("rgb(12, 20, 16)");
   await expect
-    .poll(() => page.locator("main > div").evaluate((element) => getComputedStyle(element).backgroundColor))
+    .poll(() =>
+      page
+        .locator("main > div")
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
     .toBe("rgb(24, 35, 27)");
   await expect
     .poll(() =>
-      page.getByRole("button", { name: "Dashboard" }).evaluate((element) => getComputedStyle(element).backgroundColor),
+      page
+        .getByRole("button", { name: "Dashboard" })
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
     )
     .not.toBe("oklch(1 0 0)");
-  expect(await firstOverviewCard.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
-    lightCardBackground,
-  );
+  expect(
+    await firstOverviewCard.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    ),
+  ).not.toBe(lightCardBackground);
   await page.screenshot({
     path: "test-results/dashboard-dark-theme.png",
     fullPage: true,
   });
-  expect(await page.evaluate(() => localStorage.getItem("s3mini-theme"))).toBe("dark");
+  expect(await page.evaluate(() => localStorage.getItem("s3mini-theme"))).toBe(
+    "dark",
+  );
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await page.getByRole("button", { name: "Toggle light and dark theme" }).click();
+  await page
+    .getByRole("button", { name: "Toggle light and dark theme" })
+    .click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await expect(sidebar.locator("a")).toHaveCount(0);
-  await expect(sidebar.locator("span").filter({ hasText: /^admin$/i })).toHaveCount(0);
+  await expect(
+    sidebar.locator("span").filter({ hasText: /^admin$/i }),
+  ).toHaveCount(0);
   const sidebarChrome = await sidebar.evaluate((element) => ({
     borderRight: globalThis.getComputedStyle(element).borderRightWidth,
-    headerBorder: globalThis.getComputedStyle(element.firstElementChild!).borderBottomWidth,
+    headerBorder: globalThis.getComputedStyle(element.firstElementChild!)
+      .borderBottomWidth,
   }));
   expect(sidebarChrome).toEqual({ borderRight: "0px", headerBorder: "0px" });
   await expect(sidebar.locator("nav")).toBeVisible();
@@ -117,8 +166,12 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
     await expect(navigationButton).toHaveClass(/cursor-pointer/);
   }
   const desktopLayout = await page.evaluate(() => {
-    const sidebar = globalThis.document.querySelector("aside")!.getBoundingClientRect();
-    const main = globalThis.document.querySelector("main")!.getBoundingClientRect();
+    const sidebar = globalThis.document
+      .querySelector("aside")!
+      .getBoundingClientRect();
+    const main = globalThis.document
+      .querySelector("main")!
+      .getBoundingClientRect();
     return {
       sidebarRight: sidebar.right,
       sidebarWidth: sidebar.width,
@@ -133,7 +186,8 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
     path: "test-results/dashboard-overview.png",
     fullPage: true,
   });
-  const photoUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+  const photoUrl =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
   await page.route("**/admin/profile", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -146,12 +200,20 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
     });
   });
   await page.reload({ waitUntil: "networkidle" });
-  await expect(userCard.getByText("Homebots Inc", { exact: true })).toBeVisible();
-  await expect(userCard.getByText("homebots.inc@gmail.com", { exact: true })).toBeVisible();
+  await expect(
+    userCard.getByText("Homebots Inc", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    userCard.getByText("homebots.inc@gmail.com", { exact: true }),
+  ).toBeVisible();
   const profilePhoto = userCard.locator("img");
   await expect(profilePhoto).toHaveAttribute("src", photoUrl);
   await expect(profilePhoto).toBeVisible();
-  await expect.poll(() => profilePhoto.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      profilePhoto.evaluate((image: HTMLImageElement) => image.naturalWidth),
+    )
+    .toBeGreaterThan(0);
   await expect(userCard.getByText("H", { exact: true })).toBeHidden();
   await page.unroute("**/admin/profile");
   await page.reload({ waitUntil: "networkidle" });
@@ -165,9 +227,11 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   expect(searchBounds).not.toBeNull();
   expect(formBounds).not.toBeNull();
   expect(searchBounds!.x).toBeLessThan(formBounds!.x);
-  expect(await bucketForm.evaluate((form) => getComputedStyle(form.parentElement!).justifyContent)).toBe(
-    "space-between",
-  );
+  expect(
+    await bucketForm.evaluate(
+      (form) => getComputedStyle(form.parentElement!).justifyContent,
+    ),
+  ).toBe("space-between");
   await page.screenshot({
     path: "test-results/dashboard-buckets-layout.png",
     fullPage: true,
@@ -176,6 +240,11 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await page.getByPlaceholder("Bucket name").fill(bucketName);
   await page.getByRole("button", { name: "Create bucket" }).click();
   await expect(page.getByText(bucketName), requests.join("\n")).toBeVisible();
+  await page.getByRole("button", { name: bucketName }).click();
+  await expect(page.getByRole("heading", { name: bucketName })).toBeVisible();
+  await expect(page.getByText("Storage used: 0 B")).toBeVisible();
+  await expect(page.getByText("Object records: 0")).toBeVisible();
+  await page.getByRole("button", { name: "← Buckets" }).first().click();
   const createdBucketRow = page.locator("tr").filter({ hasText: bucketName });
   const policyButton = createdBucketRow.getByRole("button", { name: "Policy" });
   const deleteButton = createdBucketRow.getByRole("button", { name: "Delete" });
@@ -194,11 +263,15 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await expect(page.getByText("Secret key")).toBeVisible();
   const accessKeyTable = page.locator("section table");
   await expect(accessKeyTable.locator("thead th").nth(0)).toHaveText("Name");
-  await expect(accessKeyTable.locator("thead th").nth(1)).toHaveText("Access key");
+  await expect(accessKeyTable.locator("thead th").nth(1)).toHaveText(
+    "Access key",
+  );
   expect(new URL(page.url()).searchParams.get("page")).toBe("accounts");
   await page.reload({ waitUntil: "networkidle" });
   await expect(page).toHaveURL(/page=accounts/);
-  await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Accounts", exact: true }),
+  ).toBeVisible();
   await page.route("**/admin/accounts", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -221,8 +294,12 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
     });
   });
   await page.getByRole("button", { name: "Allocations" }).click();
-  await expect(page.getByRole("heading", { name: "Storage allocations" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Allocations" })).toHaveClass(/border-brand/);
+  await expect(
+    page.getByRole("heading", { name: "Storage allocations" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Allocations" })).toHaveClass(
+    /border-brand/,
+  );
   await page.getByRole("spinbutton").fill("1048576");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Account quota saved.")).toBeVisible();
@@ -243,13 +320,21 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
     });
   });
   await page.getByRole("button", { name: "OIDC tokens" }).click();
-  await expect(page.getByRole("heading", { name: "Issue OIDC API token" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "OIDC tokens" })).toHaveClass(/border-brand/);
-  await page.getByPlaceholder("Filebin provisioning").fill("ui-smoke-token");
+  await expect(
+    page.getByRole("heading", { name: "Issue OIDC API token" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "OIDC tokens" })).toHaveClass(
+    /border-brand/,
+  );
+  await page
+    .getByPlaceholder("S3 resource provisioning")
+    .fill("ui-smoke-token");
   await page.getByRole("button", { name: "Generate token" }).click();
   await expect(page.getByText("one-time-ui-token")).toBeVisible();
   await page.getByRole("button", { name: "Users" }).click();
-  await expect(page.getByRole("button", { name: "Users" })).toHaveClass(/border-brand/);
+  await expect(page.getByRole("button", { name: "Users" })).toHaveClass(
+    /border-brand/,
+  );
   const userId = `ui-smoke-role-${Date.now()}`;
   await page.getByPlaceholder("User subject ID").fill(userId);
   await page.getByPlaceholder("user@example.com").fill("ui-role@example.com");
@@ -258,7 +343,9 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   await page.getByRole("button", { name: "Save role" }).click();
   await expect(page.getByText(userId)).toBeVisible();
   const removal = page.waitForResponse(
-    (response) => response.request().method() === "DELETE" && response.url().endsWith(`/admin/users/${userId}`),
+    (response) =>
+      response.request().method() === "DELETE" &&
+      response.url().endsWith(`/admin/users/${userId}`),
   );
   await page
     .getByRole("row", { name: new RegExp(userId) })
@@ -279,19 +366,27 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   expect([...errors, ...failedResponses]).toEqual([]);
 
   await page.setViewportSize({ width: 375, height: 812 });
-  const mobileUserCard = page.getByRole("group", { name: "Signed-in user" });
+  const mobileUserCard = page.getByRole("button", { name: "Signed-in user" });
   await expect(mobileUserCard).toBeVisible();
-  expect(await mobileUserCard.evaluate((element) => getComputedStyle(element).paddingRight)).toBe("6px");
+  expect(
+    await mobileUserCard.evaluate(
+      (element) => getComputedStyle(element).paddingRight,
+    ),
+  ).toBe("6px");
   const mobileCardBounds = await mobileUserCard.boundingBox();
   const mobileTopbarBounds = await page.locator("main > header").boundingBox();
   expect(mobileCardBounds).not.toBeNull();
   expect(mobileTopbarBounds).not.toBeNull();
   expect(mobileCardBounds!.x).toBeGreaterThan(100);
-  expect(mobileCardBounds!.x + mobileCardBounds!.width).toBe(mobileTopbarBounds!.x + mobileTopbarBounds!.width);
+  expect(mobileCardBounds!.x + mobileCardBounds!.width).toBe(
+    mobileTopbarBounds!.x + mobileTopbarBounds!.width,
+  );
   await expect(page.locator("main > header strong")).toBeVisible();
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.locator("aside")).toBeVisible();
-  await page.getByRole("button", { name: "Close navigation overlay" }).click({ position: { x: 300, y: 200 } });
+  await page
+    .getByRole("button", { name: "Close navigation overlay" })
+    .click({ position: { x: 300, y: 200 } });
   await expect(page.locator("aside")).toBeHidden();
   for (const [pageName, heading, menuItem] of [
     ["accounts", "Accounts", "Accounts"],
@@ -301,7 +396,9 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
   ]) {
     await page.goto(`/admin?page=${pageName}`, { waitUntil: "networkidle" });
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-    await expect(page.locator("aside button").filter({ hasText: menuItem })).toHaveClass(/border-brand/);
+    await expect(
+      page.locator("aside button").filter({ hasText: menuItem }),
+    ).toHaveClass(/border-brand/);
     if (pageName === "accounts") {
       await page.screenshot({
         path: "test-results/dashboard-mobile-accounts.png",
@@ -312,17 +409,28 @@ test("dashboard boots, renders, and has no browser errors", async ({ page }) => 
       viewport: globalThis.document.documentElement.clientWidth,
       content: globalThis.document.documentElement.scrollWidth,
     }));
-    expect(width.content, `${pageName} overflows the mobile viewport`).toBeLessThanOrEqual(width.viewport);
+    expect(
+      width.content,
+      `${pageName} overflows the mobile viewport`,
+    ).toBeLessThanOrEqual(width.viewport);
   }
 });
 
-test("direct logout clears the session and offers a fresh sign-in", async ({ page }) => {
+test("direct logout clears the session and offers a fresh sign-in", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 375, height: 812 });
   const response = await page.goto("/auth/logout");
   expect(response?.status(), await response?.text()).toBe(200);
-  await expect(page.getByRole("heading", { name: "You’re signed out" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/admin/login");
-  await expect(page.locator('link[rel="stylesheet"][href="/admin/tailwind.css"]')).toHaveCount(1);
+  await expect(
+    page.getByRole("heading", { name: "You’re signed out" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Sign in again" }),
+  ).toHaveAttribute("href", "/admin/login");
+  await expect(
+    page.locator('link[rel="stylesheet"][href="/admin/tailwind.css"]'),
+  ).toHaveCount(1);
   const width = await page.evaluate(() => ({
     viewport: globalThis.document.documentElement.clientWidth,
     content: globalThis.document.documentElement.scrollWidth,

@@ -586,6 +586,33 @@ export class S3Mini {
     return Number(row?.count || 0);
   }
 
+  async getBucketStats(bucket: string): Promise<{
+    bucket: string;
+    locationConstraint: string;
+    creationDate: Date;
+    storageBytes: number;
+    objectCount: number;
+    quotaBytes: number;
+  }> {
+    const details = (await this.listBuckets()).find((item) => item.name === bucket);
+    if (!details) {
+      throw new S3Error("NoSuchBucket", "Bucket not found.", 404, bucket);
+    }
+    const [storageBytes, objectCount, quotaBytes] = await Promise.all([
+      this.getStorageUsage(details.accountId || "legacy", bucket),
+      this.getBucketObjectCount(bucket),
+      this.getBucketQuota(bucket),
+    ]);
+    return {
+      bucket: details.name,
+      locationConstraint: details.locationConstraint || "",
+      creationDate: details.creationDate,
+      storageBytes: Number(storageBytes),
+      objectCount: Number(objectCount),
+      quotaBytes: Number(quotaBytes || 0),
+    };
+  }
+
   private async assertStorageCapacity(bucket: string, additionalBytes: number): Promise<void> {
     const limits = await this.get("SELECT accountId, quotaBytes FROM buckets WHERE name = ?", [bucket]);
     if (!limits || additionalBytes <= 0) {

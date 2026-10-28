@@ -47,6 +47,10 @@
     {
       "name": "Provisioning",
       "description": "Trusted integration API requiring the dedicated s3:provision scope."
+    },
+    {
+      "name": "Metadata",
+      "description": "Read-only bucket metadata and usage statistics for authenticated clients."
     }
   ],
   "paths": {
@@ -445,6 +449,32 @@
           "403": {
             "$ref": "#/components/responses/AccessDenied"
           }
+        }
+      }
+    },
+    "/metadata/buckets/{bucket}/stats": {
+      "get": {
+        "operationId": "GetBucketStats",
+        "summary": "Get bucket metadata and usage statistics",
+        "tags": ["Metadata"],
+        "description": "Returns bucket location and creation metadata plus storage usage and object-record count. Storage bytes include stored object versions and multipart parts that have been uploaded. Object count counts stored object records, including retained versions and delete markers; it is not a count of unique current keys. Requires authenticated bucket-scoped S3 credentials (SigV4), subject to account isolation and bucket policy. OIDC bearer tokens and anonymous requests are not accepted.",
+        "security": [
+          { "SigV4": [] }
+        ],
+        "parameters": [
+          { "$ref": "#/components/parameters/Bucket" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bucket statistics.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BucketStats" }
+              }
+            }
+          },
+          "403": { "$ref": "#/components/responses/AccessDenied" },
+          "404": { "description": "The bucket does not exist." }
         }
       }
     },
@@ -3005,6 +3035,18 @@
           "locationConstraint": {
             "type": "string"
           }
+        }
+      },
+      "BucketStats": {
+        "type": "object",
+        "required": ["bucket", "locationConstraint", "creationDate", "storageBytes", "objectCount", "quotaBytes"],
+        "properties": {
+          "bucket": { "type": "string" },
+          "locationConstraint": { "type": "string", "description": "Empty string when no location constraint is set." },
+          "creationDate": { "type": "string", "format": "date-time" },
+          "storageBytes": { "type": "integer", "format": "int64", "minimum": 0 },
+          "objectCount": { "type": "integer", "format": "int64", "minimum": 0 },
+          "quotaBytes": { "type": "integer", "format": "int64", "minimum": 0, "description": "Zero means unlimited." }
         }
       },
       "BucketName": {

@@ -1180,18 +1180,34 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   fastify.get("/admin/buckets", { preHandler: requireViewer }, async (_request, reply) =>
     reply.send(await s3.listBuckets()),
   );
+  fastify.get(
+    "/metadata/buckets/:bucket/stats",
+    {
+      preHandler: async (request) => {
+        const authorization = request.headers.authorization;
+        const isPresigned = new URL(request.raw.url || "/", "http://localhost").searchParams.has(
+          "X-Amz-Algorithm",
+        );
+        if (!authorization && !isPresigned) {
+          throw new S3Error("AccessDenied", "Authenticated S3 credentials are required.", 403);
+        }
+        if (authorization?.match(/^Bearer\s+/i)) {
+          throw new S3Error("AccessDenied", "Use account-scoped S3 credentials to read bucket statistics.", 403);
+        }
+      },
+    },
+    async (request, reply) => {
+      const bucket = (request.params as { bucket: string }).bucket;
+      return reply.header("Cache-Control", "private, no-store").send(await s3.getBucketStats(bucket));
+    },
+  );
   fastify.get("/admin/buckets/:bucket/details", { preHandler: requireViewer }, async (request, reply) => {
     const bucket = (request.params as { bucket: string }).bucket;
-    const details = (await s3.listBuckets()).find((item) => item.name === bucket);
-    if (!details) {
-      throw new S3Error("NoSuchBucket", "Bucket not found.", 404, bucket);
-    }
-    const [storageBytes, objectCount, policy] = await Promise.all([
-      s3.getStorageUsage(details.accountId || "legacy", bucket),
-      s3.getBucketObjectCount(bucket),
+    const [stats, policy] = await Promise.all([
+      s3.getBucketStats(bucket),
       s3.getBucketConfiguration(bucket, "policy"),
     ]);
-    return reply.send({ ...details, storageBytes, objectCount, policy: policy || {} });
+    return reply.send({ ...stats, policy: policy || {} });
   });
   fastify.post("/admin/buckets", { preHandler: requireOperator }, async (request, reply) => {
     const body =

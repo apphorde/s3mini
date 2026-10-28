@@ -34,6 +34,8 @@ describe("control-plane dashboard smoke test", () => {
     );
     expect(response.body).toContain("view === 'bucket-detail'");
     expect(response.body).toContain("openBucket(bucket.name)");
+    expect(response.body).toContain("{{ bucketDetail.bucket }}");
+    expect(response.body).toContain("Number(result.storageBytes ?? 0)");
     expect(response.body).not.toContain(
       "Storage containers managed by this node",
     );
