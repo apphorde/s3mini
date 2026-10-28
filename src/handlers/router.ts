@@ -1180,6 +1180,19 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
   fastify.get("/admin/buckets", { preHandler: requireViewer }, async (_request, reply) =>
     reply.send(await s3.listBuckets()),
   );
+  fastify.get("/admin/buckets/:bucket/details", { preHandler: requireViewer }, async (request, reply) => {
+    const bucket = (request.params as { bucket: string }).bucket;
+    const details = (await s3.listBuckets()).find((item) => item.name === bucket);
+    if (!details) {
+      throw new S3Error("NoSuchBucket", "Bucket not found.", 404, bucket);
+    }
+    const [storageBytes, objectCount, policy] = await Promise.all([
+      s3.getStorageUsage(details.accountId || "legacy", bucket),
+      s3.getBucketObjectCount(bucket),
+      s3.getBucketConfiguration(bucket, "policy"),
+    ]);
+    return reply.send({ ...details, storageBytes, objectCount, policy: policy || {} });
+  });
   fastify.post("/admin/buckets", { preHandler: requireOperator }, async (request, reply) => {
     const body =
       request.body && typeof request.body === "object"

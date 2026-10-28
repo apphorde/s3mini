@@ -1026,6 +1026,13 @@ describe("S3 HTTP routes", () => {
       payload: JSON.stringify({ name: managedBucket }),
     });
     expect(created.statusCode).toBe(201);
+    const details = await app.inject({
+      method: "GET",
+      url: `/admin/buckets/${managedBucket}/details`,
+      headers: { authorization: "Bearer test-admin-token" },
+    });
+    expect(details.statusCode).toBe(200);
+    expect(details.json()).toMatchObject({ name: managedBucket, storageBytes: 0, objectCount: 0, policy: {} });
     expect(
       (
         await app.inject({
@@ -1155,7 +1162,9 @@ describe("S3 HTTP routes", () => {
     expect(dashboard.body).toContain("/admin/replication/events");
     expect(dashboard.body).toContain("@li3/web");
     expect(dashboard.body).toContain('<control-plane-app class="flex h-full');
-    expect(dashboard.body).toContain('template for="[bucket] of buckets"');
+    expect(dashboard.body).toContain('template for="[bucket] of visibleBuckets"');
+    expect(dashboard.body).not.toContain('Storage containers managed by this node');
+    expect(dashboard.body).toContain("view === 'bucket-detail'");
     expect(dashboard.body).not.toContain("document.querySelector");
     expect(dashboard.body).toContain("issued.secret");
     expect(dashboard.body).toContain("font-bold");

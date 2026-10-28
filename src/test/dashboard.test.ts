@@ -26,8 +26,17 @@ describe("control-plane dashboard smoke test", () => {
       '<control-plane-app class="flex h-full w-full min-h-0 min-w-0 overflow-hidden"></control-plane-app>',
     );
     expect(response.body).toContain('<template component="control-plane-app">');
-    expect(response.body).toContain("import { computed, ref, onInit } from '@li3/web';");
-    expect(response.body).toContain('template for="[bucket] of buckets"');
+    expect(response.body).toContain(
+      "import { computed, ref, onInit } from '@li3/web';",
+    );
+    expect(response.body).toContain(
+      'template for="[bucket] of visibleBuckets"',
+    );
+    expect(response.body).toContain("view === 'bucket-detail'");
+    expect(response.body).toContain("openBucket(bucket.name)");
+    expect(response.body).not.toContain(
+      "Storage containers managed by this node",
+    );
     expect(response.body).toContain("bucket-policy-dialog");
     expect(response.body).toContain("Policy syntax help");
     expect(response.body).toContain('on-click="openPolicy(bucket.name)"');

@@ -581,6 +581,11 @@ export class S3Mini {
     return Number(row?.bytes || 0) + Number(parts?.bytes || 0);
   }
 
+  async getBucketObjectCount(bucket: string): Promise<number> {
+    const row = await this.get("SELECT COUNT(*) AS count FROM objs WHERE bucket = ?", [bucket]);
+    return Number(row?.count || 0);
+  }
+
   private async assertStorageCapacity(bucket: string, additionalBytes: number): Promise<void> {
     const limits = await this.get("SELECT accountId, quotaBytes FROM buckets WHERE name = ?", [bucket]);
     if (!limits || additionalBytes <= 0) {
