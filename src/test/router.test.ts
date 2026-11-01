@@ -950,7 +950,7 @@ describe("S3 HTTP routes", () => {
       expect(issued.body).not.toContain("private-oidc-api-token");
       expect(fetchMock).toHaveBeenCalledOnce();
       const [url, options] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
-      expect(url.toString()).toBe("https://auth.example.com/api-tokens/s3mini-dashboard/issue");
+      expect(url.toString()).toBe("https://auth.example.com/api/v1/api-tokens/s3mini-dashboard/issue");
       expect(options.headers).toMatchObject({
         authorization: "Bearer private-oidc-api-token",
         "content-type": "application/json",

@@ -1082,7 +1082,7 @@ export async function registerRoutes(fastify: FastifyInstance, s3: S3Mini, repli
 
     let upstream: Response;
     try {
-      upstream = await fetch(new URL(`/api-tokens/${encodeURIComponent(clientId)}/issue`, oidcBaseUrl()), {
+      upstream = await fetch(new URL(`/api/v1/api-tokens/${encodeURIComponent(clientId)}/issue`, oidcBaseUrl()), {
         method: "POST",
         headers: {
           authorization: `Bearer ${apiToken}`,
